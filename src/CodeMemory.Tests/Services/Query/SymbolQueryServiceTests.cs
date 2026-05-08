@@ -1,0 +1,97 @@
+using CodeMemory.Services.Query;
+using CodeMemory.Storage;
+using CodeMemory.Storage.Models;
+using CodeMemory.Storage.Services;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace CodeMemory.Tests.Services.Query;
+
+public sealed class SymbolQueryServiceTests
+{
+    static string getTempDb()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "CodeMemoryTests", Guid.NewGuid().ToString());
+        Directory.CreateDirectory(dir);
+        return Path.Combine(dir, "test.db");
+    }
+
+    static (IStorageService Storage, SymbolQueryService Service) createServices(string dbPath)
+    {
+        var services = new ServiceCollection();
+        services.AddCodeMemoryStorage($"Data Source={dbPath}");
+        var provider = services.BuildServiceProvider();
+        var storage = provider.GetRequiredService<IStorageService>();
+        var svc = new SymbolQueryService(storage);
+        return (storage, svc);
+    }
+
+    [Test]
+    public async Task GetByIdAsync_ReturnsSymbol()
+    {
+        var dbPath = getTempDb();
+        var (storage, svc) = createServices(dbPath);
+        await storage.InitializeAsync();
+
+        await storage.StoreSymbolsAsync([
+            new SymbolRecord { Id = "MyClass", Name = "MyClass", Kind = "Class",
+                FilePath = "/src/My.cs", LineStart = 1, LineEnd = 30, FullName = "MyClass" }
+        ]);
+
+        var result = await svc.GetByIdAsync("MyClass");
+        Assert.That(result, Is.Not.Null);
+        Assert.That(result!.Name, Is.EqualTo("MyClass"));
+    }
+
+    [Test]
+    public async Task GetByIdAsync_ReturnsNull_WhenMissing()
+    {
+        var dbPath = getTempDb();
+        var (storage, svc) = createServices(dbPath);
+        await storage.InitializeAsync();
+
+        var result = await svc.GetByIdAsync("nonexistent");
+        Assert.That(result, Is.Null);
+    }
+
+    [Test]
+    public async Task GetByFileAsync_ReturnsSymbolsInFile()
+    {
+        var dbPath = getTempDb();
+        var (storage, svc) = createServices(dbPath);
+        await storage.InitializeAsync();
+
+        await storage.StoreSymbolsAsync([
+            new SymbolRecord { Id = "A", Name = "A", Kind = "Class",
+                FilePath = "/src/Alpha.cs", LineStart = 1, LineEnd = 10, FullName = "A" },
+            new SymbolRecord { Id = "B", Name = "B", Kind = "Method",
+                FilePath = "/src/Beta.cs", LineStart = 1, LineEnd = 10, FullName = "B" },
+            new SymbolRecord { Id = "C", Name = "C", Kind = "Class",
+                FilePath = "/src/Alpha.cs", LineStart = 20, LineEnd = 30, FullName = "C" }
+        ]);
+
+        var results = await svc.GetByFileAsync("/src/Alpha.cs");
+        Assert.That(results, Has.Count.EqualTo(2));
+        Assert.That(results.Select(r => r.Id), Is.EquivalentTo(["A", "C"]));
+    }
+
+    [Test]
+    public async Task GetByKindAsync_ReturnsSymbolsOfKind()
+    {
+        var dbPath = getTempDb();
+        var (storage, svc) = createServices(dbPath);
+        await storage.InitializeAsync();
+
+        await storage.StoreSymbolsAsync([
+            new SymbolRecord { Id = "A", Name = "A", Kind = "Class",
+                FilePath = "/src/A.cs", LineStart = 1, LineEnd = 10, FullName = "A" },
+            new SymbolRecord { Id = "B", Name = "B", Kind = "Method",
+                FilePath = "/src/B.cs", LineStart = 1, LineEnd = 10, FullName = "B" },
+            new SymbolRecord { Id = "C", Name = "C", Kind = "Class",
+                FilePath = "/src/C.cs", LineStart = 1, LineEnd = 10, FullName = "C" }
+        ]);
+
+        var results = await svc.GetByKindAsync("Class");
+        Assert.That(results, Has.Count.EqualTo(2));
+        Assert.That(results.Select(r => r.Id), Is.EquivalentTo(["A", "C"]));
+    }
+}

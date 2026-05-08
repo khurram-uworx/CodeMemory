@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/Solution Items/">
+    <File Path="AGENTS.md" />
+    <File Path="ARCHITECTURE.md" />
+    <File Path="README.md" />
+  </Folder>
+  <Project Path="src/CodeMemory.Storage/CodeMemory.Storage.csproj" />
+  <Project Path="src/CodeMemory.Tests/CodeMemory.Tests.csproj" />
+  <Project Path="src/CodeMemory/CodeMemory.csproj" />
+</Solution>
