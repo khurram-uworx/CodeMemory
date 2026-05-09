@@ -1,3 +1,5 @@
+using CodeMemory.Indexing.Architecture;
+using CodeMemory.Indexing.Git;
 using CodeMemory.Indexing.Graph;
 using CodeMemory.Indexing.Search;
 using CodeMemory.Storage.Models;
@@ -148,3 +150,50 @@ sealed class MockDependencyGraphService : IDependencyGraphService
     }
 }
 
+sealed class MockClusteringService : IComponentClusteringService
+{
+    public Task<IReadOnlyList<ComponentCluster>> GetClustersAsync(
+        double threshold = 0.3, CancellationToken ct = default)
+    {
+        return Task.FromResult<IReadOnlyList<ComponentCluster>>([
+            new ComponentCluster("src+tests", ["src", "tests"], 0.75),
+                new ComponentCluster("lib", ["lib"], 1.0)
+        ]);
+    }
+}
+
+sealed class MockGitHistoryService : IGitHistoryService
+{
+    public Task<SymbolHistoryResult?> GetSymbolHistoryAsync(
+        string symbolPath, int maxCommits = 20, CancellationToken ct = default)
+    {
+        return Task.FromResult<SymbolHistoryResult?>(new SymbolHistoryResult(
+            symbolPath, "/src/MyClass.cs", 3, 1,
+            "2024-01-01", "2024-03-15",
+            [
+                new CommitInfo("abc123", "testuser", "2024-03-15", "Fix bug"),
+                    new CommitInfo("def456", "testuser", "2024-02-01", "Add feature"),
+            ]));
+    }
+
+    public Task<IReadOnlyList<HotspotInfo>> GetHotspotsAsync(
+        int top = 10, int maxCommits = 100, CancellationToken ct = default)
+    {
+        return Task.FromResult<IReadOnlyList<HotspotInfo>>([
+            new HotspotInfo("/src/Service.cs", 15, 3, "2024-03-15"),
+                new HotspotInfo("/src/Controller.cs", 8, 2, "2024-03-10"),
+            ]);
+    }
+}
+
+sealed class MockArchitectureService : IArchitectureService
+{
+    public Task<ArchitectureOverview> GetOverviewAsync(string? path = null, CancellationToken ct = default)
+    {
+        return Task.FromResult(new ArchitectureOverview(
+            [new ComponentInfo("src", 5, 20), new ComponentInfo("tests", 3, 2)],
+            new Dictionary<string, int> { ["C#"] = 8, ["JavaScript"] = 2 },
+            10, 42
+        ));
+    }
+}
