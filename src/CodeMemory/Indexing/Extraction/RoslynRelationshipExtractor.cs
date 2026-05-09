@@ -1,5 +1,6 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.Extensions.Logging;
 
 namespace CodeMemory.Indexing.Extraction;
 
@@ -10,20 +11,6 @@ public sealed record Relationship(
 
 public sealed class RoslynRelationshipExtractor
 {
-    static readonly HashSet<string> primitiveTypes = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "int", "long", "short", "byte", "sbyte", "uint", "ulong", "ushort",
-        "float", "double", "decimal", "bool", "char", "string", "object",
-        "void", "var", "dynamic", "nint", "nuint"
-    };
-
-    readonly ILogger<RoslynRelationshipExtractor> logger;
-
-    public RoslynRelationshipExtractor(ILogger<RoslynRelationshipExtractor> logger)
-    {
-        this.logger = logger;
-    }
-
     static string? extractIdentifier(TypeSyntax type)
     {
         return type switch
@@ -76,6 +63,20 @@ public sealed class RoslynRelationshipExtractor
         }
 
         return null;
+    }
+
+    static readonly HashSet<string> primitiveTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "int", "long", "short", "byte", "sbyte", "uint", "ulong", "ushort",
+        "float", "double", "decimal", "bool", "char", "string", "object",
+        "void", "var", "dynamic", "nint", "nuint"
+    };
+
+    readonly ILogger<RoslynRelationshipExtractor> logger;
+
+    public RoslynRelationshipExtractor(ILogger<RoslynRelationshipExtractor> logger)
+    {
+        this.logger = logger;
     }
 
     void addRelationship(string sourceId, string targetId, string type,

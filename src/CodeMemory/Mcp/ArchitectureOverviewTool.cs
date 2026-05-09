@@ -1,4 +1,5 @@
 using CodeMemory.Indexing.Architecture;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
 using System.ComponentModel;
 

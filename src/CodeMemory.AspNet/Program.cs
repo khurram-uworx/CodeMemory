@@ -1,3 +1,4 @@
+using CodeMemory.AspNet.Services;
 using CodeMemory.Indexing;
 using CodeMemory.Indexing.Chunking;
 using CodeMemory.Indexing.Extraction;
@@ -24,9 +25,13 @@ builder.Services.AddSingleton<SemanticChunker>();
 // Storage layer (.memorycode/{provider}.db relative to repo root)
 // The provider name changes when swapping backends (e.g., "sqlvec", "pgvector").
 // Users can gitignore .memorycode/ to exclude index databases from version control.
-var repoRoot = Environment.CurrentDirectory;
+var repositories = builder.Configuration.GetSection("Repositories").Get<Dictionary<string, string>>();
+var firstRepoName = repositories?.Keys.FirstOrDefault() ?? "main";
+var repoPath = repositories?.TryGetValue(firstRepoName, out var path) == true 
+    ? Path.GetFullPath(Path.Combine(Environment.CurrentDirectory, path)) // AppContext.BaseDirectory
+    : Environment.CurrentDirectory;
 var provider = "sqlvec";
-var memoryPath = Path.Combine(repoRoot, ".memorycode");
+var memoryPath = Path.Combine(repoPath, ".memorycode");
 Directory.CreateDirectory(memoryPath);
 var connectionString = $"Data Source={Path.Combine(memoryPath, $"{provider}.db")}";
 builder.Services.AddCodeMemoryStorage(connectionString);
@@ -36,7 +41,8 @@ builder.Services.AddCodeMemoryStorage(connectionString);
 //   builder.Services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>>(sp => ...);
 builder.Services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>, NgramEmbeddingGenerator>();
 
-builder.Services.AddHostedService<IndexingService>();
+builder.Services.AddScoped<IndexingEngine>();
+builder.Services.AddHostedService<IndexingHostedService>();
 
 // Query services
 builder.Services.AddSingleton<ISemanticSearchService, SemanticSearchService>();
@@ -53,7 +59,7 @@ builder.Services.AddSingleton<CodeMemory.Mcp.Services.IEditContextService, CodeM
 // MCP server
 builder.Services.AddMcpServer()
     .WithHttpTransport(o => o.Stateless = true)
-    .WithToolsFromAssembly();
+    .WithToolsFromAssembly(typeof(CodeMemory.Mcp.McpTools).Assembly);
 
 // CORS — origins configured in appsettings.json:Cors:AllowedOrigins
 var corsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>();
@@ -79,7 +85,7 @@ app.MapGet("/health", () => Results.Ok(new
 {
     status = "healthy",
     timestamp = DateTimeOffset.UtcNow,
-    repo = repoRoot,
+    repo = repoPath,
     indexDb = Path.Combine(memoryPath, $"{provider}.db")
 }));
 

@@ -1,5 +1,4 @@
-using CodeMemory.Storage.Models;
-using CodeMemory.Storage.Services;
+using CodeMemory.Storage;
 
 namespace CodeMemory.Services.Query;
 
@@ -13,21 +12,13 @@ public sealed class RelationshipQueryService
     }
 
     public Task<RelationshipRecord?> GetByIdAsync(string id, CancellationToken ct = default)
-    {
-        return storage.GetRelationshipAsync(id, ct);
-    }
+        => storage.GetRelationshipAsync(id, ct);
 
-    public Task<IReadOnlyList<RelationshipRecord>> GetBySourceAsync(
-        string sourceSymbolId, CancellationToken ct = default)
-    {
-        return storage.GetRelationshipsBySourceAsync(sourceSymbolId, ct);
-    }
+    public Task<IReadOnlyList<RelationshipRecord>> GetBySourceAsync(string sourceSymbolId, CancellationToken ct = default)
+        => storage.GetRelationshipsBySourceAsync(sourceSymbolId, ct);
 
-    public Task<IReadOnlyList<RelationshipRecord>> GetByTargetAsync(
-        string targetSymbolId, CancellationToken ct = default)
-    {
-        return storage.GetRelationshipsByTargetAsync(targetSymbolId, ct);
-    }
+    public Task<IReadOnlyList<RelationshipRecord>> GetByTargetAsync(string targetSymbolId, CancellationToken ct = default)
+        => storage.GetRelationshipsByTargetAsync(targetSymbolId, ct);
 
     public async Task<IReadOnlyList<RelationshipRecord>> GetAllForSymbolAsync(
         string symbolId, CancellationToken ct = default)

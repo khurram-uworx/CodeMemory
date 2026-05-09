@@ -25,7 +25,7 @@ Instead of searching code, CodeMemory enables **understanding codebases**.
 
 ## What It Does
 
-CodeMemory indexes a repository and exposes 10 MCP tools:
+CodeMemory indexes a repository and exposes MCP tools:
 
 | Tool | What it gives you |
 |---|---|
@@ -44,9 +44,19 @@ All tools return structured JSON. No freeform prompts, no chat — pure determin
 
 ## Quick Start
 
+Define the MCP tool in your agent's configuration:
+
+```json
+  "CodeMemory": {
+    "type": "stdio",
+    "command": "dotnet",
+    "args": ["run", "--project", "src/CodeMemory.Mcp/CodeMemory.Mcp.csproj"]
+  }
+```
+
 ```bash
 # Build and run — zero config, no API keys needed
-dotnet run --project src/CodeMemory
+dotnet run --project src/CodeMemory.AspNet
 
 # Starts an MCP server at http://localhost:4792/api/mcp
 # Connect any MCP client to discover all 10 tools.

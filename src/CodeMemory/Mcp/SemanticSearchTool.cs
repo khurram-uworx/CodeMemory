@@ -1,5 +1,6 @@
 using CodeMemory.Indexing.Search;
 using CodeMemory.Mcp.Models;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
 using System.ComponentModel;
 

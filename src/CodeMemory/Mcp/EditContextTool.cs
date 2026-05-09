@@ -1,5 +1,6 @@
 using CodeMemory.Mcp.Models;
 using CodeMemory.Mcp.Services;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
 using System.ComponentModel;
 

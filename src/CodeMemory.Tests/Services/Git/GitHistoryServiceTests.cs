@@ -1,7 +1,5 @@
 using CodeMemory.Services.Git;
 using CodeMemory.Storage;
-using CodeMemory.Storage.Models;
-using CodeMemory.Storage.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Diagnostics;

@@ -1,6 +1,4 @@
 using CodeMemory.Storage;
-using CodeMemory.Storage.Models;
-using CodeMemory.Storage.Services;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace CodeMemory.Tests.Storage;

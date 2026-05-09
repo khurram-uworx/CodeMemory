@@ -1,5 +1,6 @@
 using CodeMemory.Indexing.Architecture;
-using CodeMemory.Storage.Services;
+using CodeMemory.Storage;
+using Microsoft.Extensions.Logging;
 
 namespace CodeMemory.Services.Architecture;
 
@@ -31,7 +32,7 @@ public sealed class ArchitectureService : IArchitectureService
     public async Task<ArchitectureOverview> GetOverviewAsync(
         string? path = null, CancellationToken ct = default)
     {
-        var allSymbols = new List<Storage.Models.SymbolRecord>();
+        var allSymbols = new List<SymbolRecord>();
 
         foreach (var kind in knownKinds)
         {

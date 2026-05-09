@@ -1,6 +1,4 @@
-using CodeMemory.Storage.Models;
-
-namespace CodeMemory.Storage.Services;
+namespace CodeMemory.Storage;
 
 public interface IStorageService
 {
@@ -29,4 +27,6 @@ public interface IStorageService
     Task<IReadOnlyList<RelationshipRecord>> GetRelationshipsByTargetAsync(string targetSymbolId, CancellationToken ct = default);
 
     Task<IReadOnlyList<ScoredChunk>> SearchChunksAsync(ReadOnlyMemory<float> embedding, int top = 10, CancellationToken ct = default);
+
+    Task ClearAllAsync(CancellationToken ct = default);
 }

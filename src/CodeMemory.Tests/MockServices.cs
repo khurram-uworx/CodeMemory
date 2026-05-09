@@ -2,8 +2,7 @@ using CodeMemory.Indexing.Architecture;
 using CodeMemory.Indexing.Git;
 using CodeMemory.Indexing.Graph;
 using CodeMemory.Indexing.Search;
-using CodeMemory.Storage.Models;
-using CodeMemory.Storage.Services;
+using CodeMemory.Storage;
 
 namespace CodeMemory.Tests;
 
@@ -68,6 +67,9 @@ sealed class MockStorageService : IStorageService
 
     public Task<IReadOnlyList<ScoredChunk>> SearchChunksAsync(ReadOnlyMemory<float> embedding, int top = 10, CancellationToken ct = default)
         => Task.FromResult<IReadOnlyList<ScoredChunk>>([]);
+
+    public Task ClearAllAsync(CancellationToken ct = default)
+        => Task.CompletedTask;
 }
 
 sealed class MockGraphService : IDependencyGraphService

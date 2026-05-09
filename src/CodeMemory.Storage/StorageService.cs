@@ -1,8 +1,7 @@
-using CodeMemory.Storage.Models;
 using Microsoft.Extensions.VectorData;
 using System.Linq.Expressions;
 
-namespace CodeMemory.Storage.Services;
+namespace CodeMemory.Storage;
 
 public sealed class StorageService : IStorageService, IDisposable
 {
@@ -129,22 +128,29 @@ public sealed class StorageService : IStorageService, IDisposable
         return results;
     }
 
+    public async Task ClearAllAsync(CancellationToken ct = default)
+    {
+        throwIfNotInitialized();
+        await Task.Run(() =>
+        {
+            var dbPath = vectorStore.GetType().GetField("_connectionString", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)?.GetValue(vectorStore) as string;
+            if (!string.IsNullOrEmpty(dbPath))
+            {
+                var filePath = dbPath!.Replace("Data Source=", "");
+                if (File.Exists(filePath))
+                    File.Delete(filePath);
+            }
+            symbols = null;
+            chunks = null;
+            relationships = null;
+            initialized = false;
+        }, ct);
+    }
+
     public void Dispose()
     {
         (symbols as IDisposable)?.Dispose();
         (chunks as IDisposable)?.Dispose();
         (relationships as IDisposable)?.Dispose();
-    }
-}
-
-static class AsyncEnumerableExtensions
-{
-    public static async Task<List<T>> ToListAsync<T>(
-        this IAsyncEnumerable<T> source, CancellationToken ct = default)
-    {
-        var result = new List<T>();
-        await foreach (var item in source.WithCancellation(ct))
-            result.Add(item);
-        return result;
     }
 }

@@ -1,5 +1,6 @@
 using CodeMemory.Indexing.Git;
-using CodeMemory.Storage.Services;
+using CodeMemory.Storage;
+using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 
@@ -17,7 +18,7 @@ public sealed class GitHistoryService : IGitHistoryService, IDisposable
     readonly Timer cleanupTimer;
 
     public GitHistoryService(IStorageService storage, ILogger<GitHistoryService> logger)
-        : this(storage, logger, Directory.GetCurrentDirectory())
+        : this(storage, logger, Environment.CurrentDirectory)
     {
     }
 

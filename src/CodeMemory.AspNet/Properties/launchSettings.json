@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "CodeMemory.AspNet": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "applicationUrl": "https://localhost:4793;http://localhost:4792"
+    }
+  }
+}

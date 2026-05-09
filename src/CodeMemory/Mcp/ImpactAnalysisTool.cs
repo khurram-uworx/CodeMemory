@@ -1,5 +1,6 @@
 using CodeMemory.Indexing.Architecture;
 using CodeMemory.Indexing.Graph;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
 using System.ComponentModel;
 

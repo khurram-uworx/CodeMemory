@@ -69,6 +69,18 @@ Use `docs/TASKS-TEMPLATE.md` for new task breakdowns. Each task must include: Pr
 
 ---
 
+## Project Structure
+
+Three projects:
+- **`CodeMemory`** — Pure library (`Microsoft.NET.Sdk`, `OutputType Library`). No ASP.NET dependency. Contains all service logic, MCP tool definitions, storage interfaces, and models.
+- **`CodeMemory.Storage`** — SQLite vector store provider. References `CodeMemory` for interfaces and model types.
+- **`CodeMemory.AspNet`** — ASP.NET Core host. Owns `Program.cs`, `EntryPoint.cs`, DI registration, MCP HTTP/SSE transport, `BackgroundService` lifecycle.
+
+Key rules:
+- Services with `BackgroundService` inheritance MUST live in `CodeMemory.AspNet`. Core indexing logic (`IndexingEngine`) lives in `CodeMemory` and is wrapped by `IndexingHostedService` in `CodeMemory.AspNet`.
+- MCP tool types live in `CodeMemory.Mcp`. Registration uses `WithToolsFromAssembly(typeof(McpTools).Assembly)` from `CodeMemory.AspNet.Program.cs`.
+- `IStorageService` interface and storage models (`SymbolRecord`, `ChunkRecord`, etc.) live in `CodeMemory.Storage.Services` / `CodeMemory.Storage.Models` namespaces but in the `CodeMemory` assembly.
+
 ## Summary
 
-When uncertain: use `Microsoft.Extensions.AI` abstractions, expose via MCP, avoid reinventing infrastructure, and prioritize repository understanding over feature expansion. Architecture intelligence services (`DependencyGraphService`, `ArchitectureService`, `ComponentClusteringService`, `GitHistoryService`) follow the same patterns — compose existing abstractions, register in `Program.cs`, expose via MCP tools.
+When uncertain: use `Microsoft.Extensions.AI` abstractions, expose via MCP, avoid reinventing infrastructure, and prioritize repository understanding over feature expansion. Architecture intelligence services (`DependencyGraphService`, `ArchitectureService`, `ComponentClusteringService`, `GitHistoryService`) follow the same patterns — compose existing abstractions, register in `CodeMemory.AspNet/Program.cs`, expose via MCP tools.

@@ -1,7 +1,6 @@
 using CodeMemory.Indexing.Graph;
-using CodeMemory.Indexing.Search;
 using CodeMemory.Mcp.Models;
-using CodeMemory.Storage.Services;
+using CodeMemory.Storage;
 
 namespace CodeMemory.Mcp.Services;
 
@@ -9,16 +8,11 @@ public sealed class EditContextService : IEditContextService
 {
     readonly IStorageService? storage;
     readonly IDependencyGraphService? graphService;
-    readonly ISemanticSearchService? searchService;
-    readonly ILogger<EditContextService> logger;
 
-    public EditContextService(ILogger<EditContextService> logger,
-        IServiceProvider serviceProvider)
+    public EditContextService(IServiceProvider serviceProvider)
     {
-        this.logger = logger;
         storage = serviceProvider.GetService<IStorageService>();
         graphService = serviceProvider.GetService<IDependencyGraphService>();
-        searchService = serviceProvider.GetService<ISemanticSearchService>();
     }
 
     public async Task<EditContext> GetEditContextAsync(

@@ -11,7 +11,7 @@ A repository intelligence substrate that indexes codebases into a queryable sema
 ```
 CodeMemory/
 ├── src/
-│   ├── CodeMemory/               # ASP.NET Core host + Background Service
+│   ├── CodeMemory/               # Core library (no ASP.NET dependency)
 │   │   ├── Indexing/
 │   │   │   ├── Architecture/     # IArchitectureService, IComponentClusteringService
 │   │   │   ├── Chunking/         # Semantic chunking (type-level + member-level)
@@ -23,15 +23,20 @@ CodeMemory/
 │   │   ├── Mcp/                  # MCP tool definitions + models + services
 │   │   │   ├── Models/
 │   │   │   └── Services/
-│   │   └── Services/
-│   │       ├── Architecture/     # ArchitectureService, ComponentClusteringService
-│   │       ├── Embedding/        # NgramEmbeddingGenerator
-│   │       ├── Git/              # GitHistoryService
-│   │       ├── Graph/            # DependencyGraphService
-│   │       └── Query/            # SymbolQueryService, RelationshipQueryService, SemanticSearchService
+│   │   ├── Services/
+│   │   │   ├── Architecture/     # ArchitectureService, ComponentClusteringService
+│   │   │   ├── Embedding/        # NgramEmbeddingGenerator
+│   │   │   ├── Git/              # GitHistoryService
+│   │   │   ├── Graph/            # DependencyGraphService
+│   │   │   └── Query/            # SymbolQueryService, RelationshipQueryService, SemanticSearchService
+│   │   └── Storage/              # IStorageService interface + storage model types
+│   │       ├── Models/           # SymbolRecord, ChunkRecord, RelationshipRecord, ScoredChunk
+│   │       └── Services/         # IStorageService interface
 │   ├── CodeMemory.Storage/       # SQLite vector store provider
-│   │   ├── Models/               # VectorStore record types
-│   │   └── Services/             # IStorageService + implementation
+│   ├── CodeMemory.AspNet/        # ASP.NET Core host + BackgroundService
+│   │   ├── Services/             # IndexingHostedService (BackgroundService wrapper)
+│   │   ├── Program.cs            # Host entry point, DI, MCP + HTTP setup
+│   │   └── appsettings.json
 │   └── CodeMemory.Tests/         # NUnit tests
 ├── docs/
 ├── .index/                       # Runtime SQLite database (auto-created)
@@ -44,20 +49,29 @@ CodeMemory/
 ## Dependency Layering
 
 ```
-CodeMemory (host)
-  ├── Microsoft.Extensions.AI.Abstractions    (IEmbeddingGenerator, IChatClient)
-  ├── System.Numerics.Tensors                 (TensorPrimitives.Norm for normalization)
-  ├── ModelContextProtocol.AspNetCore         (MCP server hosting)
-  ├── Microsoft.CodeAnalysis.CSharp           (Roslyn parsing)
-  └── CodeMemory.Storage                      (vector store provider)
+CodeMemory (library — no ASP.NET dep)
+  ├── Microsoft.Extensions.AI.Abstractions       (IEmbeddingGenerator, IChatClient)
+  ├── System.Numerics.Tensors                    (TensorPrimitives.Norm for normalization)
+  ├── ModelContextProtocol                       (MCP server types + tool attributes)
+  ├── Microsoft.CodeAnalysis.CSharp              (Roslyn parsing)
+  └── CodeMemory.Storage                         (vector store provider)
         └── Microsoft.SemanticKernel.Connectors.SqliteVec  (implements IVectorStore)
+
+CodeMemory.AspNet (ASP.NET host)
+  ├── CodeMemory                                 (core library)
+  ├── CodeMemory.Storage                         (vector store provider)
+  ├── ModelContextProtocol.AspNetCore            (MCP HTTP/SSE transport)
+  └── Microsoft.Extensions.AI.Abstractions       (embedding generator DI)
 ```
 
 Rules:
-- `CodeMemory` references only abstractions (`Microsoft.Extensions.AI.Abstractions`), never concrete AI SDKs
+- `CodeMemory` is a pure library (`Microsoft.NET.Sdk`, `OutputType Library`) with zero ASP.NET dependency
+- `CodeMemory.AspNet` owns all ASP.NET hosting concerns: `Program.cs`, DI registration, MCP HTTP transport, `BackgroundService` lifecycle
 - `CodeMemory.Storage` is the sole project with a concrete vector store driver; swappable (pgvector, Qdrant, etc.)
 - `IEmbeddingGenerator<string, Embedding<float>>` is user-provided via DI — optional; indexing proceeds without embeddings if absent
-- `CodeMemory.Tests` references both projects for integration testing
+- `IndexingEngine` (logic) lives in `CodeMemory.Services`; `IndexingHostedService` (BackgroundService wrapper) lives in `CodeMemory.AspNet.Services`
+- MCP tools live in `CodeMemory.Mcp`; registration uses `WithToolsFromAssembly(typeof(McpTools).Assembly)` from `CodeMemory.AspNet.Program.cs`
+- `CodeMemory.Tests` references all three projects for integration testing
 
 ---
 
@@ -67,7 +81,8 @@ Rules:
 
 ```
 Startup
-  └─ IndexingService.ExecuteAsync (BackgroundService)
+  └─ IndexingHostedService.ExecuteAsync (BackgroundService in CodeMemory.AspNet)
+       └─ IndexingEngine.RunIndexingAsync (logic in CodeMemory)
        ├─ storage.InitializeAsync()
        ├─ crawler.WalkAsync() — walks repo, respects .gitignore
        │
@@ -179,7 +194,7 @@ Query methods on `IStorageService`:
 
 ## MCP Tool Surface
 
-Ten tools auto-discovered via `AddMcpServer().WithToolsFromAssembly()`:
+Ten tools auto-discovered via `AddMcpServer().WithToolsFromAssembly(typeof(McpTools).Assembly)` from `CodeMemory.AspNet.Program.cs`:
 
 | Tool | Description |
 |---|---|

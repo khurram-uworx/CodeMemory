@@ -1,5 +1,6 @@
 using CodeMemory.Indexing.Graph;
-using CodeMemory.Storage.Services;
+using CodeMemory.Storage;
+using Microsoft.Extensions.Logging;
 
 namespace CodeMemory.Services.Graph;
 
@@ -21,7 +22,7 @@ public sealed class DependencyGraphService : IDependencyGraphService
         if (currentDepth >= maxDepth || !visited.Add(symbolId))
             return;
 
-        IReadOnlyList<Storage.Models.RelationshipRecord> rels;
+        IReadOnlyList<RelationshipRecord> rels;
 
         if (direction is "downstream" or "both")
         {
@@ -65,7 +66,7 @@ public sealed class DependencyGraphService : IDependencyGraphService
     {
         var result = new List<DependencyNode>();
 
-        async Task addRelationships(IReadOnlyList<Storage.Models.RelationshipRecord> rels)
+        async Task addRelationships(IReadOnlyList<RelationshipRecord> rels)
         {
             foreach (var rel in rels)
             {

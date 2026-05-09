@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using System.Collections.Frozen;
 using System.Runtime.CompilerServices;
 
@@ -18,7 +19,7 @@ public sealed class FileCrawler
         return Uri.UnescapeDataString(relative).Replace('/', Path.DirectorySeparatorChar);
     }
 
-    private static GitIgnoreParser loadGitIgnore(string rootPath)
+    static GitIgnoreParser loadGitIgnore(string rootPath)
     {
         var gitIgnorePath = Path.Combine(rootPath, ".gitignore");
         return GitIgnoreParser.Load(gitIgnorePath);

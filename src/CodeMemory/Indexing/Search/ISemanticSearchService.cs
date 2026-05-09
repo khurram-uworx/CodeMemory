@@ -1,4 +1,4 @@
-using CodeMemory.Storage.Models;
+using CodeMemory.Storage;
 
 namespace CodeMemory.Indexing.Search;
 

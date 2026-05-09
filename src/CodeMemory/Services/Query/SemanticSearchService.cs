@@ -1,7 +1,7 @@
 using CodeMemory.Indexing.Search;
-using CodeMemory.Storage.Models;
-using CodeMemory.Storage.Services;
+using CodeMemory.Storage;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging;
 using System.Numerics.Tensors;
 
 namespace CodeMemory.Services.Query;

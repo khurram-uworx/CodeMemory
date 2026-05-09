@@ -1,6 +1,6 @@
 using CodeMemory.Indexing.Graph;
 using CodeMemory.Mcp.Services;
-using CodeMemory.Storage.Services;
+using CodeMemory.Storage;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -93,7 +93,7 @@ public sealed class EditContextToolTests
                     s.AddSingleton<IEditContextService>(sp =>
                     {
                         var logger = sp.GetRequiredService<ILogger<EditContextService>>();
-                        return new EditContextService(logger, sp);
+                        return new EditContextService(sp);
                     });
                 });
             });

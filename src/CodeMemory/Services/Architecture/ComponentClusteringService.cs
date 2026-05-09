@@ -1,5 +1,6 @@
 using CodeMemory.Indexing.Architecture;
-using CodeMemory.Storage.Services;
+using CodeMemory.Storage;
+using Microsoft.Extensions.Logging;
 
 namespace CodeMemory.Services.Architecture;
 
@@ -109,7 +110,7 @@ public sealed class ComponentClusteringService : IComponentClusteringService
         double threshold = 0.3, CancellationToken ct = default)
     {
         threshold = Math.Clamp(threshold, 0.01, 1.0);
-        var symbolsPerKind = new List<Storage.Models.SymbolRecord>();
+        var symbolsPerKind = new List<SymbolRecord>();
         foreach (var kind in knownKinds)
         {
             var batch = await storage.GetSymbolsByKindAsync(kind, 100000, ct);
