@@ -4,7 +4,10 @@ using CodeMemory.Indexing.Extraction;
 using CodeMemory.Indexing.Parsing;
 using CodeMemory.Indexing.Search;
 using CodeMemory.Services;
+using CodeMemory.Services.Architecture;
 using CodeMemory.Services.Embedding;
+using CodeMemory.Services.Git;
+using CodeMemory.Services.Graph;
 using CodeMemory.Services.Query;
 using CodeMemory.Storage;
 using Microsoft.Extensions.AI;
@@ -15,13 +18,17 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddSingleton<FileCrawler>();
 builder.Services.AddSingleton<ILanguageParser, RoslynCSharpParser>();
 builder.Services.AddSingleton<RoslynSymbolExtractor>();
+builder.Services.AddSingleton<RoslynRelationshipExtractor>();
 builder.Services.AddSingleton<SemanticChunker>();
 
-// Storage layer (.index/codememory.db relative to repo root)
+// Storage layer (.memorycode/{provider}.db relative to repo root)
+// The provider name changes when swapping backends (e.g., "sqlvec", "pgvector").
+// Users can gitignore .memorycode/ to exclude index databases from version control.
 var repoRoot = Environment.CurrentDirectory;
-var indexPath = Path.Combine(repoRoot, ".index");
-Directory.CreateDirectory(indexPath);
-var connectionString = $"Data Source={Path.Combine(indexPath, "codememory.db")}";
+var provider = "sqlvec";
+var memoryPath = Path.Combine(repoRoot, ".memorycode");
+Directory.CreateDirectory(memoryPath);
+var connectionString = $"Data Source={Path.Combine(memoryPath, $"{provider}.db")}";
 builder.Services.AddCodeMemoryStorage(connectionString);
 
 // Built-in n-gram based embedding generator (zero config, no external deps)
@@ -35,6 +42,13 @@ builder.Services.AddHostedService<IndexingService>();
 builder.Services.AddSingleton<ISemanticSearchService, SemanticSearchService>();
 builder.Services.AddSingleton<SymbolQueryService>();
 builder.Services.AddSingleton<RelationshipQueryService>();
+
+// Architecture intelligence services
+builder.Services.AddSingleton<CodeMemory.Indexing.Graph.IDependencyGraphService, DependencyGraphService>();
+builder.Services.AddSingleton<CodeMemory.Indexing.Architecture.IArchitectureService, ArchitectureService>();
+builder.Services.AddSingleton<CodeMemory.Indexing.Architecture.IComponentClusteringService, ComponentClusteringService>();
+builder.Services.AddSingleton<CodeMemory.Indexing.Git.IGitHistoryService, GitHistoryService>();
+builder.Services.AddSingleton<CodeMemory.Mcp.Services.IEditContextService, CodeMemory.Mcp.Services.EditContextService>();
 
 // MCP server
 builder.Services.AddMcpServer()
@@ -66,7 +80,7 @@ app.MapGet("/health", () => Results.Ok(new
     status = "healthy",
     timestamp = DateTimeOffset.UtcNow,
     repo = repoRoot,
-    indexDb = Path.Combine(indexPath, "codememory.db")
+    indexDb = Path.Combine(memoryPath, $"{provider}.db")
 }));
 
 app.Run();

@@ -4,6 +4,7 @@ using CodeMemory.Indexing.Extraction;
 using CodeMemory.Indexing.Parsing;
 using CodeMemory.Storage.Models;
 using CodeMemory.Storage.Services;
+using Microsoft.CodeAnalysis;
 using Microsoft.Extensions.AI;
 using System.Numerics.Tensors;
 using System.Text.Json;
@@ -44,16 +45,29 @@ public sealed class IndexingService : BackgroundService
         };
     }
 
+    static RelationshipRecord mapToRelationshipRecord(Relationship r)
+    {
+        return new RelationshipRecord
+        {
+            Id = $"{r.SourceSymbolId}->{r.TargetSymbolId}:{r.RelationshipType}",
+            SourceSymbolId = r.SourceSymbolId,
+            TargetSymbolId = r.TargetSymbolId,
+            RelationshipType = r.RelationshipType,
+        };
+    }
+
     readonly ILogger<IndexingService> logger;
     readonly FileCrawler crawler;
     readonly ILanguageParser parser;
     readonly RoslynSymbolExtractor extractor;
+    readonly RoslynRelationshipExtractor relationshipExtractor;
     readonly SemanticChunker chunker;
     readonly IStorageService storage;
     readonly IEmbeddingGenerator<string, Embedding<float>>? embeddingGenerator;
 
     public IndexingService(ILogger<IndexingService> logger, FileCrawler crawler,
-        ILanguageParser parser, RoslynSymbolExtractor extractor, SemanticChunker chunker,
+        ILanguageParser parser, RoslynSymbolExtractor extractor,
+        RoslynRelationshipExtractor relationshipExtractor, SemanticChunker chunker,
         IStorageService storage,
         IEmbeddingGenerator<string, Embedding<float>>? embeddingGenerator = null)
     {
@@ -61,6 +75,7 @@ public sealed class IndexingService : BackgroundService
         this.crawler = crawler;
         this.parser = parser;
         this.extractor = extractor;
+        this.relationshipExtractor = relationshipExtractor;
         this.chunker = chunker;
         this.storage = storage;
         this.embeddingGenerator = embeddingGenerator;
@@ -81,7 +96,9 @@ public sealed class IndexingService : BackgroundService
             var chunkCount = 0;
 
             var allSymbolRecords = new List<SymbolRecord>();
+            var allSymbols = new List<Symbol>();
             var allChunks = new List<DocumentChunk>();
+            var syntaxTrees = new List<(SyntaxTree Tree, string FilePath)>();
 
             await foreach (var entry in crawler.WalkAsync(
                 Environment.CurrentDirectory,
@@ -100,6 +117,8 @@ public sealed class IndexingService : BackgroundService
                         symbolCount += symbols.Count;
 
                         allSymbolRecords.AddRange(symbols.Select(mapToSymbolRecord));
+                        allSymbols.AddRange(symbols);
+                        syntaxTrees.Add((syntaxTree, entry.Path));
 
                         var fileText = await File.ReadAllTextAsync(entry.Path, stoppingToken);
                         var chunks = chunker.ChunkAll(symbols, fileText, entry.Path, Language.CSharp);
@@ -117,6 +136,23 @@ public sealed class IndexingService : BackgroundService
             {
                 await storage.StoreSymbolsAsync(allSymbolRecords, stoppingToken);
                 logger.LogInformation("Stored {Count} symbol records", allSymbolRecords.Count);
+            }
+
+            if (allSymbols.Count > 0)
+            {
+                var allRelationships = new List<Relationship>();
+                foreach (var (tree, path) in syntaxTrees)
+                {
+                    var rels = relationshipExtractor.ExtractRelationships(tree, allSymbols, path);
+                    allRelationships.AddRange(rels);
+                }
+
+                if (allRelationships.Count > 0)
+                {
+                    await storage.StoreRelationshipsAsync(
+                        allRelationships.Select(mapToRelationshipRecord).ToList(), stoppingToken);
+                    logger.LogInformation("Stored {Count} relationship records", allRelationships.Count);
+                }
             }
 
             if (allChunks.Count > 0 && embeddingGenerator != null)
@@ -148,8 +184,8 @@ public sealed class IndexingService : BackgroundService
             }
 
             logger.LogInformation(
-                "Indexing complete — {Files} files, {Parsed} parsed, {Symbols} symbols, {Chunks} chunks",
-                fileCount, parsedCount, symbolCount, chunkCount);
+                "Indexing complete — {Files} files, {Parsed} parsed, {Symbols} symbols, {Chunks} chunks, {Relationships} relationships",
+                fileCount, parsedCount, symbolCount, chunkCount, allSymbols.Count > 0 ? "extracted" : "0");
 
             await Task.Delay(Timeout.Infinite, stoppingToken);
         }

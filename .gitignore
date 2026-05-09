@@ -322,6 +322,9 @@ MigrationBackup/
 # Ionide (cross platform F# VS Code tools) working folder
 .ionide/
 
+# CodeMemory index databases — add .memorycode/ to exclude from version control
+.memorycode/
+
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
 /src/Meridian/appsettings.Development.json
