@@ -74,7 +74,7 @@ public sealed class StorageServiceTests
         var storage = createStorageService(dbPath);
         await storage.InitializeAsync();
 
-        var embedding = new float[1536];
+        var embedding = new float[TestConstants.EmbeddingDimension];
 
         var chunk = new ChunkRecord
         {
@@ -98,7 +98,7 @@ public sealed class StorageServiceTests
         Assert.That(retrieved.Language, Is.EqualTo("CSharp"));
         Assert.That(retrieved.MetadataJson, Is.EqualTo("""{"key":"value"}"""));
         Assert.That(retrieved.Embedding, Is.Not.Null);
-        Assert.That(retrieved.Embedding.Value.Length, Is.EqualTo(1536));
+        Assert.That(retrieved.Embedding.Value.Length, Is.EqualTo(TestConstants.EmbeddingDimension));
     }
 
     [Test]
@@ -108,9 +108,9 @@ public sealed class StorageServiceTests
         var storage = createStorageService(dbPath);
         await storage.InitializeAsync();
 
-        var embedding = new float[1536];
+        var embedding = new float[TestConstants.EmbeddingDimension];
         for (int i = 0; i < embedding.Length; i++)
-            embedding[i] = i / 1536f;
+            embedding[i] = i / (float)TestConstants.EmbeddingDimension;
 
         var chunk = new ChunkRecord
         {
@@ -129,9 +129,9 @@ public sealed class StorageServiceTests
         var retrieved = await storage.GetChunkAsync("chunk_vec");
         Assert.That(retrieved, Is.Not.Null);
         Assert.That(retrieved!.Embedding, Is.Not.Null);
-        Assert.That(retrieved.Embedding.Value.Length, Is.EqualTo(1536));
+        Assert.That(retrieved.Embedding.Value.Length, Is.EqualTo(TestConstants.EmbeddingDimension));
         Assert.That(retrieved.Embedding.Value.Span[0], Is.EqualTo(0f).Within(0.001f));
-        Assert.That(retrieved.Embedding.Value.Span[100], Is.EqualTo(100f / 1536f).Within(0.001f));
+        Assert.That(retrieved.Embedding.Value.Span[100], Is.EqualTo(100f / (float)TestConstants.EmbeddingDimension).Within(0.001f));
     }
 
     [Test]
@@ -313,7 +313,7 @@ public sealed class StorageServiceTests
                 Id = "persistent_chunk", SymbolId = "persistent",
                 FilePath = "/src/Test.cs", Content = "persistent content",
                 Language = "CSharp", LineStart = 1, LineEnd = 10,
-                Embedding = new float[1536].AsMemory()
+                Embedding = new float[TestConstants.EmbeddingDimension].AsMemory()
             }
         ]);
         await storage1.StoreRelationshipsAsync([
@@ -402,13 +402,13 @@ public sealed class StorageServiceTests
         await storage.StoreChunksAsync([
             new ChunkRecord { Id = "c1", SymbolId = "A", FilePath = "/src/A.cs",
                 Content = "chunk1", Language = "CSharp", LineStart = 1, LineEnd = 10,
-                Embedding = new float[1536].AsMemory() },
+                Embedding = new float[TestConstants.EmbeddingDimension].AsMemory() },
             new ChunkRecord { Id = "c2", SymbolId = "B", FilePath = "/src/B.cs",
                 Content = "chunk2", Language = "CSharp", LineStart = 1, LineEnd = 10,
-                Embedding = new float[1536].AsMemory() },
+                Embedding = new float[TestConstants.EmbeddingDimension].AsMemory() },
             new ChunkRecord { Id = "c3", SymbolId = "A", FilePath = "/src/A.cs",
                 Content = "chunk3", Language = "CSharp", LineStart = 20, LineEnd = 30,
-                Embedding = new float[1536].AsMemory() }
+                Embedding = new float[TestConstants.EmbeddingDimension].AsMemory() }
         ]);
 
         var results = await storage.GetChunksBySymbolAsync("A");
@@ -457,9 +457,9 @@ public sealed class StorageServiceTests
         var storage = createStorageService(dbPath);
         await storage.InitializeAsync();
 
-        var near = new float[1536];
+        var near = new float[TestConstants.EmbeddingDimension];
         near[0] = 1.0f;
-        var far = new float[1536];
+        var far = new float[TestConstants.EmbeddingDimension];
         far[0] = -1.0f;
 
         await storage.StoreChunksAsync([
@@ -471,7 +471,7 @@ public sealed class StorageServiceTests
                 Embedding = far.AsMemory() }
         ]);
 
-        var query = new float[1536];
+        var query = new float[TestConstants.EmbeddingDimension];
         query[0] = 0.9f;
 
         var results = await storage.SearchChunksAsync(query.AsMemory(), top: 5);
@@ -492,7 +492,7 @@ public sealed class StorageServiceTests
         var chunks = new List<ChunkRecord>();
         for (int i = 0; i < 5; i++)
         {
-            var v = new float[1536];
+            var v = new float[TestConstants.EmbeddingDimension];
             v[0] = i / 10f;
             chunks.Add(new ChunkRecord
             {
@@ -508,7 +508,7 @@ public sealed class StorageServiceTests
         }
         await storage.StoreChunksAsync(chunks);
 
-        var query = new float[1536];
+        var query = new float[TestConstants.EmbeddingDimension];
         var results = await storage.SearchChunksAsync(query.AsMemory(), top: 3);
         Assert.That(results, Has.Count.EqualTo(3));
     }

@@ -43,9 +43,9 @@ public sealed class SemanticSearchServiceTests
         await storage.InitializeAsync();
 
         // Store two chunks with different embeddings
-        var vec1 = new float[1536];
+        var vec1 = new float[TestConstants.EmbeddingDimension];
         vec1[0] = 1.0f;
-        var vec2 = new float[1536];
+        var vec2 = new float[TestConstants.EmbeddingDimension];
         vec2[0] = -1.0f;
 
         await storage.StoreChunksAsync([
@@ -64,7 +64,7 @@ public sealed class SemanticSearchServiceTests
         ]);
 
         // Search with a vector close to vec1
-        var query = new float[1536];
+        var query = new float[TestConstants.EmbeddingDimension];
         query[0] = 0.9f;
 
         var results = await svc.SearchByVectorAsync(query.AsMemory(), top: 5);
@@ -81,11 +81,11 @@ public sealed class SemanticSearchServiceTests
         var (storage, svc) = createServices(dbPath);
         await storage.InitializeAsync();
 
-        var vec = new float[1536];
+        var vec = new float[TestConstants.EmbeddingDimension];
         var chunks = new List<ChunkRecord>();
         for (int i = 0; i < 5; i++)
         {
-            var v = new float[1536];
+            var v = new float[TestConstants.EmbeddingDimension];
             v[0] = i / 10f;
             chunks.Add(new ChunkRecord
             {

@@ -265,7 +265,7 @@ All tools return structured JSON. Tools with external service dependencies use `
 
 - Indexing: full re-index on each startup (incremental planned)
 - C# only for symbol extraction; other languages get file-level crawling only
-- Embedding dimension fixed at 1536
+- Embedding dimension is auto-detected from the registered IEmbeddingGenerator metadata (default 1536)
 - Relationship extraction is syntax-only — overloaded method references may be imprecise
 - Git analysis uses shell commands (acceptable per design, but slower than native library)
 

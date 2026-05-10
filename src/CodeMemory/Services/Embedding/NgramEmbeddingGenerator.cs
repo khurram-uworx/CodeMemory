@@ -10,7 +10,7 @@ public sealed partial class NgramEmbeddingGenerator : IEmbeddingGenerator<string
     const int HashesPerNgram = 4;
     static readonly int[] NgramLengths = [2, 3, 4];
 
-    static readonly EmbeddingGeneratorMetadata Metadata = new("ngram-v1", null, null);
+    static readonly EmbeddingGeneratorMetadata Metadata = new("ngram-v1", defaultModelDimensions: 1536);
 
     public Task<GeneratedEmbeddings<Embedding<float>>> GenerateAsync(
         IEnumerable<string> values,
@@ -29,10 +29,10 @@ public sealed partial class NgramEmbeddingGenerator : IEmbeddingGenerator<string
         var embedding = new float[Dimension];
 
         foreach (var len in NgramLengths)
-        {
             for (int i = 0; i <= cleaned.Length - len; i++)
             {
                 var hash = hashNgram(cleaned, i, len);
+
                 for (int h = 0; h < HashesPerNgram; h++)
                 {
                     var combined = HashCode.Combine(hash, h);
@@ -40,7 +40,6 @@ public sealed partial class NgramEmbeddingGenerator : IEmbeddingGenerator<string
                     embedding[bucket] += (combined & 1) == 0 ? 1f : -1f;
                 }
             }
-        }
 
         var norm = MathF.Sqrt(TensorPrimitives.SumOfSquares(embedding));
         if (norm > 0)
@@ -52,8 +51,10 @@ public sealed partial class NgramEmbeddingGenerator : IEmbeddingGenerator<string
     static int hashNgram(string text, int start, int length)
     {
         var hash = length;
+
         for (int i = 0; i < length; i++)
             hash = hash * 31 + text[start + i];
+
         return hash;
     }
 
@@ -62,8 +63,7 @@ public sealed partial class NgramEmbeddingGenerator : IEmbeddingGenerator<string
         serviceType?.IsInstanceOfType(this) == true ? this : null;
 
     public void Dispose()
-    {
-    }
+    { }
 
     [GeneratedRegex(@"\s+")]
     private static partial Regex WhitespaceRegex();

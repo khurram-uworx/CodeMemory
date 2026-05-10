@@ -79,6 +79,8 @@ public sealed class ChunkRecord
     [VectorStoreData(StorageName = "metadata")]
     public string? MetadataJson { get; set; }
 
+    // Dimension is overridden at runtime via VectorSchema.CreateChunkDefinition.
+    // This attribute provides the compile-time default (1536) as a fallback.
     [VectorStoreVector(1536, DistanceFunction = DistanceFunction.CosineDistance)]
     public ReadOnlyMemory<float>? Embedding { get; set; }
 }
