@@ -55,6 +55,7 @@ Service collection shape — should each repo get its own instance of `Dependenc
 - Connection string per repo: `Data Source={repoRoot}/.memorycode/sqlvec.db`
 - Directory must be created before `AddSqliteVectorStore` is called
 - The `Repositories` config section is already parsed by `IndexingHostedService` — reuse the same pattern but at DI registration time
+- **SDK behavior confirmed**: `MapMcp` uses `endpoints.MapGroup(pattern)` (endpoint routing, not middleware branching). In stateless mode, the `StreamableHttpHandler` resolves per-request services from `context.RequestServices`, not the root provider. This confirms that swapping `RequestServices` via middleware will correctly inject per-repo services into the MCP handler.
 
 ### Suggested implementation path
 
@@ -105,7 +106,9 @@ Add a fallback to the root `IServiceProvider` in `RepoScopedServices.GetService(
 
 ### Why this exists
 
-`RepoScopedServices.GetService()` returns `null` for any type not in its hardcoded switch list (`nameof(IStorageService)`, `nameof(ISemanticSearchService)`, etc.). When the middleware swaps `context.RequestServices` to `RepoScopedServices`, the MCP framework tries to resolve loggers, `IOptions<McpServerOptions>`, and other DI infrastructure through this provider. Returning `null` for those breaks the request pipeline.
+`RepoScopedServices.GetService()` returns `null` for any type not in its hardcoded switch list (`nameof(IStorageService)`, `nameof(ISemanticSearchService)`, etc.). When the middleware swaps `context.RequestServices` to `RepoScopedServices`, the MCP framework tries to resolve loggers, `IOptions<McpServerOptions>`, and other DI infrastructure through this provider.
+
+**This is not a nice-to-have — it's a hard requirement.** The MCP SDK's `StreamableHttpHandler` receives `ILoggerFactory` and `IOptions<McpServerOptions>` via constructor injection (root provider) but creates the per-request `McpServer` using `context.RequestServices`. Without the fallthrough, `McpServer.Create()` will fail to resolve its dependencies and throw, breaking every MCP request.
 
 ### Scope
 
@@ -152,16 +155,20 @@ Create a middleware (or update `RepoScopedMiddleware`) that extracts the repo na
 
 ### Why this exists
 
-`app.MapMcp("/api/mcp")` binds to a fixed path. To support `/api/mcp/repo1` and `/api/mcp/repo2`, we need either multiple `MapMcp` calls (clunky, requires knowing all repos at startup) or a middleware that detects the repo from the URL segment and strips it from the path.
+`app.MapMcp("/api/mcp")` binds to a fixed path using `endpoints.MapGroup(pattern)` (endpoint routing). To support `/api/mcp/repo1` and `/api/mcp/repo2`, we need either multiple `MapMcp` calls (clunky, requires knowing all repos at startup) or a middleware that detects the repo from the URL segment and rewrites the path before endpoint routing matches it.
 
 ### Decision required
 
 Should the middleware handle path rewriting internally, or should `Program.cs` map multiple MCP endpoints? **Recommended: single middleware with path rewrite** — simpler, dynamic, no restart needed if repos change.
 
+### How path rewrite works with `MapGroup` endpoint routing
+
+`MapMcp` uses `endpoints.MapGroup(pattern)` (NOT the old `Map()` middleware branching). `MapGroup` is an **endpoint routing** concept — the pattern is a prefix for route matching, not path stripping. Middleware registered via `app.Use*()` runs **before** endpoint routing, so modifying `HttpContext.Request.Path` in middleware is seen by the routing system. This is the same pattern used by `UsePathBase` and URL Rewriting Middleware.
+
 ### Scope
 
 - Create `RepoNameDetectionMiddleware` (or extend `RepoScopedMiddleware`)
-- Match path pattern `/api/mcp/{repoName}` (regex or `PathString` segment check)
+- Match path pattern `/api/mcp/{repoName}` (simple path segment check)
 - Validate `repoName` against configured repositories (from `RepositoriesConfig`), return 404 if unknown
 - Set `HttpContext.Items["RepoName"]` to the extracted name
 - Rewrite `HttpContext.Request.Path` from `/api/mcp/repo1` to `/api/mcp`
@@ -171,9 +178,10 @@ Should the middleware handle path rewriting internally, or should `Program.cs` m
 ### Constraints
 
 - Must not break existing `/api/mcp` calls (no repo segment → default behavior)
-- Must handle both `/api/mcp/repo1` and `/api/mcp/repo1/tools/list` (sub-paths)
-- Must also handle `/api/mcp/repo1/sse` if SSE mode is used
+- Only `POST /api/mcp` is registered in stateless mode — tool names are in the JSON-RPC body, NOT in the URL. No sub-paths like `/tools/list` exist.
 - Case-insensitive repo name matching
+- The `Repositories` config must be accessible to this middleware. Inject `IConfiguration` or resolve it from the `IServiceProvider` available in middleware constructor.
+- **Middleware order**: `Use*` middleware runs before endpoint routing. Our path rewrite happens before `MapGroup` pattern matching, so routing sees the rewritten `/api/mcp` path — this is by design.
 
 ### Suggested implementation path
 
@@ -186,11 +194,11 @@ app.MapMcp("/api/mcp");        // existing — path already stripped
 
 ### Acceptance criteria
 
-- `GET /api/mcp/repo1/tools/list` → `HttpContext.Items["RepoName"]` = `"repo1"`, path rewritten to `/api/mcp/tools/list`
-- `POST /api/mcp/repo1` → path rewritten to `/api/mcp`, repo name set
-- `GET /api/mcp` (no repo) → path unchanged, `Items["RepoName"]` not set, works as today
-- `GET /api/mcp/unknown-repo` → 404
+- `POST /api/mcp/repo1` → `HttpContext.Items["RepoName"]` = `"repo1"`, path rewritten to `/api/mcp`, request forwarded to MCP handler
+- `POST /api/mcp` (no repo) → path unchanged, `Items["RepoName"]` not set, works as today
+- `POST /api/mcp/unknown-repo` → 404 before reaching MCP handler
 - All MCP tools (ping, semantic_search, etc.) work through the repo-prefixed URL
+- The rewritten path is only used for endpoint routing; `StreamableHttpHandler` reads the JSON-RPC body and headers, not `Request.Path`
 
 ### Files likely involved
 
@@ -226,6 +234,8 @@ All the scaffolding is built but `Program.cs` still uses the old single-repo pat
 
 - Middleware order matters: detection must run before provider swap, which must run before MCP
 - `app.MapMcp("/api/mcp")` must not change — still handles the underlying request after path rewrite
+- **SDK behavior**: In stateless mode, `StreamableHttpHandler.CreateSessionAsync` uses `context.RequestServices` (our swapped provider) for per-request service resolution. This means `RepoScopedServices` MUST have the root-provider fallthrough (Task 2) working or `McpServer.Create()` will fail to resolve infrastructure dependencies.
+- **Middleware vs endpoint routing**: `Use*` middleware runs before endpoint routing. Registration order is `UseRepoNameDetection` → `UseRepoScopedMcp` → `MapMcp`. The `MapMcp` call registers routes, it does NOT insert middleware — the endpoint routing middleware runs implicitly at the end of the pipeline and matches against whatever `Request.Path` is at that point.
 
 ### Acceptance criteria
 
@@ -244,7 +254,7 @@ All the scaffolding is built but `Program.cs` still uses the old single-repo pat
 
 ---
 
-## Task 5: Integration Tests
+## Task 5: Route Existing Tests Through Multi-Repro Pipeline
 
 ### Priority
 
@@ -252,52 +262,57 @@ Medium
 
 ### Goal
 
-Write integration tests that verify the full multi-repo flow: two repos configured, independent MCP calls routed to correct service instances, correct data isolation.
+Instead of writing new integration tests, reuse the existing MCP tool test suite to validate the multi-repo routing. Add a `"test"` repo entry pointing to `.` (relative path), then update all existing test URLs from `/api/mcp` to `/api/mcp/test`. This exercises the URL detection middleware, path rewrite, provider swap, and keyed DI resolution through every existing test.
 
-### Why this exists
+### Why this approach
 
-The multi-repo feature spans middleware, DI, and service behavior. Unit-level tests miss the cross-cutting wiring. Integration tests catch routing, provider swap, and data isolation bugs.
+Less new code, more coverage. The existing testsmock services at the non-keyed DI layer and call `POST /api/mcp`. By routing them through `/api/mcp/test`, every test validates the full multi-repo pipeline. The key challenge is that `RepoScopedServices` resolves via `GetKeyedService<T>(repoName)`, but mocks are registered as non-keyed singletons via `ConfigureServices`. This is solved by a per-type fallback: try keyed first, then non-keyed, then root fallback.
 
 ### Scope
 
-- Create `MultiRepoTests.cs` in `src/CodeMemory.Tests`
-- Use `WebApplicationFactory<Program>` with a custom `appsettings.json` that defines two repos pointing at temp directories
-- Seed each repo with different data (different symbols/files)
-- Test:
-  - `GET /api/mcp/repo1/semantic_search?query=foo` returns only repo1's results
-  - `GET /api/mcp/repo2/semantic_search?query=foo` returns only repo2's results
-  - `GET /api/mcp/repo1/get_architecture_overview` returns repo1's components
-  - `GET /api/mcp/repo2/get_architecture_overview` returns repo2's components
-  - `GET /api/mcp` (no repo) works with default behavior
-  - `GET /api/mcp/nonexistent` returns 404
-- Mock or disable indexing for test speed (`IndexingHostedService` can be suppressed via config with 0 repos)
+1. **Modify** `RepoScopedServices.GetService()` — per known type, try `GetKeyedService<T>(repoName)` first, then `GetService<T>()` as fallback, so non-keyed mocks resolve correctly.
+2. **Test config** — no `appsettings.json` needed in the test project. Use `WebApplicationFactory.WithWebHostBuilder(b => b.UseSetting("Repositories:test", "."))` to add the test repo. The `IndexingHostedService` will try to index the current directory — disable it by adding a `UseSetting` to remove or skip it, or accept the indexing overhead (test output dir is fast/empty).
+3. **Update all MCP test URLs** — every `POST /api/mcp` in `src/CodeMemory.Tests/Mcp/*.cs` becomes `POST /api/mcp/test`.
+4. **No new test files** — the existing suite becomes the multi-repo validation.
+5. **Separate data isolation tests** — optional: a small `MultiRepoTests.cs` can be added later if true 2-repo isolation coverage is needed, but the primary validation comes from the existing suite passing through the new pipeline.
 
-### Suggested implementation path
+### Implementation details
 
 ```csharp
-[Test]
-public async Task Repo1_and_Repo2_have_independent_data()
-{
-    await using var factory = new WebApplicationFactory<Program>()
-        .WithWebHostBuilder(b => b.UseSetting("Repositories:repo1", path1)
-                                   .UseSetting("Repositories:repo2", path2));
-    var client = factory.CreateClient();
-    // ... seed repo1 with symbol "Foo", repo2 with symbol "Bar" ...
-    // ... call MCP tools for each and verify isolation ...
-}
+// In RepoScopedServices.GetService():
+nameof(IDependencyGraphService) => root.GetKeyedService<IDependencyGraphService>(repoName)
+    ?? root.GetService<IDependencyGraphService>(),
+
+// In each test's WebApplicationFactory setup:
+await using var factory = new WebApplicationFactory<Program>()
+    .WithWebHostBuilder(b =>
+    {
+        b.UseSetting("Repositories:test", ".");
+        b.ConfigureServices(s =>
+        {
+            // suppress IndexingHostedService for test speed
+            var hd = s.SingleOrDefault(d => d.ServiceType == typeof(Microsoft.Extensions.Hosting.IHostedService)
+                && d.ImplementationType?.Name == "IndexingHostedService");
+            if (hd != null) s.Remove(hd);
+            s.AddSingleton<IDependencyGraphService>(new MockDependencyGraphService());
+        });
+    });
 ```
 
 ### Acceptance criteria
 
-- All tests pass
-- Data isolation is confirmed: repo1's data never leaks into repo2's responses
-- Tests run in CI without external dependencies
-- `IndexingHostedService` can be cheaply skipped in test (e.g., empty repos config or test hook)
+- All existing MCP tool tests pass when URLs are changed to `/api/mcp/test`
+- `RepoScopedServices` correctly resolves non-keyed mocks (fallback works)
+- `GET /api/mcp` (no repo) still works for the `McpInfrastructureTests`
+- `GET /api/mcp/nonexistent` returns 404 (test added)
+- Indexing is suppressed in tests (no slow file crawling)
+- No regressions in unit tests (non-MCP tests unchanged)
 
 ### Files likely involved
 
-- `src/CodeMemory.Tests/MultiRepoTests.cs` (new)
-- `src/CodeMemory.Tests/TestConfigs/` (optional, for shared appsettings.json)
+- `src/CodeMemory.AspNet/Configuration/RepoScopedServices.cs` (non-keyed fallback)
+- `src/CodeMemory.Tests/Mcp/*.cs` (URL path update in all 9 files)
+- `src/CodeMemory.Tests/Mcp/McpInfrastructureTests.cs` (add 404 test, health check stays at `/health`)
 
 ---
 
@@ -316,6 +331,21 @@ public async Task Repo1_and_Repo2_have_independent_data()
 
 ---
 
+## SDK Research Findings (MCP C# SDK v1.1 +)
+
+Add these to your context when working on any task. These were confirmed by reading the `ModelContextProtocol.AspNetCore` source at commit `89fcf3f8`.
+
+| Fact | Detail |
+|------|--------|
+| `MapMcp` uses `MapGroup` | `endpoints.MapGroup(pattern)` — endpoint routing, NOT middleware `Map()`. No path stripping. |
+| Stateless mode routes | Only `POST ""` (i.e., `POST /api/mcp`). No SSE, no `GET`, no `DELETE`, no `/message`. Tool names are in JSON-RPC body, NOT URL. |
+| `RequestServices` in stateless | `StreamableHttpHandler.CreateSessionAsync` assigns `mcpServerServices = context.RequestServices`. Our `RepoScopedServices` swap is consumed here. |
+| `Request.Path` unused by handler | `HandlePostRequestAsync` reads headers, body, `User`, and `RequestServices` only. Path is irrelevant to handler logic. |
+| Infrastructure DI must resolve | `McpServer.Create(transport, options, loggerFactory, mcpServerServices)` receives `mcpServerServices` as its service provider. `ILogger<T>`, `IOptions<T>` etc. must resolve through `RepoScopedServices` or the request pipeline breaks. |
+| Constructor vs per-request | `StreamableHttpHandler` constructor (singleton) uses root `IServiceProvider` for `ILoggerFactory`, `IOptions<>`. Per-request `McpServer` uses `context.RequestServices`. Both paths must work. |
+
+---
+
 ## Final Checklist
 
 - [ ] every task has a clear owner-sized scope
@@ -324,3 +354,4 @@ public async Task Repo1_and_Repo2_have_independent_data()
 - [ ] likely files are listed to reduce agent search time
 - [ ] execution order reflects real dependencies (A → B)
 - [ ] Tasks 1-3 are independent and parallelizable
+- [ ] SDK findings table is in agent context
