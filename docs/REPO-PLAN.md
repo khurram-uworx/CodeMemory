@@ -2,30 +2,60 @@
 
 ## Purpose
 
-This plan breaks the multi-repo feature (detect repo name from `/api/mcp/{repoName}`, route to per-repo keyed services) into concrete, assignable tasks for coding agents.
+This plan breaks the multi-repo feature (detect repo name from `/api/mcp/{repoName}`, route to per-repo storage) into concrete, assignable tasks for coding agents.
 
-See `ARCHITECTURE.md` for the overall system architecture. The existing multi-repo scaffolding (`RepoScopedMiddleware`, `RepoScopedServices`, `MultiRepoServiceFactory`, `RepoContextAccessor`) was built in a prior pass but was never wired into `Program.cs` — the app still uses a single-repo path.
+## Design Summary
+
+**Approach**: `StorageServiceRouter` + `IRepoContextAccessor` (AsyncLocal-based) + thin middleware.
+
+**Why not keyed DI?** The prior approach used keyed DI + `RepoScopedServices` + `RequestServices` swap middleware. That was fragile: every MCP SDK infrastructure dependency (`ILogger<T>`, `IOptions<T>`) had to resolve through a hardcoded switch fallthrough or the request pipeline broke. Adding new services required updating both keyed registrations and the fallthrough switch. Tests required non-keyed fallback hacks.
+
+**This approach avoids the DI swap entirely** by keeping a single non-keyed `IStorageService` that delegates to per-repo storage via ambient context (`IRepoContextAccessor.CurrentRepoName`). All 7 dependent services (`DependencyGraphService`, `ArchitectureService`, etc.) remain non-keyed — they just depend on `IStorageService` which now routes correctly. No `RepoScopedServices`, no keyed DI, no fallthrough bugs.
+
+```
+ ┌─────────┐  repo1.memorycode/sqlvec.db
+ │  Registry│─repo2─→ StorageService(repo2)
+ │  (dict)  │─repo3─→ StorageService(repo3)
+ └────┬─────┘
+      │lookup by repoName
+ ┌────▼──────────┐     ┌──────────────────────┐
+ │StorageService │     │ IRpoContextAccessor   │
+ │Router         │◄────│ (AsyncLocal repoName) │
+ │(IStorageService)    └─────────┬────────────┘
+ └──────────────┘               │set by
+                                │
+ ┌──────────────────────────────▼───┐
+ │ RepoRoutingMiddleware (AspNet)    │
+ │ extracts /api/mcp/{repoName}     │
+ │ rewrites path → /api/mcp         │
+ │ sets IRepoContextAccessor         │
+ └──────────────────────────────────┘
+```
+
+**Key insight**: `IStorageService` is the **only** service that differs per repo. All other services (`DependencyGraphService`, `ArchitectureService`, `GitHistoryService`, etc.) operate on whatever `IStorageService` gives them — they don't need to be per-repo instances. The `GitHistoryService` has a `repoRoot` field, but that comes from config, not DI keying.
+
+**MCP SDK compatibility**: In stateless mode, the SDK uses `HttpContext.RequestServices` directly (no scope creation — `ScopeRequests` is `false`). We do NOT swap `RequestServices`. The MCP SDK resolves `ILogger<T>`, `IOptions<T>`, etc. from the standard ASP.NET request pipeline — no fallthrough code needed.
 
 ---
 
-## Suggested Execution Order
+## Tasks
 
-1. **Task 1** — Program.cs: keyed DI registration for per-repo services (decision gate: service shape)
-2. **Task 2** — RepoScopedServices: add root-provider fallthrough (prerequisite for middleware)
-3. **Task 3** — URL-based repo detection middleware + path rewrite
-4. **Task 4** — Wire everything in Program.cs and remove single-repo path
-5. **Task 5** — Integration tests
+1. **Task 1** — `StorageServiceRegistry` + `StorageServiceRouter` + `IRepoContextAccessor`
+2. **Task 2** — URL-based repo detection middleware (with path rewrite)
+3. **Task 3** — Wire multi-repo in Program.cs + remove old scaffolding
+4. **Task 4** — Tests
+5. **Task 5** — Update public docs (ARCHITECTURE.md, README.md, AGENTS.md)
 
 ## Coordination Notes
 
-- Tasks 1-3 can be done in parallel by independent agents (they touch different files).
-- Task 4 must wait for Tasks 1-3 to complete.
-- Task 5 can start as soon as Task 4 is done, or earlier if tests are written against known interfaces.
-- `Program.cs` is the merge-conflict hotspot — all wiring tasks converge there.
+- Tasks 1-2 can be done in parallel (different files).
+- Task 3 must wait for Tasks 1-2.
+- Task 4 can start after Task 3 is testable (depends on full pipeline).
+- Task 5 is last — run after all other tasks are merged.
 
 ---
 
-## Task 1: Keyed DI Registration in Program.cs
+## Task 1: StorageServiceRegistry + StorageServiceRouter + IRepoContextAccessor
 
 ### Priority
 
@@ -33,218 +63,282 @@ High
 
 ### Goal
 
-Register `IStorageService` and all dependent services as **keyed singletons** per repo name, so `RepoScopedServices` can resolve them via `GetKeyedService<T>(repoName)`.
+Create the infrastructure for per-repo storage routing: a registry of per-repo `IStorageService` instances, a router that delegates based on ambient repo context, and an `AsyncLocal`-based context accessor.
 
 ### Why this exists
 
-Currently `Program.cs:37` calls `builder.Services.AddCodeMemoryStorage(connectionString)` which registers a single, non-keyed `IStorageService`. For multi-repo, we need one `IStorageService` instance per repo (each pointing at a different SQLite DB in `.memorycode/`). All services that depend on it (`DependencyGraphService`, `ArchitectureService`, etc.) must also be keyed per repo.
-
-### Decision required
-
-Service collection shape — should each repo get its own instance of `DependencyGraphService`, `ArchitectureService`, etc., or should they be shared singletons that rely on a keyed `IStorageService`? **Recommended: keyed per repo** — it's cleaner, avoids state leakage (e.g., `GitHistoryService` has a per-repo `repoRoot` field and cache), and maps 1:1 to the `RepoScopedServices` pattern.
+Currently `Program.cs:37` calls `builder.Services.AddCodeMemoryStorage(connectionString)` which registers a single `IStorageService`. For multi-repo, we need one `IStorageService` per repo (each pointing at a different SQLite DB). The router pattern lets all other services stay non-keyed while `IStorageService` correctly delegates per request.
 
 ### Scope
 
-- Refactor the storage registration loop to create per-repo `IStorageService` using `AddKeyedSingleton`
-- Register `ISemanticSearchService`, `SymbolQueryService`, `RelationshipQueryService`, `IDependencyGraphService`, `IArchitectureService`, `IComponentClusteringService`, `IGitHistoryService`, `IEditContextService` as keyed singletons with the same repo key
-- `NgramEmbeddingGenerator` is repo-agnostic — keep as non-keyed singleton
-- Keep `MultiRepoServiceFactory` as a fallback registry (or remove if no longer needed — verify callers)
+1. **`IRepoContextAccessor` / `RepoContextAccessor`** — change to `AsyncLocal<string?>` based ambient context so it can be a singleton and work across async boundaries without DI scopes. Already exists in `src/CodeMemory.AspNet/Configuration/RepoContextAccessor.cs` — replace the simple property fields with `AsyncLocal<string?>`.
+
+2. **`IStorageServiceRegistry`** — new interface in `CodeMemory.AspNet`:
+   ```csharp
+   public interface IStorageServiceRegistry
+   {
+       void Register(string repoName, IStorageService storage);
+       IStorageService GetStorage(string? repoName);
+   }
+   ```
+   - `GetStorage(null)` returns the first/only registered storage (for single-repo fallback).
+   - `GetStorage("repo1")` returns the named storage or throws.
+   - Thread-safe (`ConcurrentDictionary`).
+
+3. **`StorageServiceRouter`** — new class in `CodeMemory.AspNet`, implements `IStorageService`:
+   ```csharp
+   public sealed class StorageServiceRouter : IStorageService
+   {
+       readonly IStorageServiceRegistry registry;
+       readonly IRepoContextAccessor repoContext;
+
+       IStorageService GetStorage() =>
+           registry.GetStorage(repoContext.CurrentRepoName);
+
+       // delegates all IStorageService methods to GetStorage()
+   }
+   ```
+   Delegates every `IStorageService` method — there are ~15 methods. Use a private helper `GetStorage()` called at the top of each method.
+
+4. **Remove `MultiRepoServiceFactory`** — superseded by `IStorageServiceRegistry`. Check for any remaining callers first (grep for `IMultiRepoServiceFactory`).
 
 ### Constraints
 
-- Connection string per repo: `Data Source={repoRoot}/.memorycode/sqlvec.db`
-- Directory must be created before `AddSqliteVectorStore` is called
-- The `Repositories` config section is already parsed by `IndexingHostedService` — reuse the same pattern but at DI registration time
+- `IRepoContextAccessor` must be a singleton (`AsyncLocal` naturally supports this).
+- `StorageServiceRouter` must be a singleton (same lifetime as other `IStorageService` registrations).
+- `IStorageServiceRegistry` must be thread-safe (background indexing and HTTP requests can run concurrently).
+- `GetStorage(null)` must return the single storage when only one is registered (for backward compat with single-repo mode).
+- `GetStorage(null)` should prefer "default" key if present, else first registered, else throw clear message.
 
-### Suggested implementation path
+### Files involved
+
+- `src/CodeMemory.AspNet/Configuration/RepoContextAccessor.cs` (modify — AsyncLocal)
+- `src/CodeMemory.AspNet/Configuration/StorageServiceRegistry.cs` (new)
+- `src/CodeMemory.AspNet/Configuration/StorageServiceRouter.cs` (new)
+- `src/CodeMemory.AspNet/Configuration/MultiRepoServiceFactory.cs` (remove)
+
+---
+
+## Task 2: URL-Based Repo Detection Middleware
+
+### Priority
+
+High
+
+### Goal
+
+Create a middleware that extracts the repo name from `/api/mcp/{repoName}`, validates it, rewrites the path to `/api/mcp` (for endpoint routing), and sets `IRepoContextAccessor.CurrentRepoName`.
+
+### Why this exists
+
+`MapMcp("/api/mcp")` registers endpoints at that exact prefix using `MapGroup`. A request to `POST /api/mcp/repo1` does NOT match `POST ""` on the `/api/mcp` group — the trailing `repo1` segment causes a routing mismatch. The middleware rewrites the path so the MCP endpoint matches, while capturing the repo name in ambient context for `StorageServiceRouter`.
+
+### What changed from the old plan
+
+The old plan had two middlewares — one for detection + path rewrite, another for `RequestServices` swap. The swap middleware is gone. This single middleware:
+- Does NOT swap `HttpContext.RequestServices` (no `RepoScopedServices`)
+- Does NOT use `HttpContext.Items` (uses `IRepoContextAccessor` directly)
+- ONLY does detection + validation + path rewrite + ambient context
+
+### Scope
+
+1. Create `RepoRoutingMiddleware` (replace/extend existing `RepoScopedMiddleware`).
+2. Match URL pattern `/api/mcp/{repoName}` — simple path segment check after `/api/mcp/`.
+3. Validate `repoName` against configured repositories, return 404 if unknown.
+4. Set `IRepoContextAccessor.CurrentRepoName` to the extracted name.
+5. Rewrite `HttpContext.Request.Path` from `/api/mcp/repo1` to `/api/mcp`.
+6. Clean up `IRepoContextAccessor.CurrentRepoName` in `finally` block.
+7. Extension method `UseRepoRouting()` for `Program.cs`.
+8. Remove `UseRepoScopedMcp` extension and `RepoScopedMiddleware` class (superseded).
+
+### Constraints
+
+- Must not break `/api/mcp` without repo segment — pass through unchanged, current state of `IRepoContextAccessor` preserved.
+- Only `POST /api/mcp` is registered in stateless mode — tool names are in JSON-RPC body, not URL.
+- Case-insensitive repo name matching.
+- `IRepoContextAccessor` is injected in middleware constructor (it's a singleton).
+- The `Repositories` config must be accessible — inject `IStorageServiceRegistry` and call its `GetStorage(name)` to validate.
+- `IRepoContextAccessor` cleanup in `finally` is critical to prevent context leaking across requests.
+
+### Implementation sketch
+
+```csharp
+public sealed class RepoRoutingMiddleware
+{
+    readonly RequestDelegate next;
+    readonly IRepoContextAccessor repoContext;
+    readonly IStorageServiceRegistry registry;
+
+    public RepoRoutingMiddleware(RequestDelegate next,
+        IRepoContextAccessor repoContext, IStorageServiceRegistry registry)
+    {
+        this.next = next;
+        this.repoContext = repoContext;
+        this.registry = registry;
+    }
+
+    public async Task InvokeAsync(HttpContext context)
+    {
+        var path = context.Request.Path.Value;
+        const string prefix = "/api/mcp/";
+
+        if (path != null && path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            var repoName = path[prefix.Length..];
+            if (string.IsNullOrEmpty(repoName) || repoName.Contains('/'))
+            {
+                await next(context);
+                return;
+            }
+
+            // Validate repo exists (will throw if unknown — let 500 propagate, or catch for 404)
+            try { registry.GetStorage(repoName); }
+            catch { context.Response.StatusCode = 404; return; }
+
+            repoContext.CurrentRepoName = repoName;
+            context.Request.Path = "/api/mcp";
+            try { await next(context); }
+            finally { repoContext.CurrentRepoName = null; }
+        }
+        else
+        {
+            await next(context);
+        }
+    }
+}
+```
+
+### Acceptance criteria
+
+- `POST /api/mcp/repo1` → `IRepoContextAccessor.CurrentRepoName` = `"repo1"`, path rewritten to `/api/mcp`, request forwarded to MCP handler
+- `POST /api/mcp` (no repo) → path unchanged, `IRepoContextAccessor.CurrentRepoName` unchanged, works as today
+- `POST /api/mcp/unknown-repo` → 404 before reaching MCP handler
+- All MCP tools work through repo-prefixed URL (storage routes to correct DB)
+- Cleanup: `CurrentRepoName` is null after request completes
+
+### Files involved
+
+- `src/CodeMemory.AspNet/Services/RepoScopedMiddleware.cs` (replace with `RepoRoutingMiddleware`)
+- `src/CodeMemory.AspNet/Program.cs` (registration order — add `UseRepoRouting()`)
+
+---
+
+## Task 3: Wire Multi-Repo in Program.cs
+
+### Priority
+
+High
+
+### Goal
+
+Replace the single-repo path in `Program.cs` with the full multi-repo setup: iterate `Repositories` config, create per-repo storage instances, register `StorageServiceRouter`, plug in middleware.
+
+### Why this exists
+
+Currently `Program.cs` uses the first repo only. This task connects all the pieces from Tasks 1-2.
+
+### Scope
+
+1. Move `IEmbeddingGenerator` registration before the repo loop (repo-agnostic).
+2. Read `Repositories` config section at startup.
+3. Create `StorageServiceRegistry`, populate with per-repo `IStorageService` instances.
+4. Register `StorageServiceRegistry` + `StorageServiceRouter` as singletons.
+5. If no repos configured, register a single storage under key `"default"` (backward compat).
+6. Replace `app.UseRepoScopedMcp()` with `app.UseRepoRouting()`.
+7. Update `/health` endpoint to show all configured repos and their DB paths.
+8. Remove `firstRepoName`/`repoPath` variables (were used solely for health endpoint).
+9. Remove `MultiRepoServiceFactory` reference if present.
+10. Verify `IndexingHostedService` loop still works — it should set `IRepoContextAccessor.CurrentRepoName` before resolving `IndexingEngine` in each iteration (see below).
+
+### IndexingHostedService changes
+
+`IndexingHostedService` must set `IRepoContextAccessor.CurrentRepoName` before creating each indexing scope, so `StorageServiceRouter` delegates to the correct DB:
 
 ```csharp
 foreach (var (name, path) in repositories)
 {
-    var repoRoot = ...; // resolve absolute path
-    var connStr = $"Data Source={repoRoot}/.memorycode/sqlvec.db";
-    // Create a nested ServiceCollection? No — use AddKeyedSingleton with factory
-    services.AddKeyedSingleton<IStorageService>(name, (sp, key) =>
-    {
-        var store = ...; // create VectorStore
-        var gen = sp.GetService<IEmbeddingGenerator<...>>();
-        return new StorageService(store, gen, 1536);
-    });
-    services.AddKeyedSingleton<ISemanticSearchService>(name, (sp, key) =>
-        new SemanticSearchService(
-            sp.GetRequiredKeyedService<IStorageService>(key),
-            sp.GetRequiredService<ILogger<SemanticSearchService>>(),
-            sp.GetService<IEmbeddingGenerator<...>>()));
-    // ... repeat for all 7 dependent services
+    var repoPath = Path.IsPathRooted(path) ? path : Path.GetFullPath(Path.Combine(appBasePath, path));
+    repoContext.CurrentRepoName = name;
+    repoContext.CurrentRepoRoot = repoPath;
+
+    using var scope = serviceProvider.CreateScope();
+    var engine = scope.ServiceProvider.GetRequiredService<IndexingEngine>();
+    await engine.RunIndexingAsync(repoPath, stoppingToken);
 }
 ```
 
-### Acceptance criteria
+No `finally` block needed between iterations — value is overwritten on next iteration. Add a `finally` after the loop to reset to null for cleanliness.
 
-- A service provider built with two configured repos has two distinct `IStorageService` instances, one per repo key
-- `sp.GetKeyedService<IStorageService>("repo1")` returns the correct instance
-- `sp.GetKeyedService<IDependencyGraphService>("repo1")` returns an instance wired to repo1's storage
-- Non-keyed `GetService<IStorageService>()` returns `null` (no default fallback)
+### Constraints
 
-### Files likely involved
+- Middleware order in pipeline: `UseRepoRouting()` must come before `MapMcp()`.
+- `StorageServiceRouter` must be registered as the single `IStorageService` — no other `AddCodeMemoryStorage` call.
+- `StorageServiceRegistry` must be populated before `StorageServiceRouter` is used (during startup only).
+- `IndexingHostedService` already iterates all repos — only needs the `IRepoContextAccessor` wiring added.
+- `NgramEmbeddingGenerator`, `FileCrawler`, parsers, chunker, and query services stay as non-keyed singletons — they don't change.
 
-- `src/CodeMemory.AspNet/Program.cs`
-- `src/CodeMemory.Storage/ServiceCollectionExtensions.cs` (may need an overload that returns an `IStorageService` directly without auto-registering)
-
----
-
-## Task 2: RepoScopedServices Root-Provider Fallthrough
-
-### Priority
-
-High
-
-### Goal
-
-Add a fallback to the root `IServiceProvider` in `RepoScopedServices.GetService()` so that infrastructure types (loggers, `IOptions`, `IConfiguration`, etc.) resolve correctly.
-
-### Why this exists
-
-`RepoScopedServices.GetService()` returns `null` for any type not in its hardcoded switch list (`nameof(IStorageService)`, `nameof(ISemanticSearchService)`, etc.). When the middleware swaps `context.RequestServices` to `RepoScopedServices`, the MCP framework tries to resolve loggers, `IOptions<McpServerOptions>`, and other DI infrastructure through this provider. Returning `null` for those breaks the request pipeline.
-
-### Scope
-
-- Change the `_ => null` fallback to `_ => root.GetService(serviceType)`
-- Ensure this doesn't inadvertently bypass scoped lifecycle for infrastructure types (loggers are typically singletons, so it's safe)
-- Verify `IServiceProvider` is passed correctly in the constructor
-
-### Suggested implementation path
+### Implementation sketch (Program.cs)
 
 ```csharp
-public object? GetService(Type serviceType)
+// Register repo-agnostic services first
+builder.Services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>, NgramEmbeddingGenerator>();
+
+// Build per-repo storage registry
+var repositories = builder.Configuration.GetSection("Repositories").Get<Dictionary<string, string>>();
+var storageRegistry = new StorageServiceRegistry();
+
+if (repositories is { Count: > 0 })
 {
-    return serviceType.Name switch
+    var provider = "sqlvec";
+    foreach (var (name, path) in repositories)
     {
-        nameof(IStorageService) => root.GetKeyedService<IStorageService>(repoName),
-        nameof(ISemanticSearchService) => root.GetKeyedService<ISemanticSearchService>(repoName),
-        // ... all other known types ...
-        _ => root.GetService(serviceType),  // fallback instead of null
-    };
+        var repoRoot = Path.IsPathRooted(path) ? path
+            : Path.GetFullPath(Path.Combine(Environment.CurrentDirectory, path));
+        var memoryPath = Path.Combine(repoRoot, ".memorycode");
+        Directory.CreateDirectory(memoryPath);
+        var connStr = $"Data Source={Path.Combine(memoryPath, $"{provider}.db")}";
+        // Create SQLite VectorStore + StorageService
+        // ... factory code ...
+        storageRegistry.Register(name, storageService);
+    }
 }
+else
+{
+    // Single-repo fallback: register default storage from current directory
+    var memoryPath = Path.Combine(Environment.CurrentDirectory, ".memorycode");
+    Directory.CreateDirectory(memoryPath);
+    var connStr = $"Data Source={Path.Combine(memoryPath, "sqlvec.db")}";
+    // ... create storage ...
+    storageRegistry.Register("default", storageService);
+}
+
+builder.Services.AddSingleton<IStorageServiceRegistry>(storageRegistry);
+builder.Services.AddSingleton<IRepoContextAccessor, RepoContextAccessor>();
+builder.Services.AddSingleton<IStorageService, StorageServiceRouter>();
+
+// ... rest of registrations (query services, architecture, etc.) unchanged ...
+// ... middleware: app.UseRepoRouting(); app.MapMcp("/api/mcp"); ...
 ```
 
 ### Acceptance criteria
 
-- When `RepoScopedServices` is queried for `ILogger<SomeTool>`, it resolves correctly from the root provider
-- When queried for `ISemanticSearchService`, it still returns the keyed per-repo instance
-- No `NullReferenceException` or missing-registration errors when MCP tools resolve their dependencies
+- App starts with 0, 1, or 2+ repos configured in `appsettings.json:Repositories`.
+- Each repo gets indexed to its own `.memorycode/sqlvec.db`.
+- `POST /api/mcp/repo1` correctly uses repo1's storage.
+- `POST /api/mcp/repo2` correctly uses repo2's storage.
+- `POST /api/mcp` (no repo) uses the single default storage (or first repo).
+- Health endpoint shows all configured repos and their DB paths.
+- `StorageServiceRouter` is the only `IStorageService` registration — no duplicate.
+- `MultiRepoServiceFactory` is removed (no remaining references).
 
-### Files likely involved
-
-- `src/CodeMemory.AspNet/Configuration/RepoScopedServices.cs`
-
----
-
-## Task 3: URL-Based Repo Detection Middleware
-
-### Priority
-
-High
-
-### Goal
-
-Create a middleware (or update `RepoScopedMiddleware`) that extracts the repo name from the URL path `/api/mcp/{repoName}` and rewrites the path to `/api/mcp` before the MCP handler runs.
-
-### Why this exists
-
-`app.MapMcp("/api/mcp")` binds to a fixed path. To support `/api/mcp/repo1` and `/api/mcp/repo2`, we need either multiple `MapMcp` calls (clunky, requires knowing all repos at startup) or a middleware that detects the repo from the URL segment and strips it from the path.
-
-### Decision required
-
-Should the middleware handle path rewriting internally, or should `Program.cs` map multiple MCP endpoints? **Recommended: single middleware with path rewrite** — simpler, dynamic, no restart needed if repos change.
-
-### Scope
-
-- Create `RepoNameDetectionMiddleware` (or extend `RepoScopedMiddleware`)
-- Match path pattern `/api/mcp/{repoName}` (regex or `PathString` segment check)
-- Validate `repoName` against configured repositories (from `RepositoriesConfig`), return 404 if unknown
-- Set `HttpContext.Items["RepoName"]` to the extracted name
-- Rewrite `HttpContext.Request.Path` from `/api/mcp/repo1` to `/api/mcp`
-- Call `await next(context)`
-- The existing `RepoScopedMiddleware.InvokeAsync` already checks for `HttpContext.Items["RepoName"]` and swaps the provider — keep that logic intact
-
-### Constraints
-
-- Must not break existing `/api/mcp` calls (no repo segment → default behavior)
-- Must handle both `/api/mcp/repo1` and `/api/mcp/repo1/tools/list` (sub-paths)
-- Must also handle `/api/mcp/repo1/sse` if SSE mode is used
-- Case-insensitive repo name matching
-
-### Suggested implementation path
-
-```csharp
-// In Program.cs:
-app.UseRepoNameDetection();   // new — extracts repo from URL
-app.UseRepoScopedMcp();       // existing — swaps RequestServices
-app.MapMcp("/api/mcp");        // existing — path already stripped
-```
-
-### Acceptance criteria
-
-- `GET /api/mcp/repo1/tools/list` → `HttpContext.Items["RepoName"]` = `"repo1"`, path rewritten to `/api/mcp/tools/list`
-- `POST /api/mcp/repo1` → path rewritten to `/api/mcp`, repo name set
-- `GET /api/mcp` (no repo) → path unchanged, `Items["RepoName"]` not set, works as today
-- `GET /api/mcp/unknown-repo` → 404
-- All MCP tools (ping, semantic_search, etc.) work through the repo-prefixed URL
-
-### Files likely involved
-
-- `src/CodeMemory.AspNet/Services/RepoScopedMiddleware.cs` (extend or co-locate)
-- `src/CodeMemory.AspNet/Program.cs` (middleware registration order)
-
----
-
-## Task 4: Wire Multi-Repo in Program.cs
-
-### Priority
-
-High
-
-### Goal
-
-Replace the single-repo path in `Program.cs` with the full multi-repo setup: iterate `Repositories` config, register keyed services (Task 1), plug in detection middleware (Task 3), and remove `MultiRepoServiceFactory` if superseded.
-
-### Why this exists
-
-All the scaffolding is built but `Program.cs` still uses the old single-repo path (`builder.Services.AddCodeMemoryStorage(connectionString)` for the first repo only). This task connects everything.
-
-### Scope
-
-- Remove or conditionalize the single-repo `AddCodeMemoryStorage` call (lines 33-37)
-- Move the `NgramEmbeddingGenerator` registration before the repo loop
-- Add the repo-iteration + keyed DI block from Task 1
-- Register middlewares in correct order: repo detection → scoped provider swap → MCP Map
-- Decide fate of `MultiRepoServiceFactory`: keep as legacy compat or remove
-- Remove the `firstRepoName`/`repoPath` variables that were used solely for the health endpoint — emit health per-repo instead
-
-### Constraints
-
-- Middleware order matters: detection must run before provider swap, which must run before MCP
-- `app.MapMcp("/api/mcp")` must not change — still handles the underlying request after path rewrite
-
-### Acceptance criteria
-
-- App starts with 0, 1, or 2+ repos configured in `appsettings.json:Repositories`
-- Each repo gets indexed (existing `IndexingHostedService` behavior preserved)
-- `GET /api/mcp/repo1/ping` returns `{"status":"ok"}`
-- `GET /api/mcp/repo2/ping` returns `{"status":"ok"}`
-- Health endpoint shows all configured repos and their DB paths
-- No regressions in single-repo mode (one repo in config)
-
-### Files likely involved
+### Files involved
 
 - `src/CodeMemory.AspNet/Program.cs`
-- `src/CodeMemory.AspNet/Services/IndexingHostedService.cs` (verify its per-repo scope loop still works)
-- `src/CodeMemory.AspNet/Configuration/MultiRepoServiceFactory.cs` (remove or keep)
+- `src/CodeMemory.AspNet/Services/IndexingHostedService.cs` (add `IRepoContextAccessor` wiring)
 
 ---
 
-## Task 5: Integration Tests
+## Task 4: Tests
 
 ### Priority
 
@@ -252,67 +346,141 @@ Medium
 
 ### Goal
 
-Write integration tests that verify the full multi-repo flow: two repos configured, independent MCP calls routed to correct service instances, correct data isolation.
+Verify the multi-repo pipeline works without changing most existing test URLs or mock patterns. Unlike the old plan (which required updating all 9 test files + adding non-keyed fallback hacks), this approach is backward-compatible with existing tests.
 
-### Why this exists
+### Why this approach is simpler now
 
-The multi-repo feature spans middleware, DI, and service behavior. Unit-level tests miss the cross-cutting wiring. Integration tests catch routing, provider swap, and data isolation bugs.
+The old approach used keyed DI + `RepoScopedServices` — tests had to route through `/api/mcp/test` to hit the keyed services, and mocks registered as non-keyed needed special fallback logic. The new approach keeps a single non-keyed `IStorageService`. Tests that mock at the service interface level (`ISemanticSearchService`, `IDependencyGraphService`, etc.) via `ConfigureServices` work unchanged. Tests don't need URL changes.
 
 ### Scope
 
-- Create `MultiRepoTests.cs` in `src/CodeMemory.Tests`
-- Use `WebApplicationFactory<Program>` with a custom `appsettings.json` that defines two repos pointing at temp directories
-- Seed each repo with different data (different symbols/files)
-- Test:
-  - `GET /api/mcp/repo1/semantic_search?query=foo` returns only repo1's results
-  - `GET /api/mcp/repo2/semantic_search?query=foo` returns only repo2's results
-  - `GET /api/mcp/repo1/get_architecture_overview` returns repo1's components
-  - `GET /api/mcp/repo2/get_architecture_overview` returns repo2's components
-  - `GET /api/mcp` (no repo) works with default behavior
-  - `GET /api/mcp/nonexistent` returns 404
-- Mock or disable indexing for test speed (`IndexingHostedService` can be suppressed via config with 0 repos)
+1. **Existing MCP tool tests** — no URL changes needed. Mocks registered via `ConfigureServices` override the real DI registrations as before. `StorageServiceRouter` is replaced when a test registers a mock `IStorageService`, or the real router delegates to the registry's default storage.
 
-### Suggested implementation path
+2. **`McpInfrastructureTests`** — keep `/api/mcp` test as-is. Add:
+   - One test for `/api/mcp/test` with `UseSetting("Repositories:test", ".")` to validate the routing middleware + `StorageServiceRouter` path.
+   - One test for `/api/mcp/nonexistent` expecting 404.
 
+3. **Test setup** — `WebApplicationFactory<Program>()` with no `Repositories` config creates a default storage (current directory). For multi-repo tests, use `WithWebHostBuilder(b => b.UseSetting("Repositories:test", "."))`.
+
+4. **Indexing suppression** — when tests don't configure repos, `IndexingHostedService` logs a warning and returns (existing behavior). When tests add a repo, suppress indexing by removing `IndexingHostedService` from the service collection in `ConfigureServices`.
+
+5. **Optional** — a `MultiRepoTests.cs` that registers two repos and verifies isolation (write to repo1, search in repo2, verify no cross-contamination).
+
+### Why no URL changes needed in existing tests
+
+Existing tests register mocks like:
 ```csharp
-[Test]
-public async Task Repo1_and_Repo2_have_independent_data()
-{
-    await using var factory = new WebApplicationFactory<Program>()
-        .WithWebHostBuilder(b => b.UseSetting("Repositories:repo1", path1)
-                                   .UseSetting("Repositories:repo2", path2));
-    var client = factory.CreateClient();
-    // ... seed repo1 with symbol "Foo", repo2 with symbol "Bar" ...
-    // ... call MCP tools for each and verify isolation ...
-}
+b.ConfigureServices(s => s.AddSingleton<ISemanticSearchService>(new MockSemanticSearchService()));
 ```
+
+These mocks replace the real service completely in DI. The test calls `POST /api/mcp` which hits the MCP handler. The MCP handler resolves `ISemanticSearchService` — gets the mock. No `StorageServiceRouter` or `IRepoContextAccessor` interaction because `ISemanticSearchService` is mocked, not `IStorageService`.
+
+Even for tests that DON'T mock (like `ArchitectureOverviewToolTests.ReturnsDefault_WhenNoService`), the real `IArchitectureService` resolves, which depends on `IStorageService` — which is `StorageServiceRouter`. With no repo in config, `StorageServiceRouter` gets null from `IRepoContextAccessor.CurrentRepoName`, and `IStorageServiceRegistry.GetStorage(null)` returns the default/first storage. This works.
 
 ### Acceptance criteria
 
-- All tests pass
-- Data isolation is confirmed: repo1's data never leaks into repo2's responses
-- Tests run in CI without external dependencies
-- `IndexingHostedService` can be cheaply skipped in test (e.g., empty repos config or test hook)
+- All existing tests pass without URL changes or fallback hacks.
+- `POST /api/mcp/test` works through the middleware + router pipeline.
+- `POST /api/mcp/nonexistent` returns 404.
+- Indexing is suppressed in tests that add repos (no slow file crawling).
+- No regressions in unit tests (non-MCP tests unchanged).
 
-### Files likely involved
+### Files involved
 
-- `src/CodeMemory.Tests/MultiRepoTests.cs` (new)
-- `src/CodeMemory.Tests/TestConfigs/` (optional, for shared appsettings.json)
+- `src/CodeMemory.Tests/Mcp/McpInfrastructureTests.cs` (add multi-repo + 404 tests)
+- `src/CodeMemory.Tests/Mcp/MultiRepoTests.cs` (optional, new)
+
+---
+
+## Task 5: Update Public Docs
+
+### Priority
+
+Medium
+
+### Goal
+
+Update `ARCHITECTURE.md`, `README.md`, and `AGENTS.md` to reflect the new multi-repo architecture and remove references to the old keyed DI approach.
+
+### Why this exists
+
+The design changed significantly — old docs reference `RepoScopedServices`, keyed DI, and patterns that no longer exist. Coding agents need accurate guidance.
+
+### Scope
+
+1. **`ARCHITECTURE.md`** (repo root, not `docs/`):
+   - Add multi-repo section describing `StorageServiceRouter` + `IRepoContextAccessor` + middleware.
+   - Update project structure diagram (note `RepoRoutingMiddleware`, `StorageServiceRouter`, `StorageServiceRegistry` in `CodeMemory.AspNet/Configuration/`).
+   - Remove references to keyed DI, `RepoScopedServices`, `MultiRepoServiceFactory`.
+   - Add MCP data flow diagram for multi-repo: HTTP request → middleware → path rewrite → ambient context → storage routing.
+   - Note that `CodeMemory` library has no HTTP dependencies — all routing logic is in `CodeMemory.AspNet`.
+
+2. **`README.md`**:
+   - Document multi-repo URL pattern: `POST /api/mcp/{repoName}`.
+   - Show `appsettings.json` configuration with multiple repos.
+   - Update quick-start to show multi-repo setup.
+   - Document that stdio mode uses single-repo (first configured, or "default").
+
+3. **`AGENTS.md`**:
+   - Replace old "MCP-First Design" section with accurate patterns.
+   - Remove: keyed DI, `RepoScopedServices`, `MultiRepoServiceFactory`, root-provider fallthrough.
+   - Add: `StorageServiceRouter`, `IRepoContextAccessor`, middleware-only routing.
+   - Update the project structure description to show correct namespaces and files.
+
+4. **Fix path**: Plan preamble says `docs/ARCHITECTURE.md` but it's at repo root `ARCHITECTURE.md` — correct this reference.
+
+### Files involved
+
+- `ARCHITECTURE.md` (repo root)
+- `README.md`
+- `AGENTS.md`
+- `docs/REPO-PLAN.md` (self — update ARCHITECTURE.md reference)
 
 ---
 
 ## Suggested Agent Handout Batches
 
-### Batch A: decision-critical (can run in parallel)
+### Batch A: can run in parallel
 
-- Task 1 — Keyed DI registration
-- Task 2 — RepoScopedServices fallthrough
-- Task 3 — URL detection middleware
+- Task 1 — StorageServiceRegistry + StorageServiceRouter + IRepoContextAccessor
+- Task 2 — URL detection middleware
 
-### Batch B: integration (requires A)
+### Batch B: sequential (requires A)
 
-- Task 4 — Wire everything in Program.cs
-- Task 5 — Integration tests
+- Task 3 — Wire Program.cs + IndexingHostedService (depends on Task 1 + 2)
+- Task 4 — Tests (depends on Task 3 being stable)
+
+### Batch C: final
+
+- Task 5 — Public docs (run after all other tasks merged)
+
+---
+
+## SDK Research (MCP C# SDK v1.3+)
+
+Add these to your context when working on any task.
+
+### How MapMcp works
+
+`MapMcp("/api/mcp")` internally calls `endpoints.MapGroup("/api/mcp")` — endpoint routing, NOT middleware `Map()`. The group registers `POST ""` as the only route in stateless mode. Tool names are in the JSON-RPC body, not the URL.
+
+### Stateless mode service resolution
+
+In stateless mode (`Stateless = true`), the SDK sets `ScopeRequests = false` and uses `HttpContext.RequestServices` as the service provider. The SDK does NOT create additional DI scopes. Tool handlers resolve from the same provider as middleware and ASP.NET Core components.
+
+This means: our middleware does NOT need to swap `RequestServices`. The MCP SDK's `StreamableHttpHandler` resolves `ILogger<T>`, `IOptions<T>`, etc. from the standard ASP.NET pipeline — no fallthrough code needed. This is the key fact that makes the old `RepoScopedServices` approach unnecessary.
+
+### ClaimsPrincipal injection (for reference)
+
+The SDK supports `ClaimsPrincipal? user` parameter injection in tool methods — the parameter is excluded from the JSON schema and auto-injected from the current request context. This pattern proves the SDK has a mechanism for per-request context without HTTP-coupling, but we don't use it for storage routing (we use `IRepoContextAccessor` instead).
+
+### ConfigureSessionOptions (per-request callback)
+
+In stateless mode, `ConfigureSessionOptions` runs on every HTTP request with access to `HttpContext`. It can customize `McpServerOptions.ToolCollection` per request. Not needed for our approach since `StorageServiceRouter` handles per-repo routing at the storage level, not the tool level.
+
+### Key difference from the old approach
+
+Old approach assumed MCP SDK infrastructure resolution (`ILogger<T>`, etc.) would fail through a swapped `RequestServices`. The SDK docs confirm that in stateless mode, `RequestServices` IS the ASP.NET pipeline — no swapping required. This validates the new approach.
 
 ---
 
@@ -320,7 +488,11 @@ public async Task Repo1_and_Repo2_have_independent_data()
 
 - [ ] every task has a clear owner-sized scope
 - [ ] every task has acceptance criteria
-- [ ] decision-gate tasks are clearly marked (Task 1 has a decision note about keyed vs shared)
 - [ ] likely files are listed to reduce agent search time
-- [ ] execution order reflects real dependencies (A → B)
-- [ ] Tasks 1-3 are independent and parallelizable
+- [ ] execution order reflects real dependencies (A → B → C)
+- [ ] no keyed DI, no RepoScopedServices, no fallthrough switch
+- [ ] `IStorageService` is the only per-repo concern — all other services stay non-keyed
+- [ ] `IRepoContextAccessor` uses AsyncLocal — singleton-safe, no scoped DI needed
+- [ ] middleware does NOT swap RequestServices — MCP SDK uses ASP.NET pipeline directly
+- [ ] existing tests pass without URL changes or fallback hacks
+- [ ] public docs updated to reflect new architecture
