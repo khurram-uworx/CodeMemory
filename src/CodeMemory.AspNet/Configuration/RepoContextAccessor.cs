@@ -2,24 +2,24 @@ namespace CodeMemory.AspNet.Configuration;
 
 public interface IRepoContextAccessor
 {
-    string? CurrentRepoName { get; }
-    string? CurrentRepoRoot { get; }
+    string? CurrentRepoName { get; set; }
+    string? CurrentRepoRoot { get; set; }
 }
 
 public sealed class RepoContextAccessor : IRepoContextAccessor
 {
-    string? repoName;
-    string? repoRoot;
+    readonly AsyncLocal<string?> repoName = new();
+    readonly AsyncLocal<string?> repoRoot = new();
 
     public string? CurrentRepoName
     {
-        get => repoName;
-        set => repoName = value;
+        get => repoName.Value;
+        set => repoName.Value = value;
     }
 
     public string? CurrentRepoRoot
     {
-        get => repoRoot;
-        set => repoRoot = value;
+        get => repoRoot.Value;
+        set => repoRoot.Value = value;
     }
 }

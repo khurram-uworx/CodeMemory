@@ -71,15 +71,29 @@ Use `docs/TASKS-TEMPLATE.md` for new task breakdowns. Each task must include: Pr
 
 ## Project Structure
 
-Three projects:
+Four projects:
 - **`CodeMemory`** — Pure library (`Microsoft.NET.Sdk`, `OutputType Library`). No ASP.NET dependency. Contains all service logic, MCP tool definitions, storage interfaces, and models.
 - **`CodeMemory.Storage`** — SQLite vector store provider. References `CodeMemory` for interfaces and model types.
-- **`CodeMemory.AspNet`** — ASP.NET Core host. Owns `Program.cs`, `EntryPoint.cs`, DI registration, MCP HTTP/SSE transport, `BackgroundService` lifecycle.
+- **`CodeMemory.Mcp`** — Standalone stdio MCP server for single-repo agent usage. Uses `WithStdioServerTransport`. Takes optional `--repo <path>` argument.
+- **`CodeMemory.AspNet`** — ASP.NET Core host. Owns `Program.cs`, DI registration, MCP Streamable HTTP transport, `BackgroundService` lifecycle.
 
-Key rules:
+### Key rules
+
 - Services with `BackgroundService` inheritance MUST live in `CodeMemory.AspNet`. Core indexing logic (`IndexingEngine`) lives in `CodeMemory` and is wrapped by `IndexingHostedService` in `CodeMemory.AspNet`.
-- MCP tool types live in `CodeMemory.Mcp`. Registration uses `WithToolsFromAssembly(typeof(McpTools).Assembly)` from `CodeMemory.AspNet.Program.cs`.
+- MCP tool types live in `CodeMemory` (`CodeMemory.Mcp` namespace). Registration uses `WithToolsFromAssembly(typeof(McpTools).Assembly)` from both `CodeMemory.AspNet.Program.cs` and `CodeMemory.Mcp.Program.cs`.
 - `IStorageService` interface and storage models (`SymbolRecord`, `ChunkRecord`, etc.) live in `CodeMemory.Storage.Services` / `CodeMemory.Storage.Models` namespaces but in the `CodeMemory` assembly.
+
+### Multi-Repo Architecture
+
+Multi-repo support uses **`StorageServiceRouter` + `IRepoContextAccessor` + per-repo MCP endpoints** — no keyed DI, no middleware, no `RequestServices` swap.
+
+- **`IStorageServiceRegistry`** / **`StorageServiceRegistry`** (`CodeMemory.AspNet/Configuration/`) — thread-safe registry of per-repo `IStorageService` instances keyed by repo name.
+- **`StorageServiceRouter`** (`CodeMemory.AspNet/Configuration/`) — implements `IStorageService`, delegates to per-repo storage based on `IRepoContextAccessor.CurrentRepoName`.
+- **`IRepoContextAccessor`** / **`RepoContextAccessor`** (`CodeMemory.AspNet/Configuration/`) — `AsyncLocal<string?>` ambient context, singleton-safe, no scoped DI needed.
+- **`ConfigureSessionOptions`** — MCP SDK callback in `Program.cs` that extracts repo name from path `/api/mcp/{repoName}` and sets `IRepoContextAccessor.CurrentRepoName`.
+- **`IStorageService` is the only per-repo concern** — all other services (`DependencyGraphService`, `ArchitectureService`, etc.) stay non-keyed singletons resolving from `StorageServiceRouter`.
+- `Stateless = true` (Streamable HTTP) — no session affinity, no SSE, each request self-contained.
+- `PerSessionExecutionContext = true` preserves `AsyncLocal` flow to tool handlers.
 
 ## Summary
 

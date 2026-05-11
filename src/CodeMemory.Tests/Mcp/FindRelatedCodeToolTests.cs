@@ -11,7 +11,7 @@ public sealed class FindRelatedCodeToolTests
     static async Task<JsonObject> sendToolsList(HttpClient client)
     {
         var json = """{"jsonrpc":"2.0","id":1,"method":"tools/list"}""";
-        var request = new HttpRequestMessage(HttpMethod.Post, "/api/mcp")
+        var request = new HttpRequestMessage(HttpMethod.Post, "/api/mcp/test")
         {
             Content = new StringContent(json, Encoding.UTF8, "application/json")
         };
@@ -40,7 +40,7 @@ public sealed class FindRelatedCodeToolTests
             }
         };
 
-        var request = new HttpRequestMessage(HttpMethod.Post, "/api/mcp")
+        var request = new HttpRequestMessage(HttpMethod.Post, "/api/mcp/test")
         {
             Content = new StringContent(callJson.ToJsonString(), Encoding.UTF8, "application/json")
         };

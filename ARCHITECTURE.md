@@ -34,12 +34,12 @@ CodeMemory/
 │   │       └── Services/         # IStorageService interface
 │   ├── CodeMemory.Storage/       # SQLite vector store provider
 │   ├── CodeMemory.AspNet/        # ASP.NET Core host + BackgroundService
+│   │   ├── Configuration/        # RepoRoutingMiddleware, StorageServiceRegistry, StorageServiceRouter, RepoContextAccessor
 │   │   ├── Services/             # IndexingHostedService (BackgroundService wrapper)
 │   │   ├── Program.cs            # Host entry point, DI, MCP + HTTP setup
 │   │   └── appsettings.json
 │   └── CodeMemory.Tests/         # NUnit tests
 ├── docs/
-├── .index/                       # Runtime SQLite database (auto-created)
 ├── AGENTS.md                     # Agent engineering guidelines
 └── ARCHITECTURE.md               # This file
 ```
@@ -60,7 +60,7 @@ CodeMemory (library — no ASP.NET dep)
 CodeMemory.AspNet (ASP.NET host)
   ├── CodeMemory                                 (core library)
   ├── CodeMemory.Storage                         (vector store provider)
-  ├── ModelContextProtocol.AspNetCore            (MCP HTTP/SSE transport)
+  ├── ModelContextProtocol.AspNetCore            (MCP Streamable HTTP transport)
   └── Microsoft.Extensions.AI.Abstractions       (embedding generator DI)
 ```
 
@@ -258,6 +258,71 @@ All tools return structured JSON. Tools with external service dependencies use `
 - In-memory `ConcurrentDictionary` cache with 5-minute TTL and periodic cleanup
 - Graceful degradation in non-git repos or when git is unavailable
 - Used by: `get_symbol_history`, `get_hotspots`
+
+---
+
+---
+
+## Multi-Repo Architecture
+
+### Design
+
+Multi-repo support uses **`StorageServiceRouter` + `IRepoContextAccessor` (AsyncLocal) + per-repo MCP endpoints** — no keyed DI, no middleware, no `RequestServices` swap.
+
+**How it works:** Each repo gets its own MCP endpoint via `MapMcp("/api/mcp/{repoName}")`. The MCP SDK's `ConfigureSessionOptions` callback extracts the repo name from the URL path and sets `IRepoContextAccessor.CurrentRepoName`. All services remain non-keyed — they depend on `IStorageService` which delegates to the correct per-repo storage via `StorageServiceRouter`.
+
+### Data flow (multi-repo request)
+
+```
+HTTP POST /api/mcp/repo1
+  └─ MCP handler (MapMcp("/api/mcp/repo1"))
+       └─ ConfigureSessionOptions callback
+            ├─ extracts "repo1" from URL path segments
+            └─ sets IRepoContextAccessor.CurrentRepoName = "repo1"
+                 └─ PerSessionExecutionContext preserves AsyncLocal for handler
+                      └─ tool resolves IStorageService → StorageServiceRouter
+                           └─ GetStorage() → registry.GetStorage("repo1") → repo1's SQLite DB
+```
+
+### Key components
+
+| Component | Location | Purpose |
+|---|---|---|
+| `StorageServiceRegistry` | `CodeMemory.AspNet/Configuration/` | Thread-safe `ConcurrentDictionary` of per-repo `IStorageService` instances |
+| `StorageServiceRouter` | `CodeMemory.AspNet/Configuration/` | Delegates all 15 `IStorageService` methods via `GetStorage()` using ambient repo context |
+| `IRepoContextAccessor` / `RepoContextAccessor` | `CodeMemory.AspNet/Configuration/` | `AsyncLocal<string?>` — singleton-safe, no scoped DI, flows with ExecutionContext |
+| `ConfigureSessionOptions` | `CodeMemory.AspNet/Program.cs` | MCP SDK callback that extracts repo name from URL path |
+
+### Constraints
+
+- `IStorageService` is the **only** per-repo concern. All other services stay non-keyed (singleton).
+- `Stateless = true` (Streamable HTTP) — no session affinity needed, each request is self-contained.
+- `PerSessionExecutionContext = true` preserves `AsyncLocal` (and `IRepoContextAccessor`) across the handler chain.
+- No middleware, no path rewriting, no `RequestServices` swap — clean ASP.NET pipeline.
+- If no repos are configured, no MCP endpoints are registered at all.
+
+### Indexing
+
+`IndexingHostedService` sets `IRepoContextAccessor.CurrentRepoName` before each indexing iteration so `StorageServiceRouter` delegates to the correct DB. All storage services are initialized upfront before sequential indexing begins:
+
+```csharp
+// Initialize all storage services upfront
+foreach (var (name, _) in repositories)
+{
+    var storage = registry.GetStorage(name);
+    await storage.InitializeAsync(stoppingToken);
+}
+
+// Then index each repo sequentially
+foreach (var (name, path) in repositories)
+{
+    repoContext.CurrentRepoName = name;
+    repoContext.CurrentRepoRoot = repoPath;
+    using var scope = serviceProvider.CreateScope();
+    var engine = scope.ServiceProvider.GetRequiredService<IndexingEngine>();
+    await engine.RunIndexingAsync(repoPath, stoppingToken);
+}
+```
 
 ---
 

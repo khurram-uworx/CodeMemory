@@ -44,6 +44,8 @@ All tools return structured JSON. No freeform prompts, no chat — pure determin
 
 ## Quick Start
 
+### Single repo (stdio — for agents)
+
 Define the MCP tool in your agent's configuration:
 
 ```json
@@ -54,15 +56,30 @@ Define the MCP tool in your agent's configuration:
   }
 ```
 
-```bash
-# Build and run — zero config, no API keys needed
-dotnet run --project src/CodeMemory.AspNet
+### ASP.NET host (Streamable HTTP — for remote agents)
 
-# Starts an MCP server at http://localhost:4792/api/mcp
-# Connect any MCP client to discover all 10 tools.
+```bash
+dotnet run --project src/CodeMemory.AspNet
+# Starts at http://localhost:4792 — repos available at /api/mcp/{repoName}
 ```
 
-CodeMemory indexes your repository on startup, extracts symbols, relationships, and semantic chunks. Built-in embedding generator works immediately — no model downloads or external services required.
+Configure repos in `src/CodeMemory.AspNet/appsettings.json`:
+
+```json
+{
+  "Repositories": {
+    "repo1": "C:\\Projects\\my-app",
+    "repo2": "C:\\Projects\\my-lib"
+  }
+}
+```
+
+Each repo gets its own URL:
+
+```bash
+POST http://localhost:4792/api/mcp/repo1   # JSON-RPC to repo1
+POST http://localhost:4792/api/mcp/repo2   # JSON-RPC to repo2
+```
 
 ## Requirements
 
@@ -76,6 +93,7 @@ CodeMemory indexes your repository on startup, extracts symbols, relationships, 
 - **Embeddings**: Built-in n-gram generator or pluggable via `IEmbeddingGenerator<string, Embedding<float>>`
 - **Relationship extraction**: Syntax-based (Inherits, Implements, Calls, References)
 - **Git analysis**: Shell git commands with in-memory caching
+- **Multi-repo**: `StorageServiceRouter` + `IRepoContextAccessor` (AsyncLocal) + MCP `ConfigureSessionOptions` — no keyed DI, no middleware
 
 ## Learn More
 
