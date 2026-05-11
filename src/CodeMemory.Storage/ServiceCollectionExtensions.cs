@@ -25,4 +25,13 @@ public static class ServiceCollectionExtensions
 
         return services;
     }
+
+    public static IStorageService CreateStorageService(
+        string connectionString,
+        IEmbeddingGenerator<string, Embedding<float>>? embeddingGenerator = null,
+        int configuredDimension = 1536)
+    {
+        var sqliteStore = new SqliteVectorStore(connectionString, new SqliteVectorStoreOptions());
+        return new StorageService(sqliteStore, embeddingGenerator, configuredDimension);
+    }
 }

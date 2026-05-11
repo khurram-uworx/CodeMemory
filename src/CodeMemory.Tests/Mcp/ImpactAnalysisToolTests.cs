@@ -2,6 +2,7 @@ using CodeMemory.Indexing.Architecture;
 using CodeMemory.Indexing.Graph;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using System.Text;
 using System.Text.Json.Nodes;
 
@@ -12,7 +13,7 @@ public sealed class ImpactAnalysisToolTests
     static async Task<JsonObject> sendToolsList(HttpClient client)
     {
         var json = """{"jsonrpc":"2.0","id":1,"method":"tools/list"}""";
-        var request = new HttpRequestMessage(HttpMethod.Post, "/api/mcp")
+        var request = new HttpRequestMessage(HttpMethod.Post, "/api/mcp/test")
         {
             Content = new StringContent(json, Encoding.UTF8, "application/json")
         };
@@ -41,7 +42,7 @@ public sealed class ImpactAnalysisToolTests
             }
         };
 
-        var request = new HttpRequestMessage(HttpMethod.Post, "/api/mcp")
+        var request = new HttpRequestMessage(HttpMethod.Post, "/api/mcp/test")
         {
             Content = new StringContent(callJson.ToJsonString(), Encoding.UTF8, "application/json")
         };
@@ -62,10 +63,14 @@ public sealed class ImpactAnalysisToolTests
         await using var factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(b =>
             {
+                b.UseSetting("Repositories:test", ".");
                 b.ConfigureServices(s =>
                 {
                     s.AddSingleton<IDependencyGraphService>(new MockDependencyGraphService());
                     s.AddSingleton<IArchitectureService>(new MockArchitectureService());
+                    var hd = s.SingleOrDefault(d => d.ServiceType == typeof(Microsoft.Extensions.Hosting.IHostedService)
+                        && d.ImplementationType?.Name == "IndexingHostedService");
+                    if (hd != null) s.Remove(hd);
                 });
             });
         var client = factory.CreateClient();
@@ -84,11 +89,14 @@ public sealed class ImpactAnalysisToolTests
         await using var factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(b =>
             {
+                b.UseSetting("Repositories:test", ".");
                 b.ConfigureServices(s =>
                 {
-                    var descriptor = s.SingleOrDefault(d => d.ServiceType == typeof(IDependencyGraphService));
-                    if (descriptor != null)
-                        s.Remove(descriptor);
+                    foreach (var d in s.Where(d => d.ServiceType == typeof(IDependencyGraphService)).ToList())
+                        s.Remove(d);
+                    var hd = s.SingleOrDefault(d => d.ServiceType == typeof(Microsoft.Extensions.Hosting.IHostedService)
+                        && d.ImplementationType?.Name == "IndexingHostedService");
+                    if (hd != null) s.Remove(hd);
                 });
             });
         var client = factory.CreateClient();
@@ -110,10 +118,14 @@ public sealed class ImpactAnalysisToolTests
         await using var factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(b =>
             {
+                b.UseSetting("Repositories:test", ".");
                 b.ConfigureServices(s =>
                 {
                     s.AddSingleton<IDependencyGraphService>(new MockDependencyGraphService());
                     s.AddSingleton<IArchitectureService>(new MockArchitectureService());
+                    var hd = s.SingleOrDefault(d => d.ServiceType == typeof(Microsoft.Extensions.Hosting.IHostedService)
+                        && d.ImplementationType?.Name == "IndexingHostedService");
+                    if (hd != null) s.Remove(hd);
                 });
             });
         var client = factory.CreateClient();
@@ -137,10 +149,14 @@ public sealed class ImpactAnalysisToolTests
         await using var factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(b =>
             {
+                b.UseSetting("Repositories:test", ".");
                 b.ConfigureServices(s =>
                 {
                     s.AddSingleton<IDependencyGraphService>(new MockDependencyGraphService());
                     s.AddSingleton<IArchitectureService>(new MockArchitectureService());
+                    var hd = s.SingleOrDefault(d => d.ServiceType == typeof(Microsoft.Extensions.Hosting.IHostedService)
+                        && d.ImplementationType?.Name == "IndexingHostedService");
+                    if (hd != null) s.Remove(hd);
                 });
             });
         var client = factory.CreateClient();

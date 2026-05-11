@@ -23,16 +23,25 @@ public sealed class RepoScopedServices : IServiceProvider
     {
         return serviceType.Name switch
         {
-            nameof(IStorageService) => root.GetKeyedService<IStorageService>(repoName),
-            nameof(ISemanticSearchService) => root.GetKeyedService<ISemanticSearchService>(repoName),
-            nameof(SymbolQueryService) => root.GetKeyedService<SymbolQueryService>(repoName),
-            nameof(RelationshipQueryService) => root.GetKeyedService<RelationshipQueryService>(repoName),
-            nameof(IDependencyGraphService) => root.GetKeyedService<IDependencyGraphService>(repoName),
-            nameof(IArchitectureService) => root.GetKeyedService<IArchitectureService>(repoName),
-            nameof(IComponentClusteringService) => root.GetKeyedService<IComponentClusteringService>(repoName),
-            nameof(IGitHistoryService) => root.GetKeyedService<IGitHistoryService>(repoName),
-            nameof(IEditContextService) => root.GetKeyedService<IEditContextService>(repoName),
-            _ => null,
+            nameof(IStorageService) => root.GetKeyedService<IStorageService>(repoName)
+                ?? root.GetService<IStorageService>(),
+            nameof(ISemanticSearchService) => root.GetKeyedService<ISemanticSearchService>(repoName)
+                ?? root.GetService<ISemanticSearchService>(),
+            nameof(SymbolQueryService) => root.GetKeyedService<SymbolQueryService>(repoName)
+                ?? root.GetService<SymbolQueryService>(),
+            nameof(RelationshipQueryService) => root.GetKeyedService<RelationshipQueryService>(repoName)
+                ?? root.GetService<RelationshipQueryService>(),
+            nameof(IDependencyGraphService) => root.GetKeyedService<IDependencyGraphService>(repoName)
+                ?? root.GetService<IDependencyGraphService>(),
+            nameof(IArchitectureService) => root.GetKeyedService<IArchitectureService>(repoName)
+                ?? root.GetService<IArchitectureService>(),
+            nameof(IComponentClusteringService) => root.GetKeyedService<IComponentClusteringService>(repoName)
+                ?? root.GetService<IComponentClusteringService>(),
+            nameof(IGitHistoryService) => root.GetKeyedService<IGitHistoryService>(repoName)
+                ?? root.GetService<IGitHistoryService>(),
+            nameof(IEditContextService) => root.GetKeyedService<IEditContextService>(repoName)
+                ?? root.GetService<IEditContextService>(),
+            _ => root.GetService(serviceType),
         };
     }
 }

@@ -3,6 +3,7 @@ using CodeMemory.Mcp.Services;
 using CodeMemory.Storage;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using System.Text;
 using System.Text.Json.Nodes;
@@ -25,7 +26,7 @@ public sealed class EditContextToolTests
             }
         };
 
-        var request = new HttpRequestMessage(HttpMethod.Post, "/api/mcp")
+        var request = new HttpRequestMessage(HttpMethod.Post, "/api/mcp/test")
         {
             Content = new StringContent(callJson.ToJsonString(), Encoding.UTF8, "application/json")
         };
@@ -43,11 +44,21 @@ public sealed class EditContextToolTests
     [Test]
     public async Task ToolAppearsInDiscovery()
     {
-        await using var factory = new WebApplicationFactory<Program>();
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(b =>
+            {
+                b.UseSetting("Repositories:test", ".");
+                b.ConfigureServices(s =>
+                {
+                    var hd = s.SingleOrDefault(d => d.ServiceType == typeof(Microsoft.Extensions.Hosting.IHostedService)
+                        && d.ImplementationType?.Name == "IndexingHostedService");
+                    if (hd != null) s.Remove(hd);
+                });
+            });
         var client = factory.CreateClient();
 
         var json = """{"jsonrpc":"2.0","id":1,"method":"tools/list"}""";
-        var request = new HttpRequestMessage(HttpMethod.Post, "/api/mcp")
+        var request = new HttpRequestMessage(HttpMethod.Post, "/api/mcp/test")
         {
             Content = new StringContent(json, Encoding.UTF8, "application/json")
         };
@@ -69,7 +80,17 @@ public sealed class EditContextToolTests
     [Test]
     public async Task GetEditContext_ReturnsPartial_WhenNoServices()
     {
-        await using var factory = new WebApplicationFactory<Program>();
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(b =>
+            {
+                b.UseSetting("Repositories:test", ".");
+                b.ConfigureServices(s =>
+                {
+                    var hd = s.SingleOrDefault(d => d.ServiceType == typeof(Microsoft.Extensions.Hosting.IHostedService)
+                        && d.ImplementationType?.Name == "IndexingHostedService");
+                    if (hd != null) s.Remove(hd);
+                });
+            });
         var client = factory.CreateClient();
 
         var result = await callTool(client, "get_edit_context",
@@ -86,6 +107,7 @@ public sealed class EditContextToolTests
         await using var factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(b =>
             {
+                b.UseSetting("Repositories:test", ".");
                 b.ConfigureServices(s =>
                 {
                     s.AddSingleton<IStorageService>(new MockStorageService());
@@ -95,6 +117,9 @@ public sealed class EditContextToolTests
                         var logger = sp.GetRequiredService<ILogger<EditContextService>>();
                         return new EditContextService(sp);
                     });
+                    var hd = s.SingleOrDefault(d => d.ServiceType == typeof(Microsoft.Extensions.Hosting.IHostedService)
+                        && d.ImplementationType?.Name == "IndexingHostedService");
+                    if (hd != null) s.Remove(hd);
                 });
             });
         var client = factory.CreateClient();

@@ -1,6 +1,7 @@
 using CodeMemory.Indexing.Graph;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using System.Text;
 using System.Text.Json.Nodes;
 
@@ -11,7 +12,7 @@ public sealed class FindRelatedCodeToolTests
     static async Task<JsonObject> sendToolsList(HttpClient client)
     {
         var json = """{"jsonrpc":"2.0","id":1,"method":"tools/list"}""";
-        var request = new HttpRequestMessage(HttpMethod.Post, "/api/mcp")
+        var request = new HttpRequestMessage(HttpMethod.Post, "/api/mcp/test")
         {
             Content = new StringContent(json, Encoding.UTF8, "application/json")
         };
@@ -40,7 +41,7 @@ public sealed class FindRelatedCodeToolTests
             }
         };
 
-        var request = new HttpRequestMessage(HttpMethod.Post, "/api/mcp")
+        var request = new HttpRequestMessage(HttpMethod.Post, "/api/mcp/test")
         {
             Content = new StringContent(callJson.ToJsonString(), Encoding.UTF8, "application/json")
         };
@@ -61,9 +62,13 @@ public sealed class FindRelatedCodeToolTests
         await using var factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(b =>
             {
+                b.UseSetting("Repositories:test", ".");
                 b.ConfigureServices(s =>
                 {
                     s.AddSingleton<IDependencyGraphService>(new MockDependencyGraphService());
+                    var hd = s.SingleOrDefault(d => d.ServiceType == typeof(Microsoft.Extensions.Hosting.IHostedService)
+                        && d.ImplementationType?.Name == "IndexingHostedService");
+                    if (hd != null) s.Remove(hd);
                 });
             });
         var client = factory.CreateClient();
@@ -79,7 +84,17 @@ public sealed class FindRelatedCodeToolTests
     [Test]
     public async Task FindRelatedCode_ReturnsEmpty_WhenNoService()
     {
-        await using var factory = new WebApplicationFactory<Program>();
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(b =>
+            {
+                b.UseSetting("Repositories:test", ".");
+                b.ConfigureServices(s =>
+                {
+                    var hd = s.SingleOrDefault(d => d.ServiceType == typeof(Microsoft.Extensions.Hosting.IHostedService)
+                        && d.ImplementationType?.Name == "IndexingHostedService");
+                    if (hd != null) s.Remove(hd);
+                });
+            });
         var client = factory.CreateClient();
 
         var result = await callTool(client, "find_related_code",
@@ -98,9 +113,13 @@ public sealed class FindRelatedCodeToolTests
         await using var factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(b =>
             {
+                b.UseSetting("Repositories:test", ".");
                 b.ConfigureServices(s =>
                 {
                     s.AddSingleton<IDependencyGraphService>(new MockDependencyGraphService());
+                    var hd = s.SingleOrDefault(d => d.ServiceType == typeof(Microsoft.Extensions.Hosting.IHostedService)
+                        && d.ImplementationType?.Name == "IndexingHostedService");
+                    if (hd != null) s.Remove(hd);
                 });
             });
         var client = factory.CreateClient();
@@ -122,9 +141,13 @@ public sealed class FindRelatedCodeToolTests
         await using var factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(b =>
             {
+                b.UseSetting("Repositories:test", ".");
                 b.ConfigureServices(s =>
                 {
                     s.AddSingleton<IDependencyGraphService>(new MockDependencyGraphService());
+                    var hd = s.SingleOrDefault(d => d.ServiceType == typeof(Microsoft.Extensions.Hosting.IHostedService)
+                        && d.ImplementationType?.Name == "IndexingHostedService");
+                    if (hd != null) s.Remove(hd);
                 });
             });
         var client = factory.CreateClient();
