@@ -1,3 +1,4 @@
+using CodeMemory.Indexing.Parsing;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -5,7 +6,7 @@ using Microsoft.Extensions.Logging;
 
 namespace CodeMemory.Indexing.Extraction;
 
-public sealed class RoslynSymbolExtractor
+public sealed class RoslynSymbolExtractor : ISymbolExtractor
 {
     static void extractFromMember(
         MemberDeclarationSyntax member,
@@ -305,6 +306,11 @@ public sealed class RoslynSymbolExtractor
     public RoslynSymbolExtractor(ILogger<RoslynSymbolExtractor> logger)
     {
         this.logger = logger;
+    }
+
+    public IReadOnlyList<Symbol> Extract(ParseResult result, string filePath)
+    {
+        return Extract(result.RoslynTree!, filePath);
     }
 
     public IReadOnlyList<Symbol> Extract(SyntaxTree syntaxTree, string filePath)

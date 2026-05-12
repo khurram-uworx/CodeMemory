@@ -15,10 +15,12 @@ public sealed class RoslynCSharpParserTests
         var parser = new RoslynCSharpParser(NullLogger<RoslynCSharpParser>.Instance);
         var filePath = Path.Combine(fixturesDir, "SampleClass.cs");
 
-        var syntaxTree = await parser.ParseAsync(filePath);
+        var result = await parser.ParseAsync(filePath);
 
-        Assert.That(syntaxTree, Is.Not.Null);
-        Assert.That(syntaxTree!.GetRoot(), Is.Not.Null);
+        Assert.That(result, Is.Not.Null);
+        Assert.That(result!.RoslynTree, Is.Not.Null);
+        Assert.That(result.RoslynTree!.GetRoot(), Is.Not.Null);
+        Assert.That(result.Language, Is.EqualTo(Language.CSharp));
     }
 
     [Test]
@@ -26,9 +28,9 @@ public sealed class RoslynCSharpParserTests
     {
         var parser = new RoslynCSharpParser(NullLogger<RoslynCSharpParser>.Instance);
 
-        var syntaxTree = await parser.ParseAsync("Z:\\nonexistent\\file.cs");
+        var result = await parser.ParseAsync("Z:\\nonexistent\\file.cs");
 
-        Assert.That(syntaxTree, Is.Null);
+        Assert.That(result, Is.Null);
     }
 
     [Test]
@@ -40,10 +42,10 @@ public sealed class RoslynCSharpParserTests
         {
             await File.WriteAllTextAsync(malformedPath, "this is not valid csharp ###");
 
-            var syntaxTree = await parser.ParseAsync(malformedPath);
+            var result = await parser.ParseAsync(malformedPath);
 
-            Assert.That(syntaxTree, Is.Not.Null);
-            var diagnostics = syntaxTree!.GetDiagnostics();
+            Assert.That(result, Is.Not.Null);
+            var diagnostics = result!.RoslynTree!.GetDiagnostics();
             Assert.That(diagnostics, Has.Some.Matches<Microsoft.CodeAnalysis.Diagnostic>(d =>
                 d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error));
         }
@@ -63,9 +65,9 @@ public sealed class RoslynCSharpParserTests
         {
             await File.WriteAllTextAsync(malformedPath, "class { invalid");
 
-            var syntaxTree = await parser.ParseAsync(malformedPath);
+            var result = await parser.ParseAsync(malformedPath);
 
-            Assert.That(syntaxTree, Is.Not.Null);
+            Assert.That(result, Is.Not.Null);
             Assert.That(logger.Warnings, Has.Count.GreaterThan(0));
         }
         finally
@@ -83,9 +85,9 @@ public sealed class RoslynCSharpParserTests
         {
             await File.WriteAllTextAsync(emptyPath, "");
 
-            var syntaxTree = await parser.ParseAsync(emptyPath);
+            var result = await parser.ParseAsync(emptyPath);
 
-            Assert.That(syntaxTree, Is.Not.Null);
+            Assert.That(result, Is.Not.Null);
         }
         finally
         {

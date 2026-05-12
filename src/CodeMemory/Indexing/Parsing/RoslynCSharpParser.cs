@@ -13,7 +13,7 @@ public sealed class RoslynCSharpParser : ILanguageParser
         this.logger = logger;
     }
 
-    public async Task<SyntaxTree?> ParseAsync(string filePath, CancellationToken cancellationToken = default)
+    public async Task<ParseResult?> ParseAsync(string filePath, CancellationToken cancellationToken = default)
     {
         logger.LogDebug("Parsing file: {FilePath}", filePath);
 
@@ -35,17 +35,13 @@ public sealed class RoslynCSharpParser : ILanguageParser
 
             var errors = diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).ToList();
             if (errors.Count > 0)
-            {
                 logger.LogWarning(
                     "Parsed {FilePath} with {ErrorCount} error(s) — first error: {FirstError}",
                     filePath, errors.Count, errors[0].GetMessage());
-            }
             else
-            {
                 logger.LogDebug("Successfully parsed: {FilePath}", filePath);
-            }
 
-            return syntaxTree;
+            return new ParseResult(text, Parsing.Language.CSharp, syntaxTree, null);
         }
         catch (Exception ex)
         {

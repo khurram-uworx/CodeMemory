@@ -4,6 +4,9 @@ public enum Language
 {
     Unknown,
     CSharp,
+    TypeScript,
+    JavaScript,
+    Java,
 }
 
 public static class LanguageDetector
@@ -11,6 +14,11 @@ public static class LanguageDetector
     static readonly Dictionary<string, Language> extensionMap = new(StringComparer.OrdinalIgnoreCase)
     {
         [".cs"] = Language.CSharp,
+        [".ts"] = Language.TypeScript,
+        [".tsx"] = Language.TypeScript,
+        [".js"] = Language.JavaScript,
+        [".jsx"] = Language.JavaScript,
+        [".java"] = Language.Java,
     };
 
     public static Language Detect(string filePath)
