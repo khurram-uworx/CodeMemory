@@ -15,10 +15,10 @@ CodeMemory/
 │   │   ├── Indexing/
 │   │   │   ├── Architecture/     # IArchitectureService, IComponentClusteringService
 │   │   │   ├── Chunking/         # Semantic chunking (type-level + member-level)
-│   │   │   ├── Extraction/       # Roslyn symbol + relationship extraction
+│   │   │   ├── Extraction/       # Roslyn + Tree-sitter symbol & relationship extraction
 │   │   │   ├── Git/              # IGitHistoryService interface
 │   │   │   ├── Graph/            # IDependencyGraphService interface
-│   │   │   ├── Parsing/          # Language detection + Roslyn C# parser
+│   │   │   ├── Parsing/          # Language detection + Roslyn C# + Tree-sitter parsers
 │   │   │   └── Search/           # ISemanticSearchService interface
 │   │   ├── Mcp/                  # MCP tool definitions + models + services
 │   │   │   ├── Models/
@@ -52,7 +52,8 @@ CodeMemory (library — no ASP.NET dep)
   ├── Microsoft.Extensions.AI.Abstractions       (IEmbeddingGenerator, IChatClient)
   ├── System.Numerics.Tensors                    (TensorPrimitives.Norm for normalization)
   ├── ModelContextProtocol                       (MCP server types + tool attributes)
-  ├── Microsoft.CodeAnalysis.CSharp              (Roslyn parsing)
+  ├── Microsoft.CodeAnalysis.CSharp              (Roslyn parsing for C#)
+  ├── TreeSitter.DotNet                          (Tree-sitter parsing for TS/JS/Java)
   └── CodeMemory.Storage                         (vector store provider)
         └── Microsoft.SemanticKernel.Connectors.SqliteVec  (implements IVectorStore)
 
@@ -85,12 +86,17 @@ Startup
        ├─ storage.InitializeAsync()
        ├─ crawler.WalkAsync() — walks repo, respects .gitignore
        │
-       └─ for each .cs file:
-            ├─ RoslynCSharpParser.ParseAsync() → SyntaxTree
-            ├─ RoslynSymbolExtractor.Extract() → List<Symbol>
-            ├─ RoslynRelationshipExtractor.ExtractRelationships() → List<Relationship>
+       └─ for each supported file (routed by language):
+            ├─ ILanguageParser.ParseAsync() → ParseResult (Roslyn or Tree-sitter tree)
+            ├─ ISymbolExtractor.Extract() → List<Symbol>
+            ├─ IRelationshipExtractor.ExtractRelationships() → List<Relationship>
             ├─ SemanticChunker.ChunkAll() → List<DocumentChunk>
             └─ accumulate symbols + relationships + chunks
+       │
+       │  Language routing:
+       │    .cs   → RoslynCSharpParser + RoslynSymbolExtractor + RoslynRelationshipExtractor
+       │    .ts/.tsx/.js/.jsx → TreeSitterParser + TreeSitterSymbolExtractor + TreeSitterRelationshipExtractor
+       │    .java → TreeSitterParser + TreeSitterSymbolExtractor + TreeSitterRelationshipExtractor
        │
        ├─ storage.StoreSymbolsAsync(allSymbols)
        ├─ storage.StoreRelationshipsAsync(allRelationships)
@@ -183,7 +189,9 @@ Query methods on `IStorageService`:
 | `VectorStore` (via `IVectorStore`) | `Microsoft.Extensions.VectorData` | Abstract vector storage |
 | `IStorageService` | `CodeMemory.Storage` | CRUD over symbols, chunks, relationships |
 | `ISemanticSearchService` | `CodeMemory` | Text/vector-based semantic search |
-| `ILanguageParser` | `CodeMemory` | Parse source files to syntax trees |
+| `ILanguageParser` | `CodeMemory` | Parse source files to parse results (Roslyn or Tree-sitter) |
+| `ISymbolExtractor` | `CodeMemory` | Extract symbols from parse results |
+| `IRelationshipExtractor` | `CodeMemory` | Extract relationships (inherits, calls, references) from symbols |
 | `IDependencyGraphService` | `CodeMemory.Indexing.Graph` | Dependency tracing, related symbols, test coverage |
 | `IArchitectureService` | `CodeMemory.Indexing.Architecture` | Component grouping, language breakdown, file/symbol counts |
 | `IComponentClusteringService` | `CodeMemory.Indexing.Architecture` | Threshold-based component coupling clustering |
@@ -225,9 +233,9 @@ All tools return structured JSON. Tools with external service dependencies use `
 
 ## Semantic Chunking
 
-- AST-based (Roslyn), not fixed-token-window
-- Two chunk types per .cs file:
-  - **Type chunks**: class/interface/struct/enum/record — includes file context (usings, namespace)
+- AST-based (Roslyn for C#, Tree-sitter for TS/JS/Java), not fixed-token-window
+- Two chunk types per file:
+  - **Type chunks**: class/interface/struct/enum/record — includes file context (usings/namespace for C#, imports/exports for TS/JS/Java)
   - **Member chunks**: method/property/field/event — includes parent type reference
 - Chunks identified by SHA256 hash of (symbolId + content + filePath)
 - Deterministic: same input → same chunk IDs
@@ -328,7 +336,7 @@ foreach (var (name, path) in repositories)
 ## Current Constraints & Limitations
 
 - Indexing: full re-index on each startup (incremental planned)
-- C# only for symbol extraction; other languages get file-level crawling only
+- C#, TypeScript, JavaScript, Java for symbol extraction and relationships; other languages get file-level crawling only
 - Embedding dimension is auto-detected from the registered `IEmbeddingGenerator` metadata (default 1536, provided by Memori's `NgramEmbeddingGenerator`)
 - Relationship extraction is syntax-only — overloaded method references may be imprecise
 - Git analysis uses shell commands (acceptable per design, but slower than native library)

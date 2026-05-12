@@ -48,12 +48,9 @@ Currently re-indexes all files on every startup. Could:
 - **Effort**: Medium. Requires storage schema addition + file watcher.
 
 ### 3. Multi-Language Parsing
-Currently C# only via Roslyn. Add Tree-sitter or language-specific parsers for:
-- TypeScript / JavaScript
-- Python
-- Go
-- Rust
-- **Effort**: High per language. Each needs a parser adapter implementing `ILanguageParser`.
+- **Completed**: TypeScript, JavaScript, Java via `TreeSitter.DotNet` — full symbol extraction, relationship extraction, and language-aware chunking (PR #...)
+- **Remaining**: Python, Go, Rust — each needs a new `TreeSitterParser` grammar registration, plus any language-specific node type mappings in the extractor
+- **Effort**: Medium per remaining language (parser and grammar already in `TreeSitter.DotNet`; just add node type mappings and test)
 
 ### 4. LLM-Powered Architecture Descriptions
 `ArchitectureService` returns raw counts. An LLM layer could:
