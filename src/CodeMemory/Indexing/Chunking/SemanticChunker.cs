@@ -8,43 +8,48 @@ namespace CodeMemory.Indexing.Chunking;
 
 public sealed class SemanticChunker
 {
-    static string ExtractFileContext(string[] fileLines)
+    static string extractFileContext(string[] fileLines, Language language)
     {
         var context = new StringBuilder();
 
         foreach (var line in fileLines)
         {
             var trimmed = line.TrimStart();
-            if (trimmed.StartsWith("using ") || trimmed.StartsWith("namespace "))
-            {
+            if (isImportOrHeaderLine(trimmed, language))
                 context.AppendLine(line.TrimEnd('\r'));
-            }
-            else if (trimmed.StartsWith("//") || trimmed.StartsWith("/*") || trimmed.StartsWith("///"))
-            {
-                // skip file-level comments
+            else if (trimmed.StartsWith("//") || trimmed.StartsWith("/*"))
                 continue;
-            }
             else if (string.IsNullOrWhiteSpace(trimmed))
-            {
                 continue;
-            }
             else
-            {
                 break;
-            }
         }
 
         return context.ToString().TrimEnd();
     }
 
-    static DocumentChunk CreateTypeChunk(
+    static bool isImportOrHeaderLine(string trimmed, Language language)
+    {
+        return language switch
+        {
+            Language.CSharp => trimmed.StartsWith("using ") || trimmed.StartsWith("namespace "),
+            Language.TypeScript or Language.JavaScript =>
+                trimmed.StartsWith("import ") || trimmed.StartsWith("export ") ||
+                trimmed.StartsWith("require(") || trimmed.StartsWith("/// <reference") ||
+                trimmed.StartsWith("module "),
+            Language.Java => trimmed.StartsWith("import ") || trimmed.StartsWith("package "),
+            _ => false,
+        };
+    }
+
+    static DocumentChunk createTypeChunk(
         Symbol symbol,
         string[] fileLines,
         string fileContext,
         string filePath,
         Language language)
     {
-        var typeLines = ExtractLines(fileLines, symbol.LineRange);
+        var typeLines = extractLines(fileLines, symbol.LineRange);
         var content = new StringBuilder();
 
         if (!string.IsNullOrEmpty(fileContext))
@@ -55,7 +60,7 @@ public sealed class SemanticChunker
 
         content.Append(typeLines);
 
-        var id = ComputeId(symbol.FullName, content.ToString(), filePath);
+        var id = computeId(symbol.FullName, content.ToString(), filePath);
         var metadata = new Dictionary<string, string>
         {
             ["chunkType"] = "type",
@@ -67,14 +72,14 @@ public sealed class SemanticChunker
             language.ToString(), symbol.LineRange, metadata);
     }
 
-    static DocumentChunk CreateMemberChunk(
+    static DocumentChunk createMemberChunk(
         Symbol symbol,
         string[] fileLines,
         string filePath,
         Language language)
     {
-        var memberLines = ExtractLines(fileLines, symbol.LineRange);
-        var parentName = ExtractParentName(symbol.FullName);
+        var memberLines = extractLines(fileLines, symbol.LineRange);
+        var parentName = extractParentName(symbol.FullName);
         var content = new StringBuilder();
 
         if (parentName != null)
@@ -84,7 +89,7 @@ public sealed class SemanticChunker
 
         content.Append(memberLines);
 
-        var id = ComputeId(symbol.FullName, content.ToString(), filePath);
+        var id = computeId(symbol.FullName, content.ToString(), filePath);
         var metadata = new Dictionary<string, string>
         {
             ["chunkType"] = "member",
@@ -101,7 +106,7 @@ public sealed class SemanticChunker
             language.ToString(), symbol.LineRange, metadata);
     }
 
-    static string ExtractLines(string[] fileLines, LineRange range)
+    static string extractLines(string[] fileLines, LineRange range)
     {
         var sb = new StringBuilder();
         for (int i = range.Start - 1; i < range.End && i < fileLines.Length; i++)
@@ -111,7 +116,7 @@ public sealed class SemanticChunker
         return sb.ToString().TrimEnd();
     }
 
-    static string? ExtractParentName(string fullName)
+    static string? extractParentName(string fullName)
     {
         var lastDot = fullName.LastIndexOf('.');
         if (lastDot <= 0)
@@ -128,7 +133,7 @@ public sealed class SemanticChunker
         return null;
     }
 
-    static string ComputeId(string symbolId, string content, string filePath)
+    static string computeId(string symbolId, string content, string filePath)
     {
         var input = $"{symbolId}|{content}|{filePath}";
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(input));
@@ -163,17 +168,17 @@ public sealed class SemanticChunker
             .ToList();
 
         // File-level context (usings + namespace)
-        var fileContext = ExtractFileContext(fileLines);
+        var fileContext = extractFileContext(fileLines, language);
 
         foreach (var typeSymbol in typeSymbols)
         {
-            var typeChunk = CreateTypeChunk(typeSymbol, fileLines, fileContext, filePath, language);
+            var typeChunk = createTypeChunk(typeSymbol, fileLines, fileContext, filePath, language);
             chunks.Add(typeChunk);
         }
 
         foreach (var memberSymbol in memberSymbols)
         {
-            var memberChunk = CreateMemberChunk(memberSymbol, fileLines, filePath, language);
+            var memberChunk = createMemberChunk(memberSymbol, fileLines, filePath, language);
             chunks.Add(memberChunk);
         }
 

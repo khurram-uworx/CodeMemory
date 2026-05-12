@@ -3,7 +3,6 @@ using CodeMemory.Indexing.Chunking;
 using CodeMemory.Indexing.Extraction;
 using CodeMemory.Indexing.Parsing;
 using CodeMemory.Storage;
-using Microsoft.CodeAnalysis;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using System.Numerics.Tensors;
@@ -14,8 +13,7 @@ namespace CodeMemory.Services;
 public sealed class IndexingEngine
 {
     static SymbolRecord mapToSymbolRecord(Symbol s)
-    {
-        return new SymbolRecord
+        => new SymbolRecord
         {
             Id = s.FullName,
             Name = s.Name,
@@ -27,11 +25,9 @@ public sealed class IndexingEngine
             Modifiers = s.Modifiers.Count > 0 ? string.Join(",", s.Modifiers) : null,
             Documentation = s.Documentation,
         };
-    }
 
     static ChunkRecord mapToChunkRecord(DocumentChunk c, ReadOnlyMemory<float>? embedding)
-    {
-        return new ChunkRecord
+        => new ChunkRecord
         {
             Id = c.Id,
             SymbolId = c.SymbolId,
@@ -43,39 +39,47 @@ public sealed class IndexingEngine
             MetadataJson = c.Metadata.Count > 0 ? JsonSerializer.Serialize(c.Metadata) : null,
             Embedding = embedding,
         };
-    }
 
     static RelationshipRecord mapToRelationshipRecord(Relationship r)
-    {
-        return new RelationshipRecord
+        => new RelationshipRecord
         {
             Id = $"{r.SourceSymbolId}->{r.TargetSymbolId}:{r.RelationshipType}",
             SourceSymbolId = r.SourceSymbolId,
             TargetSymbolId = r.TargetSymbolId,
             RelationshipType = r.RelationshipType,
         };
-    }
 
     readonly ILogger<IndexingEngine> logger;
     readonly FileCrawler crawler;
-    readonly ILanguageParser parser;
-    readonly RoslynSymbolExtractor extractor;
-    readonly RoslynRelationshipExtractor relationshipExtractor;
+    readonly Dictionary<Language, ILanguageParser> parsers;
+    readonly Dictionary<Language, (ISymbolExtractor, IRelationshipExtractor)> extractors;
     readonly SemanticChunker chunker;
     readonly IStorageService storage;
     readonly IEmbeddingGenerator<string, Embedding<float>>? embeddingGenerator;
 
     public IndexingEngine(ILogger<IndexingEngine> logger, FileCrawler crawler,
-        ILanguageParser parser, RoslynSymbolExtractor extractor,
-        RoslynRelationshipExtractor relationshipExtractor, SemanticChunker chunker,
-        IStorageService storage,
+        RoslynCSharpParser roslynParser, TreeSitterParser tsParser,
+        RoslynSymbolExtractor roslynExtractor, RoslynRelationshipExtractor roslynRelationshipExtractor,
+        TreeSitterSymbolExtractor tsExtractor, TreeSitterRelationshipExtractor tsRelationshipExtractor,
+        SemanticChunker chunker, IStorageService storage,
         IEmbeddingGenerator<string, Embedding<float>>? embeddingGenerator = null)
     {
         this.logger = logger;
         this.crawler = crawler;
-        this.parser = parser;
-        this.extractor = extractor;
-        this.relationshipExtractor = relationshipExtractor;
+        parsers = new Dictionary<Language, ILanguageParser>
+        {
+            [Language.CSharp] = roslynParser,
+            [Language.TypeScript] = tsParser,
+            [Language.JavaScript] = tsParser,
+            [Language.Java] = tsParser,
+        };
+        extractors = new Dictionary<Language, (ISymbolExtractor, IRelationshipExtractor)>
+        {
+            [Language.CSharp] = (roslynExtractor, roslynRelationshipExtractor),
+            [Language.TypeScript] = (tsExtractor, tsRelationshipExtractor),
+            [Language.JavaScript] = (tsExtractor, tsRelationshipExtractor),
+            [Language.Java] = (tsExtractor, tsRelationshipExtractor),
+        };
         this.chunker = chunker;
         this.storage = storage;
         this.embeddingGenerator = embeddingGenerator;
@@ -96,28 +100,31 @@ public sealed class IndexingEngine
         var allSymbolRecords = new List<SymbolRecord>();
         var allSymbols = new List<Symbol>();
         var allChunks = new List<DocumentChunk>();
-        var syntaxTrees = new List<(SyntaxTree Tree, string FilePath)>();
+        var parseResults = new List<(ParseResult Result, string FilePath)>();
 
         await foreach (var entry in crawler.WalkAsync(repoRoot, cancellationToken: ct))
         {
             logger.LogDebug("Found file: {Path} ({Ext})", entry.RelativePath, entry.Extension);
             fileCount++;
 
-            if (LanguageDetector.Detect(entry.Path) == Language.CSharp)
+            var lang = LanguageDetector.Detect(entry.Path);
+            if (lang != Language.Unknown && parsers.TryGetValue(lang, out var languageParser))
             {
-                var syntaxTree = await parser.ParseAsync(entry.Path, ct);
-                if (syntaxTree != null)
+                var result = await languageParser.ParseAsync(entry.Path, ct);
+
+                if (result != null)
                 {
                     parsedCount++;
-                    var symbols = extractor.Extract(syntaxTree, entry.Path);
+                    var (symbolExtractor, _) = extractors[lang];
+                    var symbols = symbolExtractor.Extract(result, entry.Path);
                     symbolCount += symbols.Count;
 
                     allSymbolRecords.AddRange(symbols.Select(mapToSymbolRecord));
                     allSymbols.AddRange(symbols);
-                    syntaxTrees.Add((syntaxTree, entry.Path));
+                    parseResults.Add((result, entry.Path));
 
-                    var fileText = await File.ReadAllTextAsync(entry.Path, ct);
-                    var chunks = chunker.ChunkAll(symbols, fileText, entry.Path, Language.CSharp);
+                    var fileText = result.FileText;
+                    var chunks = chunker.ChunkAll(symbols, fileText, entry.Path, lang);
                     chunkCount += chunks.Count;
 
                     allChunks.AddRange(chunks);
@@ -137,10 +144,13 @@ public sealed class IndexingEngine
         if (allSymbols.Count > 0)
         {
             var allRelationships = new List<Relationship>();
-            foreach (var (tree, path) in syntaxTrees)
+            foreach (var (result, path) in parseResults)
             {
-                var rels = relationshipExtractor.ExtractRelationships(tree, allSymbols, path);
-                allRelationships.AddRange(rels);
+                if (extractors.TryGetValue(result.Language, out var pair))
+                {
+                    var rels = pair.Item2.ExtractRelationships(result, allSymbols, path);
+                    allRelationships.AddRange(rels);
+                }
             }
 
             if (allRelationships.Count > 0)
@@ -163,11 +173,11 @@ public sealed class IndexingEngine
                 var vector = generatedEmbeddings[i].Vector;
                 var norm = TensorPrimitives.Norm(vector.Span);
                 var normalized = new float[vector.Length];
+
                 if (norm > 0)
-                {
                     for (int j = 0; j < vector.Length; j++)
                         normalized[j] = vector.Span[j] / norm;
-                }
+
                 chunkRecords.Add(mapToChunkRecord(allChunks[i], normalized));
             }
 
@@ -175,9 +185,7 @@ public sealed class IndexingEngine
             logger.LogInformation("Stored {Count} chunk records with embeddings", chunkRecords.Count);
         }
         else if (allChunks.Count > 0)
-        {
             logger.LogWarning("No embedding generator registered — skipping chunk storage. Register an IEmbeddingGenerator<string, Embedding<float>> to enable semantic chunk storage.");
-        }
 
         logger.LogInformation(
             "Indexing complete — {Files} files, {Parsed} parsed, {Symbols} symbols, {Chunks} chunks, {Relationships} relationships",

@@ -20,9 +20,12 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Indexing services
 builder.Services.AddSingleton<FileCrawler>();
-builder.Services.AddSingleton<ILanguageParser, RoslynCSharpParser>();
+builder.Services.AddSingleton<RoslynCSharpParser>();
+builder.Services.AddSingleton<TreeSitterParser>();
 builder.Services.AddSingleton<RoslynSymbolExtractor>();
 builder.Services.AddSingleton<RoslynRelationshipExtractor>();
+builder.Services.AddSingleton<TreeSitterSymbolExtractor>();
+builder.Services.AddSingleton<TreeSitterRelationshipExtractor>();
 builder.Services.AddSingleton<SemanticChunker>();
 
 // Repo-agnostic: embedding generator (registered before repo loop)

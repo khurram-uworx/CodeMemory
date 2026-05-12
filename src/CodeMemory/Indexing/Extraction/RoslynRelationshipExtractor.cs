@@ -1,15 +1,11 @@
+using CodeMemory.Indexing.Parsing;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.Extensions.Logging;
 
 namespace CodeMemory.Indexing.Extraction;
 
-public sealed record Relationship(
-    string SourceSymbolId,
-    string TargetSymbolId,
-    string RelationshipType);
-
-public sealed class RoslynRelationshipExtractor
+public sealed class RoslynRelationshipExtractor : IRelationshipExtractor
 {
     static string? extractIdentifier(TypeSyntax type)
     {
@@ -79,6 +75,7 @@ public sealed class RoslynRelationshipExtractor
         this.logger = logger;
     }
 
+
     void addRelationship(string sourceId, string targetId, string type,
         HashSet<string> seen, List<Relationship> results)
     {
@@ -96,8 +93,7 @@ public sealed class RoslynRelationshipExtractor
         return member != null ? findContainingSymbol(member, symbols, filePath) : null;
     }
 
-    Symbol? resolveTargetForType(TypeSyntax type,
-        ILookup<string, Symbol> byName, ILookup<string, Symbol> byFullName)
+    Symbol? resolveTargetForType(TypeSyntax type, ILookup<string, Symbol> byName, ILookup<string, Symbol> byFullName)
     {
         var typeName = extractIdentifier(type);
         if (typeName == null || primitiveTypes.Contains(typeName))
@@ -106,6 +102,11 @@ public sealed class RoslynRelationshipExtractor
         return findSymbolByName(typeName, byName, byFullName);
     }
 
+    public IReadOnlyList<Relationship> ExtractRelationships(
+        ParseResult result, IReadOnlyList<Symbol> symbols, string filePath)
+    {
+        return ExtractRelationships(result.RoslynTree!, symbols, filePath);
+    }
     public IReadOnlyList<Relationship> ExtractRelationships(
         SyntaxTree syntaxTree, IReadOnlyList<Symbol> symbols, string filePath)
     {
