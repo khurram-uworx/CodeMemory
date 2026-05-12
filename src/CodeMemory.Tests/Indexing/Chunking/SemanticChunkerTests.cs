@@ -8,6 +8,39 @@ namespace CodeMemory.Tests.Indexing.Chunking;
 
 public sealed class SemanticChunkerTests
 {
+    static bool isTreeSitterAvailable()
+    {
+        try
+        {
+            using var parser = new TreeSitter.Parser(new TreeSitter.Language("TypeScript"));
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    static async Task<(IReadOnlyList<Symbol> Symbols, string FileText)> extractTsSymbols(
+        string code, string extension)
+    {
+        var parser = new TreeSitterParser(NullLogger<TreeSitterParser>.Instance);
+        var extractor = new TreeSitterSymbolExtractor(NullLogger<TreeSitterSymbolExtractor>.Instance);
+        var path = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}{extension}");
+        try
+        {
+            await File.WriteAllTextAsync(path, code);
+            var result = await parser.ParseAsync(path);
+            Assert.That(result, Is.Not.Null);
+            var symbols = extractor.Extract(result!, path);
+            return (symbols, result!.FileText);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
     static readonly string fixturesDir = Path.Combine(
         TestContext.CurrentContext.TestDirectory, "..", "..", "..", "..",
         "CodeMemory.Tests", "fixtures");
@@ -186,5 +219,53 @@ public sealed class SemanticChunkerTests
             Assert.That(chunk.Metadata, Contains.Key("chunkType"));
             Assert.That(chunk.Metadata, Contains.Key("symbolKind"));
         }
+    }
+
+    [Test]
+    public async Task ChunkAll_WithTypeScript_ImportInFileContext()
+    {
+        Assume.That(isTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            import { Component } from './component';
+            import { Helper } from './helper';
+
+            export class MyService {
+                doWork() {}
+            }
+            """;
+
+        var (symbols, fileText) = await extractTsSymbols(code, ".ts");
+        var chunker = new SemanticChunker(NullLogger<SemanticChunker>.Instance);
+        var chunks = chunker.ChunkAll(symbols, fileText, "test.ts", Language.TypeScript);
+
+        var serviceChunk = chunks.FirstOrDefault(c => c.SymbolId == "MyService");
+        Assert.That(serviceChunk, Is.Not.Null);
+        Assert.That(serviceChunk!.Content, Does.Contain("import { Component } from './component'"));
+        Assert.That(serviceChunk.Content, Does.Contain("import { Helper } from './helper'"));
+    }
+
+    [Test]
+    public async Task ChunkAll_WithJava_ImportAndPackageInFileContext()
+    {
+        Assume.That(isTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            package com.example;
+            import java.util.List;
+            import java.util.ArrayList;
+
+            public class MyService {
+                public void execute() {}
+            }
+            """;
+
+        var (symbols, fileText) = await extractTsSymbols(code, ".java");
+        var chunker = new SemanticChunker(NullLogger<SemanticChunker>.Instance);
+        var chunks = chunker.ChunkAll(symbols, fileText, "test.java", Language.Java);
+
+        var serviceChunk = chunks.FirstOrDefault(c => c.SymbolId == "MyService");
+        Assert.That(serviceChunk, Is.Not.Null);
+        Assert.That(serviceChunk!.Content, Does.Contain("package com.example;"));
+        Assert.That(serviceChunk.Content, Does.Contain("import java.util.List;"));
+        Assert.That(serviceChunk.Content, Does.Contain("import java.util.ArrayList;"));
     }
 }
