@@ -2,6 +2,8 @@
 
 Items discovered during Phase 5 completion audit against PLAN.md. Includes fixes applied and suggestions for future work.
 
+- Items 4, 5, 7, 8, 10, 11 are quick wins if prioritized
+
 ---
 
 ## Issues Found & Fixed

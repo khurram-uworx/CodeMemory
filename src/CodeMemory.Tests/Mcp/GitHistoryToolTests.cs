@@ -1,42 +1,12 @@
 using CodeMemory.Indexing.Git;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
-using System.Text;
 using System.Text.Json.Nodes;
 
 namespace CodeMemory.Tests.Mcp;
 
-public sealed class GitHistoryToolTests
+public sealed class GitHistoryToolTests : BaseToolTests
 {
-    static async Task<JsonObject> callTool(HttpClient client, string toolName, JsonObject args)
-    {
-        var callJson = new JsonObject
-        {
-            ["jsonrpc"] = "2.0",
-            ["id"] = "1",
-            ["method"] = "tools/call",
-            ["params"] = new JsonObject
-            {
-                ["name"] = toolName,
-                ["arguments"] = args
-            }
-        };
-
-        var request = new HttpRequestMessage(HttpMethod.Post, "/api/mcp/test")
-        {
-            Content = new StringContent(callJson.ToJsonString(), Encoding.UTF8, "application/json")
-        };
-        request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/json"));
-        request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
-
-        var response = await client.SendAsync(request);
-        var body = await response.Content.ReadAsStringAsync();
-        var jsonLine = body.Split('\n', StringSplitOptions.RemoveEmptyEntries)
-            .FirstOrDefault(l => l.StartsWith("data: "))
-            ?.Substring("data: ".Length) ?? body;
-        return JsonNode.Parse(jsonLine)!.AsObject();
-    }
-
     [Test]
     public async Task ToolAppearsInDiscovery()
     {
@@ -49,21 +19,7 @@ public sealed class GitHistoryToolTests
                 });
             });
         var client = factory.CreateClient();
-
-        var json = """{"jsonrpc":"2.0","id":1,"method":"tools/list"}""";
-        var request = new HttpRequestMessage(HttpMethod.Post, "/api/mcp/test")
-        {
-            Content = new StringContent(json, Encoding.UTF8, "application/json")
-        };
-        request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/json"));
-        request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
-
-        var response = await client.SendAsync(request);
-        var body = await response.Content.ReadAsStringAsync();
-        var jsonLine = body.Split('\n', StringSplitOptions.RemoveEmptyEntries)
-            .FirstOrDefault(l => l.StartsWith("data: "))
-            ?.Substring("data: ".Length) ?? body;
-        var result = JsonNode.Parse(jsonLine)!.AsObject();
+        var result = await SendToolsList(client);
 
         var tools = result["result"]?["tools"]?.AsArray();
         var toolNames = tools!.Select(t => t!["name"]?.GetValue<string>()).ToList();
@@ -86,7 +42,7 @@ public sealed class GitHistoryToolTests
             });
         var client = factory.CreateClient();
 
-        var result = await callTool(client, "get_symbol_history",
+        var result = await CallTool(client, "get_symbol_history",
             new JsonObject { ["symbolPath"] = "MyClass" });
 
         Assert.That(result["error"], Is.Null);
@@ -109,7 +65,7 @@ public sealed class GitHistoryToolTests
             });
         var client = factory.CreateClient();
 
-        var result = await callTool(client, "get_symbol_history",
+        var result = await CallTool(client, "get_symbol_history",
             new JsonObject { ["symbolPath"] = "MyClass.MyMethod", ["maxCommits"] = 5 });
 
         Assert.That(result["error"], Is.Null);
@@ -135,7 +91,7 @@ public sealed class GitHistoryToolTests
             });
         var client = factory.CreateClient();
 
-        var result = await callTool(client, "get_hotspots",
+        var result = await CallTool(client, "get_hotspots",
             new JsonObject { ["top"] = 5 });
 
         Assert.That(result["error"], Is.Null);
@@ -158,7 +114,7 @@ public sealed class GitHistoryToolTests
             });
         var client = factory.CreateClient();
 
-        var result = await callTool(client, "get_hotspots",
+        var result = await CallTool(client, "get_hotspots",
             new JsonObject { ["top"] = 10, ["maxCommits"] = 100 });
 
         Assert.That(result["error"], Is.Null);

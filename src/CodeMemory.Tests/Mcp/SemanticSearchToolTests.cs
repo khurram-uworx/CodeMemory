@@ -1,60 +1,12 @@
 using CodeMemory.Indexing.Search;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
-using System.Text;
 using System.Text.Json.Nodes;
 
 namespace CodeMemory.Tests.Mcp;
 
-public sealed class SemanticSearchToolTests
+public sealed class SemanticSearchToolTests : BaseToolTests
 {
-    static async Task<JsonObject> sendToolsList(HttpClient client)
-    {
-        var json = """{"jsonrpc":"2.0","id":1,"method":"tools/list"}""";
-        var request = new HttpRequestMessage(HttpMethod.Post, "/api/mcp/test")
-        {
-            Content = new StringContent(json, Encoding.UTF8, "application/json")
-        };
-        request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/json"));
-        request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
-
-        var response = await client.SendAsync(request);
-        var body = await response.Content.ReadAsStringAsync();
-        var jsonLine = body.Split('\n', StringSplitOptions.RemoveEmptyEntries)
-            .FirstOrDefault(l => l.StartsWith("data: "))
-            ?.Substring("data: ".Length) ?? body;
-        return JsonNode.Parse(jsonLine)!.AsObject();
-    }
-
-    static async Task<JsonObject> callTool(HttpClient client, string toolName, JsonObject args)
-    {
-        var callJson = new JsonObject
-        {
-            ["jsonrpc"] = "2.0",
-            ["id"] = "2",
-            ["method"] = "tools/call",
-            ["params"] = new JsonObject
-            {
-                ["name"] = toolName,
-                ["arguments"] = args
-            }
-        };
-
-        var request = new HttpRequestMessage(HttpMethod.Post, "/api/mcp/test")
-        {
-            Content = new StringContent(callJson.ToJsonString(), Encoding.UTF8, "application/json")
-        };
-        request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/json"));
-        request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
-
-        var response = await client.SendAsync(request);
-        var body = await response.Content.ReadAsStringAsync();
-        var jsonLine = body.Split('\n', StringSplitOptions.RemoveEmptyEntries)
-            .FirstOrDefault(l => l.StartsWith("data: "))
-            ?.Substring("data: ".Length) ?? body;
-        return JsonNode.Parse(jsonLine)!.AsObject();
-    }
-
     [Test]
     public async Task ToolAppearsInDiscovery()
     {
@@ -69,7 +21,7 @@ public sealed class SemanticSearchToolTests
             });
         var client = factory.CreateClient();
 
-        var body = await sendToolsList(client);
+        var body = await SendToolsList(client);
 
         var tools = body["result"]?["tools"]?.AsArray();
         Assert.That(tools, Is.Not.Null);
@@ -91,7 +43,7 @@ public sealed class SemanticSearchToolTests
             });
         var client = factory.CreateClient();
 
-        var result = await callTool(client, "semantic_search",
+        var result = await CallTool(client, "semantic_search",
             new JsonObject { ["query"] = "find database code", ["maxResults"] = 5 });
 
         Assert.That(result["error"], Is.Null);
@@ -110,7 +62,7 @@ public sealed class SemanticSearchToolTests
         await using var factory = new WebApplicationFactory<Program>();
         var client = factory.CreateClient();
 
-        var result = await callTool(client, "semantic_search",
+        var result = await CallTool(client, "semantic_search",
             new JsonObject { ["query"] = "anything", ["maxResults"] = 5 });
 
         Assert.That(result["error"], Is.Null);

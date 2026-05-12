@@ -90,10 +90,22 @@ POST http://localhost:4792/api/mcp/repo2   # JSON-RPC to repo2
 - **Host**: ASP.NET Core with MCP over Streamable HTTP
 - **Storage**: SQLite with vector extensions via `Microsoft.SemanticKernel.Connectors.SqliteVec`
 - **Parsing**: Roslyn (C#), with language detection for other file types
-- **Embeddings**: Built-in n-gram generator or pluggable via `IEmbeddingGenerator<string, Embedding<float>>`
+- **Embeddings**: Memori n-gram embedding generator (via Memori NuGet) or pluggable via `IEmbeddingGenerator<string, Embedding<float>>`
 - **Relationship extraction**: Syntax-based (Inherits, Implements, Calls, References)
 - **Git analysis**: Shell git commands with in-memory caching
 - **Multi-repo**: `StorageServiceRouter` + `IRepoContextAccessor` (AsyncLocal) + MCP `ConfigureSessionOptions` — no keyed DI, no middleware
+
+## Dependencies
+
+Key external packages and version constraints:
+
+| Package | Version | Note |
+|---|---|---|---|
+| `Memori` | `0.2.2` | Embedding generator implementation (`NgramEmbeddingGenerator` via `Memori.Embeddings`). |
+| `Microsoft.Extensions.VectorData.Abstractions` | `10.1.0` | Pinned — `10.1.0` is the highest version compatible with `Microsoft.SemanticKernel.Connectors.SqliteVec 1.74.0-preview` at runtime. Newer `10.x` minors add members to `VectorSearchOptions<T>` (e.g. `OldFilter`) that cause `MissingMethodException` in the SK connector. Bump only when the SK connector's minimum dependency moves past `10.1.0`. |
+| `Microsoft.SemanticKernel.Connectors.SqliteVec` | `1.74.0-preview` | Vector store provider; transitively requires `Microsoft.Extensions.VectorData.Abstractions >= 10.1.0`. Preview-only — no stable release available. |
+| `Microsoft.Extensions.AI.Abstractions` | `10.5.2` | Embedding generator abstraction. |
+| `ModelContextProtocol` | `1.3.0` | MCP protocol implementation. |
 
 ## Learn More
 

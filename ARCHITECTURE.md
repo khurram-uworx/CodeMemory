@@ -25,7 +25,6 @@ CodeMemory/
 │   │   │   └── Services/
 │   │   ├── Services/
 │   │   │   ├── Architecture/     # ArchitectureService, ComponentClusteringService
-│   │   │   ├── Embedding/        # NgramEmbeddingGenerator
 │   │   │   ├── Git/              # GitHistoryService
 │   │   │   ├── Graph/            # DependencyGraphService
 │   │   │   └── Query/            # SymbolQueryService, RelationshipQueryService, SemanticSearchService
@@ -68,7 +67,7 @@ Rules:
 - `CodeMemory` is a pure library (`Microsoft.NET.Sdk`, `OutputType Library`) with zero ASP.NET dependency
 - `CodeMemory.AspNet` owns all ASP.NET hosting concerns: `Program.cs`, DI registration, MCP HTTP transport, `BackgroundService` lifecycle
 - `CodeMemory.Storage` is the sole project with a concrete vector store driver; swappable (pgvector, Qdrant, etc.)
-- `IEmbeddingGenerator<string, Embedding<float>>` is user-provided via DI — optional; indexing proceeds without embeddings if absent
+- `IEmbeddingGenerator<string, Embedding<float>>` is provided by the `Memori` NuGet package via DI — optional; indexing proceeds without embeddings if absent
 - `IndexingEngine` (logic) lives in `CodeMemory.Services`; `IndexingHostedService` (BackgroundService wrapper) lives in `CodeMemory.AspNet.Services`
 - MCP tools live in `CodeMemory.Mcp`; registration uses `WithToolsFromAssembly(typeof(McpTools).Assembly)` from `CodeMemory.AspNet.Program.cs`
 - `CodeMemory.Tests` references all three projects for integration testing
@@ -215,7 +214,7 @@ All tools return structured JSON. Tools with external service dependencies use `
 
 ## Embedding & Normalization Strategy
 
-- **Default**: `NgramEmbeddingGenerator` — zero-dependency built-in using character n-gram hashing (2-, 3-, 4-grams) with random projection into 1536 dimensions, L2-normalized. Works completely offline, no API keys, no model downloads.
+- **Default**: `NgramEmbeddingGenerator` from the `Memori` NuGet package — character n-gram hashing (2-, 3-, 4-grams) with random projection into 1536 dimensions, L2-normalized. Works completely offline, no API keys, no model downloads.
 - **Optional**: Replace by registering any `IEmbeddingGenerator<string, Embedding<float>>` (OpenAI, Ollama, etc.)
 - Vectors are L2-normalized after generation using `TensorPrimitives` before storage
 - Query vectors are also normalized before search for consistent cosine distance computation
@@ -330,7 +329,7 @@ foreach (var (name, path) in repositories)
 
 - Indexing: full re-index on each startup (incremental planned)
 - C# only for symbol extraction; other languages get file-level crawling only
-- Embedding dimension is auto-detected from the registered IEmbeddingGenerator metadata (default 1536)
+- Embedding dimension is auto-detected from the registered `IEmbeddingGenerator` metadata (default 1536, provided by Memori's `NgramEmbeddingGenerator`)
 - Relationship extraction is syntax-only — overloaded method references may be imprecise
 - Git analysis uses shell commands (acceptable per design, but slower than native library)
 

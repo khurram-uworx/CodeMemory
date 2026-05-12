@@ -5,7 +5,7 @@ using System.Text.Json.Nodes;
 
 namespace CodeMemory.Tests.Mcp;
 
-public sealed class McpInfrastructureTests
+public sealed class McpInfrastructureTests : BaseToolTests
 {
     [Test]
     public async Task HealthEndpoint_RespondsOk()
@@ -27,7 +27,7 @@ public sealed class McpInfrastructureTests
         var client = factory.CreateClient();
 
         var json = """{"jsonrpc":"2.0","id":1,"method":"tools/list"}""";
-        var request = new HttpRequestMessage(HttpMethod.Post, "/api/mcp/test")
+        var request = new HttpRequestMessage(HttpMethod.Post, McpUrl)
         {
             Content = new StringContent(json, Encoding.UTF8, "application/json")
         };
@@ -65,7 +65,7 @@ public sealed class McpInfrastructureTests
         var client = factory.CreateClient();
 
         var json = """{"jsonrpc":"2.0","id":1,"method":"tools/list"}""";
-        var request = new HttpRequestMessage(HttpMethod.Post, "/api/mcp/test")
+        var request = new HttpRequestMessage(HttpMethod.Post, McpUrl)
         {
             Content = new StringContent(json, Encoding.UTF8, "application/json")
         };

@@ -12,7 +12,7 @@ Engineering constraints and implementation guidance for AI coding agents contrib
 
 Do not reinvent infrastructure. Prefer existing .NET and ecosystem primitives over custom solutions.
 
-Forbidden: custom LLM clients, custom embedding pipelines (use `IEmbeddingGenerator`), custom DI, custom vector DBs, custom chat orchestration.
+Forbidden: custom LLM clients, custom embedding pipelines (use `IEmbeddingGenerator` — reference implementation in Memori NuGet), custom DI, custom vector DBs, custom chat orchestration.
 
 ---
 
@@ -32,7 +32,7 @@ Tool rules:
 - Prefer composition over new frameworks
 - Reuse .NET primitives first
 - Document reasoning for non-standard decisions
-- Default to: `Microsoft.Extensions.AI`, `VectorData` abstractions, MCP exposure
+- Default to: `Microsoft.Extensions.AI`, `VectorData` abstractions, MCP exposure, Memori for embedding implementation
 
 ---
 
@@ -95,6 +95,14 @@ Multi-repo support uses **`StorageServiceRouter` + `IRepoContextAccessor` + per-
 - `Stateless = true` (Streamable HTTP) — no session affinity, no SSE, each request self-contained.
 - `PerSessionExecutionContext = true` preserves `AsyncLocal` flow to tool handlers.
 
+## Common Pitfalls
+
+- SSE transport (`EnableLegacySse = true`) throws at startup when combined with `Stateless = true` — modern agents use Streamable HTTP, no SSE needed.
+- Stateful mode (`Stateless = false`) breaks WebApplicationFactory tests — they don't send the MCP `initialize` handshake.
+- Hardcoded `/api/mcp/default` in tests causes 404 after removing the fallback default repo — always route to a specific configured repo.
+- Repo-relative paths resolve from `Environment.CurrentDirectory`, which differs between dev (AspNet project dir) and test (test bin dir) — use `Path.GetFullPath` with assembly-relative roots in test infrastructure.
+- MCP SDK documentation lives in the NuGet cache, not on NuGet.org — NuGet.org search returns Azure Functions MCP docs for the legacy SDK, not the ASP.NET Core `ModelContextProtocol.AspNetCore` package.
+
 ## Summary
 
-When uncertain: use `Microsoft.Extensions.AI` abstractions, expose via MCP, avoid reinventing infrastructure, and prioritize repository understanding over feature expansion. Architecture intelligence services (`DependencyGraphService`, `ArchitectureService`, `ComponentClusteringService`, `GitHistoryService`) follow the same patterns — compose existing abstractions, register in `CodeMemory.AspNet/Program.cs`, expose via MCP tools.
+When uncertain: use `Microsoft.Extensions.AI` abstractions, expose via MCP, avoid reinventing infrastructure, and prioritize repository understanding over feature expansion. Architecture intelligence services (`DependencyGraphService`, `ArchitectureService`, `ComponentClusteringService`, `GitHistoryService`) follow the same patterns — compose existing abstractions, register in `CodeMemory.AspNet/Program.cs`, expose via MCP tools. Embedding implementations come from the `Memori` NuGet package.
