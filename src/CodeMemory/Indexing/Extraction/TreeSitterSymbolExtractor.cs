@@ -335,6 +335,7 @@ public sealed class TreeSitterSymbolExtractor : ISymbolExtractor
 
         var root = tree.RootNode;
         var config = getLanguageConfig(result.Language);
+
         if (config == null)
             return Array.Empty<Symbol>();
 
@@ -347,9 +348,7 @@ public sealed class TreeSitterSymbolExtractor : ISymbolExtractor
             using var cursor = query.Execute(root);
 
             foreach (var match in cursor.Matches)
-            {
                 processMatch(match, config.Value, result.FileText, filePath, symbols, seenFullNames);
-            }
         }
         catch (Exception ex)
         {
@@ -357,6 +356,7 @@ public sealed class TreeSitterSymbolExtractor : ISymbolExtractor
         }
 
         logger.LogDebug("Extracted {Count} symbols from {File}", symbols.Count, filePath);
+
         return symbols;
     }
 }

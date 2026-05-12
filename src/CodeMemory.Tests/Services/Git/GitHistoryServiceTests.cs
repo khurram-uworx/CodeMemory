@@ -1,12 +1,11 @@
 using CodeMemory.Services.Git;
 using CodeMemory.Storage;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Diagnostics;
 
 namespace CodeMemory.Tests.Services.Git;
 
-public sealed class GitHistoryServiceTests
+public sealed class GitHistoryServiceTests : BaseServicesTests
 {
     static string createTempRepo()
     {
@@ -45,23 +44,16 @@ public sealed class GitHistoryServiceTests
         process.WaitForExit();
     }
 
-    static IStorageService createStorage(string dbPath)
-    {
-        var services = new ServiceCollection();
-        services.AddCodeMemoryStorage($"Data Source={dbPath}");
-        var sp = services.BuildServiceProvider();
-        return sp.GetRequiredService<IStorageService>();
-    }
-
     [Test]
     public async Task GetSymbolHistoryAsync_ReturnsNull_WhenSymbolNotFound()
     {
-        var dbPath = Path.Combine(Path.GetTempPath(), "CodeMemoryTests", Guid.NewGuid().ToString() + ".db");
+        var repoRoot = Path.Combine(Path.GetTempPath(), "CodeMemoryTests");
+        var dbPath = Path.Combine(repoRoot, Guid.NewGuid().ToString() + ".db");
         Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
-        var storage = createStorage(dbPath);
+        var storage = CreateStorage(repoRoot, dbPath);
         await storage.InitializeAsync();
 
-        var service = new GitHistoryService(storage, NullLogger<GitHistoryService>.Instance, Path.GetTempPath());
+        var service = new GitHistoryService(NullLogger<GitHistoryService>.Instance, storage);
         var result = await service.GetSymbolHistoryAsync("NonExistent");
 
         Assert.That(result, Is.Null);
@@ -70,9 +62,9 @@ public sealed class GitHistoryServiceTests
     [Test]
     public async Task GetSymbolHistoryAsync_ReturnsHistory_ForKnownSymbol()
     {
-        var repoDir = createTempRepo();
-        var dbPath = Path.Combine(repoDir, "test.db");
-        var storage = createStorage(dbPath);
+        var repoRoot = createTempRepo();
+        var dbPath = Path.Combine(repoRoot, "test.db");
+        var storage = CreateStorage(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         await storage.StoreSymbolsAsync([
@@ -87,7 +79,7 @@ public sealed class GitHistoryServiceTests
             }
         ]);
 
-        var service = new GitHistoryService(storage, NullLogger<GitHistoryService>.Instance, repoDir);
+        var service = new GitHistoryService(NullLogger<GitHistoryService>.Instance, storage);
         var result = await service.GetSymbolHistoryAsync("TestClass");
 
         Assert.That(result, Is.Not.Null);
@@ -99,12 +91,12 @@ public sealed class GitHistoryServiceTests
     [Test]
     public async Task GetHotspotsAsync_ReturnsOrderedResults()
     {
-        var repoDir = createTempRepo();
-        var dbPath = Path.Combine(repoDir, "test.db");
-        var storage = createStorage(dbPath);
+        var repoRoot = createTempRepo();
+        var dbPath = Path.Combine(repoRoot, "test.db");
+        var storage = CreateStorage(repoRoot, dbPath);
         await storage.InitializeAsync();
 
-        var service = new GitHistoryService(storage, NullLogger<GitHistoryService>.Instance, repoDir);
+        var service = new GitHistoryService(NullLogger<GitHistoryService>.Instance, storage);
         var hotspots = await service.GetHotspotsAsync(5, 10);
 
         Assert.That(hotspots, Is.Not.Empty);
@@ -115,9 +107,9 @@ public sealed class GitHistoryServiceTests
     [Test]
     public async Task GetSymbolHistoryAsync_RecentCommits_ArePopulated()
     {
-        var repoDir = createTempRepo();
-        var dbPath = Path.Combine(repoDir, "test.db");
-        var storage = createStorage(dbPath);
+        var repoRoot = createTempRepo();
+        var dbPath = Path.Combine(repoRoot, "test.db");
+        var storage = CreateStorage(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         await storage.StoreSymbolsAsync([
@@ -132,7 +124,7 @@ public sealed class GitHistoryServiceTests
             }
         ]);
 
-        var service = new GitHistoryService(storage, NullLogger<GitHistoryService>.Instance, repoDir);
+        var service = new GitHistoryService(NullLogger<GitHistoryService>.Instance, storage);
         var result = await service.GetSymbolHistoryAsync("TestClass", 10);
 
         Assert.That(result, Is.Not.Null);

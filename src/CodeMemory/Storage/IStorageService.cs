@@ -2,6 +2,8 @@ namespace CodeMemory.Storage;
 
 public interface IStorageService
 {
+    public string RepoRoot { get; }
+
     Task InitializeAsync(CancellationToken ct = default);
 
     Task StoreSymbolsAsync(IReadOnlyList<SymbolRecord> symbols, CancellationToken ct = default);

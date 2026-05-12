@@ -1,36 +1,19 @@
 using CodeMemory.Services.Architecture;
 using CodeMemory.Storage;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace CodeMemory.Tests.Services.Architecture;
 
-public sealed class ArchitectureServiceTests
+public sealed class ArchitectureServiceTests : BaseServicesTests
 {
-    static string getTempDbPath()
-    {
-        var dir = Path.Combine(Path.GetTempPath(), "CodeMemoryTests", Guid.NewGuid().ToString());
-        Directory.CreateDirectory(dir);
-        return Path.Combine(dir, "test.db");
-    }
-
-    static IStorageService createStorage(string dbPath)
-    {
-        var services = new ServiceCollection();
-        services.AddCodeMemoryStorage($"Data Source={dbPath}");
-        return services.BuildServiceProvider().GetRequiredService<IStorageService>();
-    }
-
     static ArchitectureService createService(IStorageService storage)
-    {
-        return new ArchitectureService(storage, NullLogger<ArchitectureService>.Instance);
-    }
+        => new ArchitectureService(storage, NullLogger<ArchitectureService>.Instance);
 
     [Test]
     public async Task GetOverviewAsync_ReturnsEmpty_WhenNoSymbols()
     {
-        var dbPath = getTempDbPath();
-        var storage = createStorage(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         var service = createService(storage);
@@ -45,8 +28,8 @@ public sealed class ArchitectureServiceTests
     [Test]
     public async Task GetOverviewAsync_ReturnsCorrectCounts()
     {
-        var dbPath = getTempDbPath();
-        var storage = createStorage(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         var symbols = new List<SymbolRecord>
@@ -70,8 +53,8 @@ public sealed class ArchitectureServiceTests
     [Test]
     public async Task GetOverviewAsync_GroupsByTopLevelDirectory()
     {
-        var dbPath = getTempDbPath();
-        var storage = createStorage(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         var symbols = new List<SymbolRecord>
@@ -93,8 +76,8 @@ public sealed class ArchitectureServiceTests
     [Test]
     public async Task GetOverviewAsync_ComponentCountsAreCorrect()
     {
-        var dbPath = getTempDbPath();
-        var storage = createStorage(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         var symbols = new List<SymbolRecord>
@@ -122,8 +105,8 @@ public sealed class ArchitectureServiceTests
     [Test]
     public async Task GetOverviewAsync_WithPath_FiltersResults()
     {
-        var dbPath = getTempDbPath();
-        var storage = createStorage(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         var symbols = new List<SymbolRecord>
@@ -146,8 +129,8 @@ public sealed class ArchitectureServiceTests
     [Test]
     public async Task GetOverviewAsync_LanguageBreakdown_DetectsCSharp()
     {
-        var dbPath = getTempDbPath();
-        var storage = createStorage(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         var symbols = new List<SymbolRecord>
@@ -167,8 +150,8 @@ public sealed class ArchitectureServiceTests
     [Test]
     public async Task GetOverviewAsync_ComponentsAreOrderedBySymbolCount()
     {
-        var dbPath = getTempDbPath();
-        var storage = createStorage(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         var symbols = new List<SymbolRecord>

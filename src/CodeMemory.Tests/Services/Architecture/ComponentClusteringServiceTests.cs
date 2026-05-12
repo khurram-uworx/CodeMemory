@@ -1,36 +1,19 @@
 using CodeMemory.Services.Architecture;
 using CodeMemory.Storage;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace CodeMemory.Tests.Services.Architecture;
 
-public sealed class ComponentClusteringServiceTests
+public sealed class ComponentClusteringServiceTests : BaseServicesTests
 {
-    static string getTempDbPath()
-    {
-        var dir = Path.Combine(Path.GetTempPath(), "CodeMemoryTests", Guid.NewGuid().ToString());
-        Directory.CreateDirectory(dir);
-        return Path.Combine(dir, "test.db");
-    }
-
-    static IStorageService createStorage(string dbPath)
-    {
-        var services = new ServiceCollection();
-        services.AddCodeMemoryStorage($"Data Source={dbPath}");
-        return services.BuildServiceProvider().GetRequiredService<IStorageService>();
-    }
-
     static ComponentClusteringService createService(IStorageService storage)
-    {
-        return new ComponentClusteringService(storage, NullLogger<ComponentClusteringService>.Instance);
-    }
+        => new ComponentClusteringService(storage, NullLogger<ComponentClusteringService>.Instance);
 
     [Test]
     public async Task GetClustersAsync_ReturnsEmpty_WhenNoSymbols()
     {
-        var dbPath = getTempDbPath();
-        var storage = createStorage(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         var service = createService(storage);
@@ -42,8 +25,8 @@ public sealed class ComponentClusteringServiceTests
     [Test]
     public async Task GetClustersAsync_SingleComponent_ReturnsSingleton()
     {
-        var dbPath = getTempDbPath();
-        var storage = createStorage(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         await storage.StoreSymbolsAsync([
@@ -62,8 +45,8 @@ public sealed class ComponentClusteringServiceTests
     [Test]
     public async Task GetClustersAsync_CoupledComponents_AreGrouped()
     {
-        var dbPath = getTempDbPath();
-        var storage = createStorage(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         await storage.StoreSymbolsAsync([
@@ -89,8 +72,8 @@ public sealed class ComponentClusteringServiceTests
     [Test]
     public async Task GetClustersAsync_UncoupledComponents_AreSeparate()
     {
-        var dbPath = getTempDbPath();
-        var storage = createStorage(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         await storage.StoreSymbolsAsync([
@@ -112,8 +95,8 @@ public sealed class ComponentClusteringServiceTests
     [Test]
     public async Task GetClustersAsync_HighThreshold_ProducesMoreClusters()
     {
-        var dbPath = getTempDbPath();
-        var storage = createStorage(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         await storage.StoreSymbolsAsync([
@@ -135,8 +118,8 @@ public sealed class ComponentClusteringServiceTests
     [Test]
     public async Task GetClustersAsync_ThresholdIsClamped()
     {
-        var dbPath = getTempDbPath();
-        var storage = createStorage(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         await storage.StoreSymbolsAsync([
@@ -154,8 +137,8 @@ public sealed class ComponentClusteringServiceTests
     [Test]
     public async Task GetClustersAsync_NoRelationships_IslandsForm()
     {
-        var dbPath = getTempDbPath();
-        var storage = createStorage(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         await storage.StoreSymbolsAsync([

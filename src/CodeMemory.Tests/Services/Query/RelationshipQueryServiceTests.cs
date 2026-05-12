@@ -1,22 +1,18 @@
 using CodeMemory.Services.Query;
 using CodeMemory.Storage;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace CodeMemory.Tests.Services.Query;
 
-public sealed class RelationshipQueryServiceTests
+public sealed class RelationshipQueryServiceTests : BaseServicesTests
 {
-    static string getTempDb()
-    {
-        var dir = Path.Combine(Path.GetTempPath(), "CodeMemoryTests", Guid.NewGuid().ToString());
-        Directory.CreateDirectory(dir);
-        return Path.Combine(dir, "test.db");
-    }
-
-    static (IStorageService Storage, RelationshipQueryService Service) createServices(string dbPath)
+    static (IStorageService Storage, RelationshipQueryService Service) createServices(string repoRoot, string dbPath)
     {
         var services = new ServiceCollection();
-        services.AddCodeMemoryStorage($"Data Source={dbPath}");
+        services.AddSingleton<ILogger<StorageService>>(NullLogger<StorageService>.Instance);
+        services.AddCodeMemorySqlliteStorage(repoRoot, $"Data Source={dbPath}");
         var provider = services.BuildServiceProvider();
         var storage = provider.GetRequiredService<IStorageService>();
         var svc = new RelationshipQueryService(storage);
@@ -26,8 +22,8 @@ public sealed class RelationshipQueryServiceTests
     [Test]
     public async Task GetBySourceAsync_ReturnsRelationships()
     {
-        var dbPath = getTempDb();
-        var (storage, svc) = createServices(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var (storage, svc) = createServices(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         await storage.StoreRelationshipsAsync([
@@ -44,8 +40,8 @@ public sealed class RelationshipQueryServiceTests
     [Test]
     public async Task GetByTargetAsync_ReturnsRelationships()
     {
-        var dbPath = getTempDb();
-        var (storage, svc) = createServices(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var (storage, svc) = createServices(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         await storage.StoreRelationshipsAsync([
@@ -61,8 +57,8 @@ public sealed class RelationshipQueryServiceTests
     [Test]
     public async Task GetAllForSymbolAsync_ReturnsBothDirections()
     {
-        var dbPath = getTempDb();
-        var (storage, svc) = createServices(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var (storage, svc) = createServices(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         await storage.StoreRelationshipsAsync([
@@ -79,8 +75,8 @@ public sealed class RelationshipQueryServiceTests
     [Test]
     public async Task GetBySourceAsync_ReturnsEmpty_WhenNone()
     {
-        var dbPath = getTempDb();
-        var (storage, svc) = createServices(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var (storage, svc) = createServices(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         var results = await svc.GetBySourceAsync("nonexistent");

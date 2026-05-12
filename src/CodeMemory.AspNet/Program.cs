@@ -12,9 +12,9 @@ using CodeMemory.Services.Graph;
 using CodeMemory.Services.Query;
 using CodeMemory.Storage;
 using Memori.Embeddings;
+using Memori.Storage;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.VectorData;
-using Microsoft.SemanticKernel.Connectors.SqliteVec;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -31,29 +31,8 @@ builder.Services.AddSingleton<SemanticChunker>();
 // Repo-agnostic: embedding generator (registered before repo loop)
 builder.Services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>, NgramEmbeddingGenerator>();
 
-// Build per-repo storage registry
-// Embedding generator is optional in StorageService (defaults to 1536 dimensions).
-// IndexingEngine resolves IEmbeddingGenerator from DI separately.
-var repositories = builder.Configuration.GetSection("Repositories").Get<Dictionary<string, string>>();
-var storageRegistry = new StorageServiceRegistry();
-var repoInfos = new List<(string name, string path, string dbPath)>();
-
-var provider = "sqlvec";
-foreach (var (name, path) in repositories ?? [])
-{
-    var repoRoot = Path.IsPathRooted(path) ? path
-        : Path.GetFullPath(Path.Combine(Environment.CurrentDirectory, path));
-    var memoryPath = Path.Combine(repoRoot, ".memorycode");
-    Directory.CreateDirectory(memoryPath);
-    var connectionString = $"Data Source={Path.Combine(memoryPath, $"{provider}.db")}";
-
-    var store = new SqliteVectorStore(connectionString);
-    var storageService = new StorageService(store, embeddingGenerator: null);
-    storageRegistry.Register(name, storageService);
-    repoInfos.Add((name, repoRoot, Path.Combine(memoryPath, $"{provider}.db")));
-}
-
-builder.Services.AddSingleton<IStorageServiceRegistry>(storageRegistry);
+var storageRegistry = new ServiceRegistry();
+builder.Services.AddSingleton<IServiceRegistry>(storageRegistry);
 builder.Services.AddSingleton<IRepoContextAccessor, RepoContextAccessor>();
 builder.Services.AddSingleton<IStorageService, StorageServiceRouter>();
 
@@ -116,13 +95,37 @@ var app = builder.Build();
 
 app.UseCors();
 
+
+// Build per-repo storage registry
+// Embedding generator is optional in StorageService (defaults to 1536 dimensions).
+// IndexingEngine resolves IEmbeddingGenerator from DI separately.
+var loggerFactory = app.Services.GetRequiredService<ILoggerFactory>();
+var embeddingGenerator = app.Services.GetRequiredService<IEmbeddingGenerator<string, Embedding<float>>>();
+var repositories = builder.Configuration.GetSection("Repositories").Get<Dictionary<string, string>>();
+var repoInfos = new List<(string name, string path, string dbPath)>();
+
+var provider = "sqlvec";
+foreach (var (name, path) in repositories ?? [])
+{
+    var repoRoot = Path.IsPathRooted(path) ? path
+        : Path.GetFullPath(Path.Combine(Environment.CurrentDirectory, path));
+    var memoryPath = Path.Combine(repoRoot, ".memorycode");
+    Directory.CreateDirectory(memoryPath);
+
+    //var connectionString = $"Data Source={Path.Combine(memoryPath, $"{provider}.db")}";
+    //var store = new SqliteVectorStore(connectionString);
+
+    var store = new InMemoryVectorStore();
+    var storageService = new StorageService(repoRoot, loggerFactory.CreateLogger<StorageService>(), store, embeddingGenerator);
+    storageRegistry.Register(name, storageService);
+    repoInfos.Add((name, repoRoot, Path.Combine(memoryPath, $"{provider}.db")));
+}
+
 // Per-repo MCP endpoints — always requires repo name in URL for storage routing
 //   e.g. POST /api/mcp/codememory, POST /api/mcp/default, etc.
 // No bare /api/mcp endpoint. ConfigureSessionOptions extracts the repo name from the URL.
 foreach (var (name, _, _) in repoInfos)
-{
     app.MapMcp($"/api/mcp/{name}");
-}
 
 app.MapGet("/", () => Results.Ok(new
 {

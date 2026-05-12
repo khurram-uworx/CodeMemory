@@ -1,22 +1,18 @@
 using CodeMemory.Services.Query;
 using CodeMemory.Storage;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace CodeMemory.Tests.Services.Query;
 
-public sealed class SymbolQueryServiceTests
+public sealed class SymbolQueryServiceTests : BaseServicesTests
 {
-    static string getTempDb()
-    {
-        var dir = Path.Combine(Path.GetTempPath(), "CodeMemoryTests", Guid.NewGuid().ToString());
-        Directory.CreateDirectory(dir);
-        return Path.Combine(dir, "test.db");
-    }
-
-    static (IStorageService Storage, SymbolQueryService Service) createServices(string dbPath)
+    static (IStorageService Storage, SymbolQueryService Service) createServices(string repoRoot, string dbPath)
     {
         var services = new ServiceCollection();
-        services.AddCodeMemoryStorage($"Data Source={dbPath}");
+        services.AddSingleton<ILogger<StorageService>>(NullLogger<StorageService>.Instance);
+        services.AddCodeMemorySqlliteStorage(repoRoot, $"Data Source={dbPath}");
         var provider = services.BuildServiceProvider();
         var storage = provider.GetRequiredService<IStorageService>();
         var svc = new SymbolQueryService(storage);
@@ -26,8 +22,8 @@ public sealed class SymbolQueryServiceTests
     [Test]
     public async Task GetByIdAsync_ReturnsSymbol()
     {
-        var dbPath = getTempDb();
-        var (storage, svc) = createServices(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var (storage, svc) = createServices(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         await storage.StoreSymbolsAsync([
@@ -43,8 +39,8 @@ public sealed class SymbolQueryServiceTests
     [Test]
     public async Task GetByIdAsync_ReturnsNull_WhenMissing()
     {
-        var dbPath = getTempDb();
-        var (storage, svc) = createServices(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var (storage, svc) = createServices(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         var result = await svc.GetByIdAsync("nonexistent");
@@ -54,8 +50,8 @@ public sealed class SymbolQueryServiceTests
     [Test]
     public async Task GetByFileAsync_ReturnsSymbolsInFile()
     {
-        var dbPath = getTempDb();
-        var (storage, svc) = createServices(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var (storage, svc) = createServices(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         await storage.StoreSymbolsAsync([
@@ -75,8 +71,8 @@ public sealed class SymbolQueryServiceTests
     [Test]
     public async Task GetByKindAsync_ReturnsSymbolsOfKind()
     {
-        var dbPath = getTempDb();
-        var (storage, svc) = createServices(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var (storage, svc) = createServices(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         await storage.StoreSymbolsAsync([

@@ -1,32 +1,17 @@
 using CodeMemory.Storage;
-using Microsoft.Extensions.DependencyInjection;
+using CodeMemory.Tests.Services;
 
 namespace CodeMemory.Tests.Storage;
 
-public sealed class StorageServiceTests
+public sealed class StorageServiceTests : BaseServicesTests
 {
-    static string getTempDbPath()
-    {
-        var dir = Path.Combine(Path.GetTempPath(), "CodeMemoryTests", Guid.NewGuid().ToString());
-        Directory.CreateDirectory(dir);
-        return Path.Combine(dir, "test.db");
-    }
-
-    static IStorageService createStorageService(string dbPath)
-    {
-        var services = new ServiceCollection();
-        services.AddCodeMemoryStorage($"Data Source={dbPath}");
-        var provider = services.BuildServiceProvider();
-        return provider.GetRequiredService<IStorageService>();
-    }
-
     [Test]
     public async Task InitializeAsync_CreatesDatabaseFile()
     {
-        var dbPath = getTempDbPath();
+        (var repoRoot, var dbPath) = GetTempDbPath();
         Assert.That(File.Exists(dbPath), Is.False);
 
-        var storage = createStorageService(dbPath);
+        var storage = CreateStorage(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         Assert.That(File.Exists(dbPath), Is.True);
@@ -36,8 +21,8 @@ public sealed class StorageServiceTests
     [Test]
     public async Task StoreSymbolsAsync_And_GetSymbolAsync_RoundTrip()
     {
-        var dbPath = getTempDbPath();
-        var storage = createStorageService(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         var symbol = new SymbolRecord
@@ -70,8 +55,8 @@ public sealed class StorageServiceTests
     [Test]
     public async Task StoreChunksAsync_And_GetChunkAsync_RoundTrip()
     {
-        var dbPath = getTempDbPath();
-        var storage = createStorageService(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         var embedding = new float[TestConstants.EmbeddingDimension];
@@ -104,8 +89,8 @@ public sealed class StorageServiceTests
     [Test]
     public async Task StoreChunksAsync_WithEmbedding_PersistsVector()
     {
-        var dbPath = getTempDbPath();
-        var storage = createStorageService(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         var embedding = new float[TestConstants.EmbeddingDimension];
@@ -137,8 +122,8 @@ public sealed class StorageServiceTests
     [Test]
     public async Task StoreRelationshipsAsync_And_GetRelationshipAsync_RoundTrip()
     {
-        var dbPath = getTempDbPath();
-        var storage = createStorageService(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         var relationship = new RelationshipRecord
@@ -161,8 +146,8 @@ public sealed class StorageServiceTests
     [Test]
     public async Task GetSymbolAsync_ReturnsNull_ForMissingKey()
     {
-        var dbPath = getTempDbPath();
-        var storage = createStorageService(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         var result = await storage.GetSymbolAsync("nonexistent");
@@ -172,8 +157,8 @@ public sealed class StorageServiceTests
     [Test]
     public async Task GetChunkAsync_ReturnsNull_ForMissingKey()
     {
-        var dbPath = getTempDbPath();
-        var storage = createStorageService(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         var result = await storage.GetChunkAsync("nonexistent");
@@ -183,8 +168,8 @@ public sealed class StorageServiceTests
     [Test]
     public async Task GetRelationshipAsync_ReturnsNull_ForMissingKey()
     {
-        var dbPath = getTempDbPath();
-        var storage = createStorageService(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         var result = await storage.GetRelationshipAsync("nonexistent");
@@ -194,8 +179,8 @@ public sealed class StorageServiceTests
     [Test]
     public async Task StoreSymbolsAsync_AccumulatesData_AcrossMultipleCalls()
     {
-        var dbPath = getTempDbPath();
-        var storage = createStorageService(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         await storage.StoreSymbolsAsync([
@@ -228,8 +213,8 @@ public sealed class StorageServiceTests
     [Test]
     public async Task StoreSymbolsAsync_Throws_WhenNotInitialized()
     {
-        var dbPath = getTempDbPath();
-        var storage = createStorageService(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
 
         var ex = Assert.ThrowsAsync<InvalidOperationException>(async () =>
             await storage.StoreSymbolsAsync([]));
@@ -239,8 +224,8 @@ public sealed class StorageServiceTests
     [Test]
     public async Task StoreChunksAsync_Throws_WhenNotInitialized()
     {
-        var dbPath = getTempDbPath();
-        var storage = createStorageService(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
 
         var ex = Assert.ThrowsAsync<InvalidOperationException>(async () =>
             await storage.StoreChunksAsync([]));
@@ -250,8 +235,8 @@ public sealed class StorageServiceTests
     [Test]
     public async Task StoreRelationshipsAsync_Throws_WhenNotInitialized()
     {
-        var dbPath = getTempDbPath();
-        var storage = createStorageService(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
 
         var ex = Assert.ThrowsAsync<InvalidOperationException>(async () =>
             await storage.StoreRelationshipsAsync([]));
@@ -261,8 +246,8 @@ public sealed class StorageServiceTests
     [Test]
     public async Task GetSymbolAsync_Throws_WhenNotInitialized()
     {
-        var dbPath = getTempDbPath();
-        var storage = createStorageService(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
 
         var ex = Assert.ThrowsAsync<InvalidOperationException>(async () =>
             await storage.GetSymbolAsync("test"));
@@ -272,8 +257,8 @@ public sealed class StorageServiceTests
     [Test]
     public async Task GetChunkAsync_Throws_WhenNotInitialized()
     {
-        var dbPath = getTempDbPath();
-        var storage = createStorageService(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
 
         var ex = Assert.ThrowsAsync<InvalidOperationException>(async () =>
             await storage.GetChunkAsync("test"));
@@ -283,8 +268,8 @@ public sealed class StorageServiceTests
     [Test]
     public async Task GetRelationshipAsync_Throws_WhenNotInitialized()
     {
-        var dbPath = getTempDbPath();
-        var storage = createStorageService(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
 
         var ex = Assert.ThrowsAsync<InvalidOperationException>(async () =>
             await storage.GetRelationshipAsync("test"));
@@ -294,10 +279,10 @@ public sealed class StorageServiceTests
     [Test]
     public async Task DataSurvivesAcrossInstances()
     {
-        var dbPath = getTempDbPath();
+        (var repoRoot, var dbPath) = GetTempDbPath();
 
         // First instance: store data
-        var storage1 = createStorageService(dbPath);
+        var storage1 = CreateStorage(repoRoot, dbPath);
         await storage1.InitializeAsync();
         await storage1.StoreSymbolsAsync([
             new SymbolRecord
@@ -325,7 +310,7 @@ public sealed class StorageServiceTests
         ]);
 
         // Second instance: read data from same file
-        var storage2 = createStorageService(dbPath);
+        var storage2 = CreateStorage(repoRoot, dbPath);
         await storage2.InitializeAsync();
 
         var symbol = await storage2.GetSymbolAsync("persistent");
@@ -344,8 +329,8 @@ public sealed class StorageServiceTests
     [Test]
     public async Task GetSymbolsByFileAsync_ReturnsMatchingSymbols()
     {
-        var dbPath = getTempDbPath();
-        var storage = createStorageService(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         await storage.StoreSymbolsAsync([
@@ -365,8 +350,8 @@ public sealed class StorageServiceTests
     [Test]
     public async Task GetSymbolsByFileAsync_ReturnsEmpty_WhenNoMatch()
     {
-        var dbPath = getTempDbPath();
-        var storage = createStorageService(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         var results = await storage.GetSymbolsByFileAsync("/nonexistent.cs");
@@ -376,8 +361,8 @@ public sealed class StorageServiceTests
     [Test]
     public async Task GetSymbolsByKindAsync_ReturnsMatchingSymbols()
     {
-        var dbPath = getTempDbPath();
-        var storage = createStorageService(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         await storage.StoreSymbolsAsync([
@@ -395,8 +380,8 @@ public sealed class StorageServiceTests
     [Test]
     public async Task GetChunksBySymbolAsync_ReturnsChunksForSymbol()
     {
-        var dbPath = getTempDbPath();
-        var storage = createStorageService(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         await storage.StoreChunksAsync([
@@ -419,8 +404,8 @@ public sealed class StorageServiceTests
     [Test]
     public async Task GetRelationshipsBySourceAsync_ReturnsMatching()
     {
-        var dbPath = getTempDbPath();
-        var storage = createStorageService(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         await storage.StoreRelationshipsAsync([
@@ -437,8 +422,8 @@ public sealed class StorageServiceTests
     [Test]
     public async Task GetRelationshipsByTargetAsync_ReturnsMatching()
     {
-        var dbPath = getTempDbPath();
-        var storage = createStorageService(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         await storage.StoreRelationshipsAsync([
@@ -453,8 +438,8 @@ public sealed class StorageServiceTests
     [Test]
     public async Task SearchChunksAsync_ReturnsResultsOrderedByScore()
     {
-        var dbPath = getTempDbPath();
-        var storage = createStorageService(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         var near = new float[TestConstants.EmbeddingDimension];
@@ -485,8 +470,8 @@ public sealed class StorageServiceTests
     [Test]
     public async Task SearchChunksAsync_RespectsTopLimit()
     {
-        var dbPath = getTempDbPath();
-        var storage = createStorageService(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         var chunks = new List<ChunkRecord>();

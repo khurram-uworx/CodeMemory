@@ -1,36 +1,19 @@
 using CodeMemory.Services.Graph;
 using CodeMemory.Storage;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace CodeMemory.Tests.Services.Graph;
 
-public sealed class DependencyGraphServiceTests
+public sealed class DependencyGraphServiceTests : BaseServicesTests
 {
-    static string getTempDbPath()
-    {
-        var dir = Path.Combine(Path.GetTempPath(), "CodeMemoryTests", Guid.NewGuid().ToString());
-        Directory.CreateDirectory(dir);
-        return Path.Combine(dir, "test.db");
-    }
-
-    static IStorageService createStorage(string dbPath)
-    {
-        var services = new ServiceCollection();
-        services.AddCodeMemoryStorage($"Data Source={dbPath}");
-        return services.BuildServiceProvider().GetRequiredService<IStorageService>();
-    }
-
     static DependencyGraphService createGraphService(IStorageService storage)
-    {
-        return new DependencyGraphService(storage, NullLogger<DependencyGraphService>.Instance);
-    }
+        => new DependencyGraphService(storage, NullLogger<DependencyGraphService>.Instance);
 
     [Test]
     public async Task TraceAsync_Upstream_ReturnsUpstreamDependencies()
     {
-        var dbPath = getTempDbPath();
-        var storage = createStorage(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         await storage.StoreRelationshipsAsync([
@@ -55,8 +38,8 @@ public sealed class DependencyGraphServiceTests
     [Test]
     public async Task TraceAsync_Downstream_ReturnsDownstreamDependencies()
     {
-        var dbPath = getTempDbPath();
-        var storage = createStorage(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         await storage.StoreRelationshipsAsync([
@@ -81,8 +64,8 @@ public sealed class DependencyGraphServiceTests
     [Test]
     public async Task TraceAsync_Both_ReturnsAllRelationships()
     {
-        var dbPath = getTempDbPath();
-        var storage = createStorage(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         await storage.StoreRelationshipsAsync([
@@ -105,8 +88,8 @@ public sealed class DependencyGraphServiceTests
     [Test]
     public async Task TraceAsync_MultiDepth_FollowsChain()
     {
-        var dbPath = getTempDbPath();
-        var storage = createStorage(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         await storage.StoreRelationshipsAsync([
@@ -131,8 +114,8 @@ public sealed class DependencyGraphServiceTests
     [Test]
     public async Task TraceAsync_CircularReference_DoesNotLoop()
     {
-        var dbPath = getTempDbPath();
-        var storage = createStorage(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         await storage.StoreRelationshipsAsync([
@@ -157,8 +140,8 @@ public sealed class DependencyGraphServiceTests
     [Test]
     public async Task TraceAsync_DepthIsCappedAtThree()
     {
-        var dbPath = getTempDbPath();
-        var storage = createStorage(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         await storage.StoreRelationshipsAsync([
@@ -177,8 +160,8 @@ public sealed class DependencyGraphServiceTests
     [Test]
     public async Task FindRelatedAsync_ReturnsAllTypes_WhenRelationTypeIsAll()
     {
-        var dbPath = getTempDbPath();
-        var storage = createStorage(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         await storage.StoreRelationshipsAsync([
@@ -195,8 +178,8 @@ public sealed class DependencyGraphServiceTests
     [Test]
     public async Task FindRelatedAsync_FiltersByType()
     {
-        var dbPath = getTempDbPath();
-        var storage = createStorage(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         await storage.StoreRelationshipsAsync([
@@ -214,8 +197,8 @@ public sealed class DependencyGraphServiceTests
     [Test]
     public async Task FindTestCoverageAsync_ReturnsEmpty_WhenNoRelationships()
     {
-        var dbPath = getTempDbPath();
-        var storage = createStorage(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         var graph = createGraphService(storage);
@@ -227,8 +210,8 @@ public sealed class DependencyGraphServiceTests
     [Test]
     public async Task TraceAsync_UnknownSymbol_ReturnsEmpty()
     {
-        var dbPath = getTempDbPath();
-        var storage = createStorage(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         var graph = createGraphService(storage);
@@ -240,8 +223,8 @@ public sealed class DependencyGraphServiceTests
     [Test]
     public async Task FindRelatedAsync_UnknownSymbol_ReturnsEmpty()
     {
-        var dbPath = getTempDbPath();
-        var storage = createStorage(dbPath);
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
         await storage.InitializeAsync();
 
         var graph = createGraphService(storage);

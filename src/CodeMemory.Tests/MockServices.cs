@@ -8,6 +8,8 @@ namespace CodeMemory.Tests;
 
 sealed class MockStorageService : IStorageService
 {
+    public string RepoRoot => Environment.CurrentDirectory;
+
     public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
 
     public Task StoreSymbolsAsync(IReadOnlyList<SymbolRecord> symbols, CancellationToken ct = default)

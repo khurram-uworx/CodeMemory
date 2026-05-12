@@ -124,9 +124,9 @@ public sealed class RoslynSymbolExtractorTests
         var syntaxTree = parseFixture("SampleClass.cs");
 
         var symbols = extractor.Extract(syntaxTree, syntaxTree.FilePath);
-
         var sampleClass = symbols.First(s => s.Name == "SampleClass");
-        Assert.That(sampleClass.Documentation, Is.Not.Null.Or.Empty);
+
+        Assert.That(!string.IsNullOrEmpty(sampleClass.Documentation));
         Assert.That(sampleClass.Documentation, Does.Contain("sample class"));
     }
 

@@ -17,16 +17,11 @@ public sealed class GitHistoryService : IGitHistoryService, IDisposable
     readonly TimeSpan cacheTtl;
     readonly Timer cleanupTimer;
 
-    public GitHistoryService(IStorageService storage, ILogger<GitHistoryService> logger)
-        : this(storage, logger, Environment.CurrentDirectory)
+    public GitHistoryService(ILogger<GitHistoryService> logger, IStorageService storage)
     {
-    }
-
-    public GitHistoryService(IStorageService storage, ILogger<GitHistoryService> logger, string repoRoot)
-    {
-        this.storage = storage;
         this.logger = logger;
-        this.repoRoot = repoRoot;
+        this.storage = storage;
+        this.repoRoot = storage.RepoRoot;
         cacheTtl = TimeSpan.FromMinutes(5);
         cleanupTimer = new Timer(_ => cleanupCache(), null, cacheTtl, cacheTtl);
     }

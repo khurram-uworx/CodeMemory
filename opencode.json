@@ -6,12 +6,13 @@
       "url": "https://learn.microsoft.com/api/mcp"
     },
     "code-memory": {
-      "type": "remote",
-      "url": "http://localhost:4792/api/mcp/codememory"
-    },
-    "tree-sitter": {
-      "type": "remote",
-      "url": "http://localhost:4792/api/mcp/treesitter"
+      "type": "local",
+      "command": [
+        "dotnet",
+        "run",
+        "--project",
+        ".\\src\\CodeMemory.Mcp\\CodeMemory.Mcp.csproj"
+      ]
     }
   }
 }

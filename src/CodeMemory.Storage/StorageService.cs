@@ -1,4 +1,5 @@
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.VectorData;
 using System.Linq.Expressions;
 
@@ -6,6 +7,8 @@ namespace CodeMemory.Storage;
 
 public sealed class StorageService : IStorageService, IDisposable
 {
+    readonly ILogger<StorageService> logger;
+    readonly string repoRoot;
     readonly VectorStore vectorStore;
     readonly IEmbeddingGenerator<string, Embedding<float>>? embeddingGenerator;
     readonly int configuredDimension;
@@ -15,10 +18,14 @@ public sealed class StorageService : IStorageService, IDisposable
     VectorStoreCollection<string, RelationshipRecord>? relationships;
     bool initialized;
 
-    public StorageService(VectorStore vectorStore,
+    public StorageService(string repoRoot,
+        ILogger<StorageService> logger,
+        VectorStore vectorStore,
         IEmbeddingGenerator<string, Embedding<float>>? embeddingGenerator = null,
         int configuredDimension = 1536)
     {
+        this.repoRoot = repoRoot;
+        this.logger = logger;
         this.vectorStore = vectorStore;
         this.embeddingGenerator = embeddingGenerator;
         this.configuredDimension = configuredDimension;
@@ -30,14 +37,16 @@ public sealed class StorageService : IStorageService, IDisposable
             throw new InvalidOperationException("Storage service not initialized. Call InitializeAsync first.");
     }
 
+    public string RepoRoot => this.repoRoot;
+
     public async Task InitializeAsync(CancellationToken ct = default)
     {
         var dimension = configuredDimension;
         if (embeddingGenerator?.GetService(typeof(EmbeddingGeneratorMetadata)) is EmbeddingGeneratorMetadata meta
             && meta.DefaultModelDimensions.HasValue)
-        {
+
             dimension = meta.DefaultModelDimensions.Value;
-        }
+
         actualDimension = dimension;
 
         symbols = vectorStore.GetCollection<string, SymbolRecord>("symbols");
@@ -53,10 +62,24 @@ public sealed class StorageService : IStorageService, IDisposable
         initialized = true;
     }
 
-    public async Task StoreSymbolsAsync(IReadOnlyList<SymbolRecord> symbols, CancellationToken ct = default)
+    public async Task StoreSymbolsAsync(IReadOnlyList<SymbolRecord> symbolRecords, CancellationToken ct = default)
     {
+        const int batchSize = 200;
         throwIfNotInitialized();
-        await this.symbols!.UpsertAsync(symbols, ct);
+        this.logger.LogInformation("Storing {Count} symbols into the store", symbolRecords.Count);
+
+        for (int i = 0; i < symbolRecords.Count; i += batchSize)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var batch = symbolRecords
+                .Skip(i)
+                .Take(batchSize)
+                .ToList();
+
+            // Avoid capturing synchronization context to prevent potential deadlocks
+            await this.symbols!.UpsertAsync(batch, ct).ConfigureAwait(false);
+        }
     }
 
     public async Task StoreChunksAsync(IReadOnlyList<ChunkRecord> chunks, CancellationToken ct = default)
@@ -75,8 +98,22 @@ public sealed class StorageService : IStorageService, IDisposable
 
     public async Task StoreRelationshipsAsync(IReadOnlyList<RelationshipRecord> relationships, CancellationToken ct = default)
     {
+        const int batchSize = 200;
         throwIfNotInitialized();
-        await this.relationships!.UpsertAsync(relationships, ct);
+        this.logger.LogInformation("Storing {Count} relationships into the store", relationships.Count);
+
+        for (int i = 0; i < relationships.Count; i += batchSize)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var batch = relationships
+                .Skip(i)
+                .Take(batchSize)
+                .ToList();
+
+            // Avoid capturing synchronization context to prevent potential deadlocks
+            await this.relationships!.UpsertAsync(batch, ct).ConfigureAwait(false);
+        }
     }
 
     public async Task<SymbolRecord?> GetSymbolAsync(string id, CancellationToken ct = default)

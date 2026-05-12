@@ -35,7 +35,7 @@ public sealed class IndexingHostedService : BackgroundService
         var appBasePath = Environment.CurrentDirectory;
 
         // Initialize all storage services upfront so MCP tools can query any repo immediately
-        var registry = serviceProvider.GetRequiredService<IStorageServiceRegistry>();
+        var registry = serviceProvider.GetRequiredService<IServiceRegistry>();
         foreach (var (name, _) in repositories)
         {
             try

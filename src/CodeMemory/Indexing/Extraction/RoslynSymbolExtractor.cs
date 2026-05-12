@@ -8,55 +8,6 @@ namespace CodeMemory.Indexing.Extraction;
 
 public sealed class RoslynSymbolExtractor : ISymbolExtractor
 {
-    static void extractFromMember(
-        MemberDeclarationSyntax member,
-        string filePath,
-        string? parentFullName,
-        List<Symbol> symbols)
-    {
-        switch (member)
-        {
-            case BaseNamespaceDeclarationSyntax nsDecl:
-                foreach (var nsMember in nsDecl.Members)
-                {
-                    extractFromMember(nsMember, filePath, parentFullName, symbols);
-                }
-                break;
-
-            case EnumDeclarationSyntax enumDecl:
-                extractEnum(enumDecl, filePath, parentFullName, symbols);
-                break;
-
-            case TypeDeclarationSyntax typeDecl:
-                extractType(typeDecl, filePath, parentFullName, symbols);
-                break;
-
-            case MethodDeclarationSyntax methodDecl:
-                extractMethod(methodDecl, filePath, parentFullName, symbols);
-                break;
-
-            case ConstructorDeclarationSyntax ctorDecl:
-                extractConstructor(ctorDecl, filePath, parentFullName, symbols);
-                break;
-
-            case PropertyDeclarationSyntax propDecl:
-                extractProperty(propDecl, filePath, parentFullName, symbols);
-                break;
-
-            case FieldDeclarationSyntax fieldDecl:
-                extractField(fieldDecl, filePath, parentFullName, symbols);
-                break;
-
-            case EventDeclarationSyntax eventDecl:
-                extractEvent(eventDecl, filePath, parentFullName, symbols);
-                break;
-
-            case EventFieldDeclarationSyntax eventFieldDecl:
-                extractEventField(eventFieldDecl, filePath, parentFullName, symbols);
-                break;
-        }
-    }
-
     static void extractType(
         TypeDeclarationSyntax typeDecl,
         string filePath,
@@ -94,9 +45,7 @@ public sealed class RoslynSymbolExtractor : ISymbolExtractor
 
         // Walk direct child members (for nested types, methods, etc.)
         foreach (var childMember in typeDecl.Members)
-        {
             extractFromMember(childMember, filePath, fullName, symbols);
-        }
     }
 
     static void extractEnum(
@@ -253,6 +202,51 @@ public sealed class RoslynSymbolExtractor : ISymbolExtractor
         }
     }
 
+    static void extractFromMember(MemberDeclarationSyntax member, string filePath,
+        string? parentFullName,
+        List<Symbol> symbols)
+    {
+        switch (member)
+        {
+            case BaseNamespaceDeclarationSyntax nsDecl:
+                foreach (var nsMember in nsDecl.Members)
+                    extractFromMember(nsMember, filePath, parentFullName, symbols);
+                break;
+
+            case EnumDeclarationSyntax enumDecl:
+                extractEnum(enumDecl, filePath, parentFullName, symbols);
+                break;
+
+            case TypeDeclarationSyntax typeDecl:
+                extractType(typeDecl, filePath, parentFullName, symbols);
+                break;
+
+            case MethodDeclarationSyntax methodDecl:
+                extractMethod(methodDecl, filePath, parentFullName, symbols);
+                break;
+
+            case ConstructorDeclarationSyntax ctorDecl:
+                extractConstructor(ctorDecl, filePath, parentFullName, symbols);
+                break;
+
+            case PropertyDeclarationSyntax propDecl:
+                extractProperty(propDecl, filePath, parentFullName, symbols);
+                break;
+
+            case FieldDeclarationSyntax fieldDecl:
+                extractField(fieldDecl, filePath, parentFullName, symbols);
+                break;
+
+            case EventDeclarationSyntax eventDecl:
+                extractEvent(eventDecl, filePath, parentFullName, symbols);
+                break;
+
+            case EventFieldDeclarationSyntax eventFieldDecl:
+                extractEventField(eventFieldDecl, filePath, parentFullName, symbols);
+                break;
+        }
+    }
+
     static string buildMethodName(BaseMethodDeclarationSyntax methodDecl)
     {
         var name = methodDecl switch
@@ -304,27 +298,21 @@ public sealed class RoslynSymbolExtractor : ISymbolExtractor
     readonly ILogger<RoslynSymbolExtractor> logger;
 
     public RoslynSymbolExtractor(ILogger<RoslynSymbolExtractor> logger)
-    {
-        this.logger = logger;
-    }
+        => (this.logger) = (logger);
 
-    public IReadOnlyList<Symbol> Extract(ParseResult result, string filePath)
-    {
-        return Extract(result.RoslynTree!, filePath);
-    }
-
-    public IReadOnlyList<Symbol> Extract(SyntaxTree syntaxTree, string filePath)
+    // internal because of tests
+    internal IReadOnlyList<Symbol> Extract(SyntaxTree syntaxTree, string filePath)
     {
         var root = syntaxTree.GetRoot();
         var symbols = new List<Symbol>();
 
         foreach (var member in root.ChildNodes().OfType<MemberDeclarationSyntax>())
-        {
             extractFromMember(member, filePath, parentFullName: null, symbols);
-        }
 
         logger.LogDebug("Extracted {Count} symbols from {File}", symbols.Count, filePath);
         return symbols;
     }
 
+    public IReadOnlyList<Symbol> Extract(ParseResult result, string filePath)
+        => Extract(result.RoslynTree!, filePath);
 }

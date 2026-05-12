@@ -39,7 +39,7 @@ var provider = "sqlvec";
 var memoryPath = Path.Combine(repoRoot, ".memorycode");
 Directory.CreateDirectory(memoryPath);
 var connectionString = $"Data Source={Path.Combine(memoryPath, $"{provider}.db")}";
-builder.Services.AddCodeMemoryStorage(connectionString);
+builder.Services.AddCodeMemorySqlliteStorage(repoRoot, connectionString);
 
 // Built-in n-gram embedding generator
 builder.Services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>, NgramEmbeddingGenerator>();

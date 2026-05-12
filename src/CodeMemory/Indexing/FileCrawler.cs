@@ -74,71 +74,74 @@ public sealed class FileCrawler
             cancellationToken.ThrowIfCancellationRequested();
 
             var dir = directories.Dequeue();
-            var relDir = getRelativePath(rootUri, dir);
 
-            if (isDirIgnored(relDir, ignoreParser))
-            {
-                logger.LogDebug("Skipping ignored directory: {Dir}", relDir);
-                continue;
-            }
-
-            string[] subDirs;
             try
             {
-                subDirs = Directory.GetDirectories(dir);
-            }
-            catch (Exception ex) when (ex is UnauthorizedAccessException or DirectoryNotFoundException)
-            {
-                logger.LogWarning(ex, "Cannot access directory: {Dir}", dir);
-                continue;
-            }
+                var relDir = getRelativePath(rootUri, dir);
 
-            foreach (var subDir in subDirs)
-            {
-                directories.Enqueue(subDir);
-            }
-
-            string[] files;
-            try
-            {
-                files = Directory.GetFiles(dir);
-            }
-            catch (Exception ex) when (ex is UnauthorizedAccessException or DirectoryNotFoundException)
-            {
-                logger.LogWarning(ex, "Cannot access files in directory: {Dir}", dir);
-                continue;
-            }
-
-            foreach (var filePath in files)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                var ext = Path.GetExtension(filePath);
-                if (allowedExtensions.Count > 0 && !allowedExtensions.Contains(ext))
-                    continue;
-
-                var relPath = getRelativePath(rootUri, filePath);
-
-                if (isFileIgnored(relPath, ignoreParser))
+                if (isDirIgnored(relDir, ignoreParser))
                 {
-                    logger.LogDebug("Skipping ignored file: {File}", relPath);
+                    logger.LogDebug("Skipping ignored directory: {Dir}", relDir);
                     continue;
                 }
 
-                FileEntry entry;
+                string[] subDirs;
                 try
                 {
-                    var info = new FileInfo(filePath);
-                    entry = new FileEntry(filePath, relPath, ext, info.LastWriteTimeUtc);
+                    subDirs = Directory.GetDirectories(dir);
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is UnauthorizedAccessException or DirectoryNotFoundException)
                 {
-                    logger.LogWarning(ex, "Cannot read file info: {File}", filePath);
+                    logger.LogWarning(ex, "Cannot access directory: {Dir}", dir);
                     continue;
                 }
 
-                yield return entry;
+                foreach (var subDir in subDirs)
+                    directories.Enqueue(subDir);
+
+                string[] files;
+                try
+                {
+                    files = Directory.GetFiles(dir);
+                }
+                catch (Exception ex) when (ex is UnauthorizedAccessException or DirectoryNotFoundException)
+                {
+                    logger.LogWarning(ex, "Cannot access files in directory: {Dir}", dir);
+                    continue;
+                }
+
+                foreach (var filePath in files)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    var ext = Path.GetExtension(filePath);
+                    if (allowedExtensions.Count > 0 && !allowedExtensions.Contains(ext))
+                        continue;
+
+                    var relPath = getRelativePath(rootUri, filePath);
+
+                    if (isFileIgnored(relPath, ignoreParser))
+                    {
+                        logger.LogDebug("Skipping ignored file: {File}", relPath);
+                        continue;
+                    }
+
+                    FileEntry entry;
+                    try
+                    {
+                        var info = new FileInfo(filePath);
+                        entry = new FileEntry(filePath, relPath, ext, info.LastWriteTimeUtc);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogWarning(ex, "Cannot read file info: {File}", filePath);
+                        continue;
+                    }
+
+                    yield return entry;
+                }
             }
+            finally { }
         }
     }
 }

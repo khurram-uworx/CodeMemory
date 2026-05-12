@@ -8,8 +8,7 @@ namespace CodeMemory.Indexing.Extraction;
 public sealed class RoslynRelationshipExtractor : IRelationshipExtractor
 {
     static string? extractIdentifier(TypeSyntax type)
-    {
-        return type switch
+        => type switch
         {
             IdentifierNameSyntax id => id.Identifier.Text,
             QualifiedNameSyntax qn => qn.ToString(),
@@ -18,12 +17,9 @@ public sealed class RoslynRelationshipExtractor : IRelationshipExtractor
             ArrayTypeSyntax at => extractIdentifier(at.ElementType),
             _ => null,
         };
-    }
 
     static string relationshipId(string source, string target, string type)
-    {
-        return $"{source}->{target}:{type}";
-    }
+        => $"{source}->{target}:{type}";
 
     static Symbol? findContainingSymbol(SyntaxNode node, IReadOnlyList<Symbol> symbols, string filePath)
     {
@@ -53,10 +49,8 @@ public sealed class RoslynRelationshipExtractor : IRelationshipExtractor
             return byName[withParens].First();
 
         foreach (var entry in byName)
-        {
             if (entry.Key.StartsWith(name + "(", StringComparison.Ordinal))
                 return entry.First();
-        }
 
         return null;
     }
@@ -74,7 +68,6 @@ public sealed class RoslynRelationshipExtractor : IRelationshipExtractor
     {
         this.logger = logger;
     }
-
 
     void addRelationship(string sourceId, string targetId, string type,
         HashSet<string> seen, List<Relationship> results)
@@ -102,12 +95,8 @@ public sealed class RoslynRelationshipExtractor : IRelationshipExtractor
         return findSymbolByName(typeName, byName, byFullName);
     }
 
-    public IReadOnlyList<Relationship> ExtractRelationships(
-        ParseResult result, IReadOnlyList<Symbol> symbols, string filePath)
-    {
-        return ExtractRelationships(result.RoslynTree!, symbols, filePath);
-    }
-    public IReadOnlyList<Relationship> ExtractRelationships(
+    // internal because of tests
+    internal IReadOnlyList<Relationship> ExtractRelationships(
         SyntaxTree syntaxTree, IReadOnlyList<Symbol> symbols, string filePath)
     {
         var root = syntaxTree.GetRoot();
@@ -218,4 +207,7 @@ public sealed class RoslynRelationshipExtractor : IRelationshipExtractor
         logger.LogDebug("Extracted {Count} relationships from {File}", results.Count, filePath);
         return results;
     }
+
+    public IReadOnlyList<Relationship> ExtractRelationships(ParseResult result, IReadOnlyList<Symbol> symbols, string filePath)
+        => ExtractRelationships(result.RoslynTree!, symbols, filePath);
 }

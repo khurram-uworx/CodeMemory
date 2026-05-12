@@ -5,6 +5,7 @@ using CodeMemory.Indexing.Parsing;
 using CodeMemory.Storage;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
+using System.Diagnostics;
 using System.Numerics.Tensors;
 using System.Text.Json;
 
@@ -137,8 +138,10 @@ public sealed class IndexingEngine
 
         if (allSymbolRecords.Count > 0)
         {
+            var stopwatch = new Stopwatch();
             await storage.StoreSymbolsAsync(allSymbolRecords, ct);
-            logger.LogInformation("Stored {Count} symbol records", allSymbolRecords.Count);
+            logger.LogInformation("Stored {Count} symbol records, took {Elapsed}",
+                allSymbolRecords.Count, stopwatch.Elapsed);
         }
 
         if (allSymbols.Count > 0)
@@ -155,9 +158,11 @@ public sealed class IndexingEngine
 
             if (allRelationships.Count > 0)
             {
+                var stopWatch = new Stopwatch();
                 await storage.StoreRelationshipsAsync(
                     allRelationships.Select(mapToRelationshipRecord).ToList(), ct);
-                logger.LogInformation("Stored {Count} relationship records", allRelationships.Count);
+                logger.LogInformation("Stored {Count} relationship records, took {Elapsed}",
+                    allRelationships.Count, stopWatch.Elapsed);
             }
         }
 
