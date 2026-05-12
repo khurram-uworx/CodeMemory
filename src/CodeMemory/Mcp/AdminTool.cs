@@ -1,8 +1,6 @@
 //using CodeMemory.Services;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
-using System.ComponentModel;
-using System.Text.Json;
 
 namespace CodeMemory.Mcp;
 

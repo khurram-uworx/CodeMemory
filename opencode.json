@@ -7,7 +7,7 @@
     },
     "code-memory": {
       "type": "remote",
-      "url": "http://localhost:4792/api/mcp"
+      "url": "http://localhost:4792/api/mcp/codememory"
     }
   }
 }

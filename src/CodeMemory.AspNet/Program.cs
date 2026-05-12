@@ -1,3 +1,4 @@
+using CodeMemory.AspNet.Configuration;
 using CodeMemory.AspNet.Services;
 using CodeMemory.Indexing;
 using CodeMemory.Indexing.Chunking;
@@ -12,6 +13,8 @@ using CodeMemory.Services.Graph;
 using CodeMemory.Services.Query;
 using CodeMemory.Storage;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.VectorData;
+using Microsoft.SemanticKernel.Connectors.SqliteVec;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -22,24 +25,34 @@ builder.Services.AddSingleton<RoslynSymbolExtractor>();
 builder.Services.AddSingleton<RoslynRelationshipExtractor>();
 builder.Services.AddSingleton<SemanticChunker>();
 
-// Storage layer (.memorycode/{provider}.db relative to repo root)
-// The provider name changes when swapping backends (e.g., "sqlvec", "pgvector").
-// Users can gitignore .memorycode/ to exclude index databases from version control.
-var repositories = builder.Configuration.GetSection("Repositories").Get<Dictionary<string, string>>();
-var firstRepoName = repositories?.Keys.FirstOrDefault() ?? "main";
-var repoPath = repositories?.TryGetValue(firstRepoName, out var path) == true 
-    ? Path.GetFullPath(Path.Combine(Environment.CurrentDirectory, path)) // AppContext.BaseDirectory
-    : Environment.CurrentDirectory;
-var provider = "sqlvec";
-var memoryPath = Path.Combine(repoPath, ".memorycode");
-Directory.CreateDirectory(memoryPath);
-var connectionString = $"Data Source={Path.Combine(memoryPath, $"{provider}.db")}";
-builder.Services.AddCodeMemoryStorage(connectionString);
-
-// Built-in n-gram based embedding generator (zero config, no external deps)
-// Replace by registering your own IEmbeddingGenerator before this line:
-//   builder.Services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>>(sp => ...);
+// Repo-agnostic: embedding generator (registered before repo loop)
 builder.Services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>, NgramEmbeddingGenerator>();
+
+// Build per-repo storage registry
+// Embedding generator is optional in StorageService (defaults to 1536 dimensions).
+// IndexingEngine resolves IEmbeddingGenerator from DI separately.
+var repositories = builder.Configuration.GetSection("Repositories").Get<Dictionary<string, string>>();
+var storageRegistry = new StorageServiceRegistry();
+var repoInfos = new List<(string name, string path, string dbPath)>();
+
+var provider = "sqlvec";
+foreach (var (name, path) in repositories ?? [])
+{
+    var repoRoot = Path.IsPathRooted(path) ? path
+        : Path.GetFullPath(Path.Combine(Environment.CurrentDirectory, path));
+    var memoryPath = Path.Combine(repoRoot, ".memorycode");
+    Directory.CreateDirectory(memoryPath);
+    var connectionString = $"Data Source={Path.Combine(memoryPath, $"{provider}.db")}";
+
+    var store = new SqliteVectorStore(connectionString);
+    var storageService = new StorageService(store, embeddingGenerator: null);
+    storageRegistry.Register(name, storageService);
+    repoInfos.Add((name, repoRoot, Path.Combine(memoryPath, $"{provider}.db")));
+}
+
+builder.Services.AddSingleton<IStorageServiceRegistry>(storageRegistry);
+builder.Services.AddSingleton<IRepoContextAccessor, RepoContextAccessor>();
+builder.Services.AddSingleton<IStorageService, StorageServiceRouter>();
 
 builder.Services.AddScoped<IndexingEngine>();
 builder.Services.AddHostedService<IndexingHostedService>();
@@ -56,9 +69,31 @@ builder.Services.AddSingleton<CodeMemory.Indexing.Architecture.IComponentCluster
 builder.Services.AddSingleton<CodeMemory.Indexing.Git.IGitHistoryService, GitHistoryService>();
 builder.Services.AddSingleton<CodeMemory.Mcp.Services.IEditContextService, CodeMemory.Mcp.Services.EditContextService>();
 
-// MCP server
+// MCP server with per-request repo context via ConfigureSessionOptions
+// PerSessionExecutionContext ensures AsyncLocal values (IRepoContextAccessor) flow to tool handlers.
+// Streamable HTTP transport is used (no legacy SSE — use /api/mcp/{repo} POST endpoint).
 builder.Services.AddMcpServer()
-    .WithHttpTransport(o => o.Stateless = true)
+    .WithHttpTransport(o =>
+    {
+        o.Stateless = true;
+        o.PerSessionExecutionContext = true;
+        o.ConfigureSessionOptions = (context, mcpOptions, ct) =>
+        {
+            var path = context.Request.Path.Value;
+            if (path is not null)
+            {
+                // Extract repo name from /api/mcp/{repoName}
+                var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+                if (segments.Length >= 3
+                    && string.Equals(segments[^2], "mcp", StringComparison.OrdinalIgnoreCase))
+                {
+                    var repoContext = context.RequestServices.GetRequiredService<IRepoContextAccessor>();
+                    repoContext.CurrentRepoName = segments[^1];
+                }
+            }
+            return Task.CompletedTask;
+        };
+    })
     .WithToolsFromAssembly(typeof(CodeMemory.Mcp.McpTools).Assembly);
 
 // CORS — origins configured in appsettings.json:Cors:AllowedOrigins
@@ -77,16 +112,26 @@ builder.Services.AddCors(options =>
 var app = builder.Build();
 
 app.UseCors();
-app.MapMcp("/api/mcp");
 
-app.MapGet("/", () => "CodeMemory — Repository Intelligence Substrate");
+// Per-repo MCP endpoints — always requires repo name in URL for storage routing
+//   e.g. POST /api/mcp/codememory, POST /api/mcp/default, etc.
+// No bare /api/mcp endpoint. ConfigureSessionOptions extracts the repo name from the URL.
+foreach (var (name, _, _) in repoInfos)
+{
+    app.MapMcp($"/api/mcp/{name}");
+}
+
+app.MapGet("/", () => Results.Ok(new
+{
+    service = "CodeMemory — Repository Intelligence Substrate",
+    repositories = repoInfos.Select(r => new { name = r.name, path = r.path, indexDb = r.dbPath })
+}));
 
 app.MapGet("/health", () => Results.Ok(new
 {
     status = "healthy",
     timestamp = DateTimeOffset.UtcNow,
-    repo = repoPath,
-    indexDb = Path.Combine(memoryPath, $"{provider}.db")
+    repositories = repoInfos.Select(r => new { name = r.name, path = r.path, indexDb = r.dbPath })
 }));
 
 app.Run();
