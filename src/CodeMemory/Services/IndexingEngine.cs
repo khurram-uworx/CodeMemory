@@ -93,10 +93,10 @@ public sealed class IndexingEngine
 
         await storage.InitializeAsync(ct);
 
-        var fileCount = 0;
-        var parsedCount = 0;
-        var symbolCount = 0;
-        var chunkCount = 0;
+        long fileCount = 0;
+        long parsedCount = 0;
+        long symbolCount = 0;
+        long chunkCount = 0;
 
         var allSymbolRecords = new List<SymbolRecord>();
         var allSymbols = new List<Symbol>();
@@ -117,7 +117,7 @@ public sealed class IndexingEngine
                 {
                     parsedCount++;
                     var (symbolExtractor, _) = extractors[lang];
-                    var symbols = symbolExtractor.Extract(result, entry.Path);
+                    var symbols = symbolExtractor.Extract(result, entry.RelativePath);
                     symbolCount += symbols.Count;
 
                     allSymbolRecords.AddRange(symbols.Select(mapToSymbolRecord));

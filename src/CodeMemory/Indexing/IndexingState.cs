@@ -1,0 +1,16 @@
+using System.Collections.Concurrent;
+
+namespace CodeMemory.Indexing;
+
+public static class IndexingState
+{
+    static readonly ConcurrentDictionary<string, bool> repoCompleted = new(StringComparer.OrdinalIgnoreCase);
+
+    public static bool IsCompleted(string? repoName = null)
+        => repoName is null
+            ? repoCompleted.Values.All(v => v) && repoCompleted.Count > 0
+            : repoCompleted.GetValueOrDefault(repoName, false);
+
+    public static void MarkCompleted(string repoName)
+        => repoCompleted[repoName] = true;
+}

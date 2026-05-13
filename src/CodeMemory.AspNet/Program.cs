@@ -92,9 +92,7 @@ builder.Services.AddCors(options =>
 });
 
 var app = builder.Build();
-
 app.UseCors();
-
 
 // Build per-repo storage registry
 // Embedding generator is optional in StorageService (defaults to 1536 dimensions).
@@ -102,9 +100,14 @@ app.UseCors();
 var loggerFactory = app.Services.GetRequiredService<ILoggerFactory>();
 var embeddingGenerator = app.Services.GetRequiredService<IEmbeddingGenerator<string, Embedding<float>>>();
 var repositories = builder.Configuration.GetSection("Repositories").Get<Dictionary<string, string>>();
-var repoInfos = new List<(string name, string path, string dbPath)>();
+var repoInfos = new List<(string name, string path, string? dbPath)>();
 
-var provider = "sqlvec";
+var provider = builder.Configuration.GetValue<string>("Storage:Provider") ?? "inmemory";
+var useSqlite = string.Equals(provider, "sqlite", StringComparison.OrdinalIgnoreCase);
+
+if (!useSqlite)
+    provider = "inmemory";
+
 foreach (var (name, path) in repositories ?? [])
 {
     var repoRoot = Path.IsPathRooted(path) ? path
@@ -112,13 +115,21 @@ foreach (var (name, path) in repositories ?? [])
     var memoryPath = Path.Combine(repoRoot, ".memorycode");
     Directory.CreateDirectory(memoryPath);
 
-    //var connectionString = $"Data Source={Path.Combine(memoryPath, $"{provider}.db")}";
-    //var store = new SqliteVectorStore(connectionString);
-
-    var store = new InMemoryVectorStore();
-    var storageService = new StorageService(repoRoot, loggerFactory.CreateLogger<StorageService>(), store, embeddingGenerator);
-    storageRegistry.Register(name, storageService);
-    repoInfos.Add((name, repoRoot, Path.Combine(memoryPath, $"{provider}.db")));
+    if (useSqlite)
+    {
+        var connectionString = $"Data Source={Path.Combine(memoryPath, "sqlvec.db")}";
+        var store = new Microsoft.SemanticKernel.Connectors.SqliteVec.SqliteVectorStore(connectionString);
+        var storageService = new StorageService(repoRoot, loggerFactory.CreateLogger<StorageService>(), store, embeddingGenerator);
+        storageRegistry.Register(name, storageService);
+        repoInfos.Add((name, repoRoot, Path.Combine(memoryPath, "sqlvec.db")));
+    }
+    else
+    {
+        var store = new InMemoryVectorStore();
+        var storageService = new StorageService(repoRoot, loggerFactory.CreateLogger<StorageService>(), store, embeddingGenerator);
+        storageRegistry.Register(name, storageService);
+        repoInfos.Add((name, repoRoot, null));
+    }
 }
 
 // Per-repo MCP endpoints — always requires repo name in URL for storage routing
@@ -127,17 +138,34 @@ foreach (var (name, path) in repositories ?? [])
 foreach (var (name, _, _) in repoInfos)
     app.MapMcp($"/api/mcp/{name}");
 
-app.MapGet("/", () => Results.Ok(new
+app.MapGet("/", () =>
 {
-    service = "CodeMemory — Repository Intelligence Substrate",
-    repositories = repoInfos.Select(r => new { name = r.name, path = r.path, indexDb = r.dbPath })
-}));
+    var service = "CodeMemory — Repository Intelligence Substrate";
+    var repos = repoInfos.Select(r => new
+    {
+        r.name, r.path,
+        indexDb = r.dbPath,
+        indexingCompleted = IndexingState.IsCompleted(r.name)
+    });
 
-app.MapGet("/health", () => Results.Ok(new
-{
-    status = "healthy",
-    timestamp = DateTimeOffset.UtcNow,
-    repositories = repoInfos.Select(r => new { name = r.name, path = r.path, indexDb = r.dbPath })
-}));
+    if (useSqlite)
+        return Results.Ok(new
+        {
+            service, timestamp = DateTimeOffset.UtcNow,
+            storageProvider = provider,
+            repositories = repos
+        });
+    else
+        return Results.Ok(new
+        {
+            service, timestamp = DateTimeOffset.UtcNow,
+            storageProvider = provider,
+            repositories = repos.Select(r => new
+            {
+                r.name, r.path,
+                r.indexingCompleted
+            })
+        });
+});
 
 app.Run();

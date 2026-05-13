@@ -31,9 +31,9 @@ CodeMemory/
 │   │   └── Storage/              # IStorageService interface + storage model types
 │   │       ├── Models/           # SymbolRecord, ChunkRecord, RelationshipRecord, ScoredChunk
 │   │       └── Services/         # IStorageService interface
-│   ├── CodeMemory.Storage/       # SQLite vector store provider
+│   ├── CodeMemory.Storage/       # SQLite + In-memory vector store providers
 │   ├── CodeMemory.AspNet/        # ASP.NET Core host + BackgroundService
-│   │   ├── Configuration/        # RepoRoutingMiddleware, StorageServiceRegistry, StorageServiceRouter, RepoContextAccessor
+│   │   ├── Configuration/        # ServiceRegistry, StorageServiceRouter, RepoContextAccessor
 │   │   ├── Services/             # IndexingHostedService (BackgroundService wrapper)
 │   │   ├── Program.cs            # Host entry point, DI, MCP + HTTP setup
 │   │   └── appsettings.json
@@ -54,8 +54,9 @@ CodeMemory (library — no ASP.NET dep)
   ├── ModelContextProtocol                       (MCP server types + tool attributes)
   ├── Microsoft.CodeAnalysis.CSharp              (Roslyn parsing for C#)
   ├── TreeSitter.DotNet                          (Tree-sitter parsing for TS/JS/Java)
-  └── CodeMemory.Storage                         (vector store provider)
-        └── Microsoft.SemanticKernel.Connectors.SqliteVec  (implements IVectorStore)
+  └── CodeMemory.Storage                         (vector store providers)
+        ├── Memori                               (InMemoryVectorStore, NgramEmbeddingGenerator)
+        └── Microsoft.SemanticKernel.Connectors.SqliteVec  (SQLite IVectorStore)
 
 CodeMemory.AspNet (ASP.NET host)
   ├── CodeMemory                                 (core library)
@@ -67,8 +68,8 @@ CodeMemory.AspNet (ASP.NET host)
 Rules:
 - `CodeMemory` is a pure library (`Microsoft.NET.Sdk`, `OutputType Library`) with zero ASP.NET dependency
 - `CodeMemory.AspNet` owns all ASP.NET hosting concerns: `Program.cs`, DI registration, MCP HTTP transport, `BackgroundService` lifecycle
-- `CodeMemory.Storage` is the sole project with a concrete vector store driver; swappable (pgvector, Qdrant, etc.)
-- `IEmbeddingGenerator<string, Embedding<float>>` is provided by the `Memori` NuGet package via DI — optional; indexing proceeds without embeddings if absent
+- `CodeMemory.Storage` holds both SQLite (`SqliteVectorStore`) and in-memory (`InMemoryVectorStore`) providers; swappable via `Storage:Provider` config key
+- `IEmbeddingGenerator<string, Embedding<float>>` is provided by the `Memori` NuGet package via DI — optional in `StorageService` constructor (accepts null, no chunk storage), but always registered in the default DI wiring
 - `IndexingEngine` (logic) lives in `CodeMemory.Services`; `IndexingHostedService` (BackgroundService wrapper) lives in `CodeMemory.AspNet.Services`
 - MCP tools live in `CodeMemory.Mcp`; registration uses `WithToolsFromAssembly(typeof(McpTools).Assembly)` from `CodeMemory.AspNet.Program.cs`
 - `CodeMemory.Tests` references all three projects for integration testing
@@ -77,40 +78,55 @@ Rules:
 
 ## Data Flow
 
-### Indexing Pipeline (eager on startup)
+### Indexing Pipeline (non-blocking on startup)
 
 ```
 Startup
-  └─ IndexingHostedService.ExecuteAsync (BackgroundService in CodeMemory.AspNet)
-       └─ IndexingEngine.RunIndexingAsync (logic in CodeMemory)
-       ├─ storage.InitializeAsync()
-       ├─ crawler.WalkAsync() — walks repo, respects .gitignore
-       │
-       └─ for each supported file (routed by language):
-            ├─ ILanguageParser.ParseAsync() → ParseResult (Roslyn or Tree-sitter tree)
-            ├─ ISymbolExtractor.Extract() → List<Symbol>
-            ├─ IRelationshipExtractor.ExtractRelationships() → List<Relationship>
-            ├─ SemanticChunker.ChunkAll() → List<DocumentChunk>
-            └─ accumulate symbols + relationships + chunks
-       │
-       │  Language routing:
-       │    .cs   → RoslynCSharpParser + RoslynSymbolExtractor + RoslynRelationshipExtractor
-       │    .ts/.tsx/.js/.jsx → TreeSitterParser + TreeSitterSymbolExtractor + TreeSitterRelationshipExtractor
-       │    .java → TreeSitterParser + TreeSitterSymbolExtractor + TreeSitterRelationshipExtractor
-       │
-       ├─ storage.StoreSymbolsAsync(allSymbols)
-       ├─ storage.StoreRelationshipsAsync(allRelationships)
-       │
-       └─ if IEmbeddingGenerator registered:
-            ├─ embeddingGenerator.GenerateAsync(chunkContents) → List<Embedding<float>>
-            ├─ TensorPrimitives.Norm() per vector → L2-normalize
-            └─ storage.StoreChunksAsync(chunks with normalized embeddings)
+  ├─ IndexingHostedService.ExecuteAsync (BackgroundService in CodeMemory.AspNet)
+  │    ├─ Initialize all storage services upfront (MCP tools queryable immediately)
+  │    │
+  │    └─ For each repo (sequential):
+  │         ├─ set repo context
+  │         ├─ IndexingEngine.RunIndexingAsync (logic in CodeMemory)
+  │         │    ├─ storage.InitializeAsync()
+  │         │    ├─ crawler.WalkAsync() — walks repo, respects .gitignore
+  │         │    │
+  │         │    └─ for each supported file (routed by language):
+  │         │         ├─ ILanguageParser.ParseAsync() → ParseResult (Roslyn or Tree-sitter)
+  │         │         ├─ ISymbolExtractor.Extract() → List<Symbol>
+  │         │         ├─ IRelationshipExtractor.ExtractRelationships() → List<Relationship>
+  │         │         ├─ SemanticChunker.ChunkAll() → List<DocumentChunk>
+  │         │         └─ accumulate symbols + relationships + chunks
+  │         │    │
+  │         │    │  Language routing:
+  │         │    │    .cs        → RoslynCSharpParser + RoslynSymbolExtractor + ...
+  │         │    │    .ts/.js    → TreeSitterParser + TreeSitterSymbolExtractor + ...
+  │         │    │    .java      → TreeSitterParser + TreeSitterSymbolExtractor + ...
+  │         │    │
+  │         │    ├─ storage.StoreSymbolsAsync(allSymbols)
+  │         │    ├─ storage.StoreRelationshipsAsync(allRelationships)
+  │         │    │
+  │         │    └─ if IEmbeddingGenerator registered:
+  │         │         ├─ embeddingGenerator.GenerateAsync(chunkContents) → Embedding<float>[]
+  │         │         ├─ TensorPrimitives.Norm() per vector → L2-normalize
+  │         │         └─ storage.StoreChunksAsync(chunks with normalized embeddings)
+  │         │
+  │         └─ IndexingState.MarkCompleted(name) — ping tool reports indexingCompleted:true
+  │
+  └─ CodeMemory.Mcp (Task.Run — non-blocking before host.RunAsync)
+       └─ same IndexingEngine.RunIndexingAsync in background thread
+       └─ IndexingState.MarkCompleted(repoRoot) on completion
+       └─ MCP server loop starts immediately; ping reports indexing status
+
+Storage provider selection:
+  "Storage:Provider": "inmemory" (default) or "sqlite"
+  Selected in Program.cs before repo loop — constructs SqliteVectorStore or InMemoryVectorStore accordingly
 ```
 
 Notes:
 - Relationship extraction is syntax-only (no SemanticModel) — sufficient for MVP cross-file references
 - External/BCL type references are omitted; only intra-repo relationships recorded
-- Full re-index on each startup (incremental planned)
+- Full re-index on each startup (incremental planned); non-blocking in both hosts
 
 ### Search Pipeline
 
@@ -154,9 +170,24 @@ get_symbol_history / get_hotspots
 
 ---
 
+## Storage Providers
+
+Configurable via `Storage:Provider` in appsettings.json:
+- **`"inmemory"`** (default) — `InMemoryVectorStore` from Memori. No persistence, data lost on restart. No external dependencies. Best for CI/testing/agent sessions.
+- **`"sqlite"`** — `SqliteVectorStore` via `Microsoft.SemanticKernel.Connectors.SqliteVec`. Persistent storage at `.memorycode/sqlvec.db` per repo. Requires SQLite native binaries at runtime.
+
+### Why Memori for Both Embeddings and In-Memory Storage
+
+Memori was chosen as the default for two reasons that together eliminate external dependencies for a smooth out-of-box experience:
+
+1. **`NgramEmbeddingGenerator`** — character n-gram hashing with random projection. Works fully offline: no API keys, no model downloads, no network calls. Embeddings are deterministic and L2-normalized.
+2. **`InMemoryVectorStore`** — zero-configuration vector storage. No database setup, no native binaries, no connection strings. Data is ephemeral (lost on restart), which is fine for agent sessions and CI.
+
+Together, a single `Memori` NuGet dependency provides both the embedding pipeline and the default vector store — no external infrastructure needed to run CodeMemory.
+
 ## Storage Schema
 
-Three collections in the SQLite vector store (`.index/codememory.db`):
+Three collections in the vector store:
 
 | Collection | Record Type | Has Vector? | Key |
 |---|---|---|---|
@@ -205,7 +236,7 @@ Ten tools auto-discovered via `AddMcpServer().WithToolsFromAssembly(typeof(McpTo
 
 | Tool | Description |
 |---|---|
-| `ping` | Health check |
+| `ping` | Returns `{"status":"ok","indexingCompleted":true}` or `{"status":"ok","indexingCompleted":false,"message":"..."}` — agents must back off and retry if `indexingCompleted` is false. Non-blocking indexing means this is the only way to know the index is ready. |
 | `semantic_search` | Natural language code search with optional similarity threshold |
 | `trace_dependency` | Symbol dependency tracing (upstream/downstream/both, configurable depth) |
 | `get_architecture_overview` | Repository structure overview (components, languages, file/symbol counts) |
@@ -266,10 +297,6 @@ All tools return structured JSON. Tools with external service dependencies use `
 - Graceful degradation in non-git repos or when git is unavailable
 - Used by: `get_symbol_history`, `get_hotspots`
 
----
-
----
-
 ## Multi-Repo Architecture
 
 ### Design
@@ -288,14 +315,14 @@ HTTP POST /api/mcp/repo1
             └─ sets IRepoContextAccessor.CurrentRepoName = "repo1"
                  └─ PerSessionExecutionContext preserves AsyncLocal for handler
                       └─ tool resolves IStorageService → StorageServiceRouter
-                           └─ GetStorage() → registry.GetStorage("repo1") → repo1's SQLite DB
+                            └─ GetStorage() → registry.GetStorage("repo1") → repo1's storage
 ```
 
 ### Key components
 
 | Component | Location | Purpose |
 |---|---|---|
-| `StorageServiceRegistry` | `CodeMemory.AspNet/Configuration/` | Thread-safe `ConcurrentDictionary` of per-repo `IStorageService` instances |
+| `ServiceRegistry` / `IServiceRegistry` | `CodeMemory.AspNet/Configuration/` | Thread-safe `ConcurrentDictionary` of per-repo `IStorageService` instances; generalized from the old `IStorageServiceRegistry` |
 | `StorageServiceRouter` | `CodeMemory.AspNet/Configuration/` | Delegates all 15 `IStorageService` methods via `GetStorage()` using ambient repo context |
 | `IRepoContextAccessor` / `RepoContextAccessor` | `CodeMemory.AspNet/Configuration/` | `AsyncLocal<string?>` — singleton-safe, no scoped DI, flows with ExecutionContext |
 | `ConfigureSessionOptions` | `CodeMemory.AspNet/Program.cs` | MCP SDK callback that extracts repo name from URL path |
@@ -335,11 +362,12 @@ foreach (var (name, path) in repositories)
 
 ## Current Constraints & Limitations
 
-- Indexing: full re-index on each startup (incremental planned)
+- Indexing: full re-index on each startup (incremental planned); non-blocking in both hosts — `ping` reports `indexingCompleted` status
 - C#, TypeScript, JavaScript, Java for symbol extraction and relationships; other languages get file-level crawling only
 - Embedding dimension is auto-detected from the registered `IEmbeddingGenerator` metadata (default 1536, provided by Memori's `NgramEmbeddingGenerator`)
 - Relationship extraction is syntax-only — overloaded method references may be imprecise
 - Git analysis uses shell commands (acceptable per design, but slower than native library)
+- In-memory storage: all data lost on restart; intended for CI/agent sessions, not production persistence
 
 ---
 
@@ -355,3 +383,4 @@ foreach (var (name, path) in repositories)
 - Structured logging at every pipeline stage (indexing, search, embedding, graph, git)
 - Trace IDs propagated through pipeline
 - Indexing emits file counts, symbol counts, chunk counts, relationship counts, embedding stats
+- Root route `GET /` returns storage provider (`storageProvider`), per-repo indexing completion (`indexingCompleted`), repo paths, and DB path (or `null` for in-memory)

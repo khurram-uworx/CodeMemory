@@ -38,7 +38,7 @@ CodeMemory indexes a repository and exposes MCP tools:
 | `get_component_clusters` | Logical groupings by inter-component coupling |
 | `get_symbol_history` | Git commit history for a symbol |
 | `get_hotspots` | Most frequently changed files |
-| `ping` | Health check |
+| `ping` | Health check + indexing status (`indexingCompleted: true/false`) |
 
 All tools return structured JSON. No freeform prompts, no chat — pure deterministic repository intelligence.
 
@@ -70,9 +70,14 @@ Configure repos in `src/CodeMemory.AspNet/appsettings.json`:
   "Repositories": {
     "repo1": "C:\\Projects\\my-app",
     "repo2": "C:\\Projects\\my-lib"
+  },
+  "Storage": {
+    "Provider": "inmemory"
   }
 }
 ```
+
+Storage provider: `"inmemory"` (default, no dependencies) or `"sqlite"` (persistent SQLite with vector extension via `Microsoft.SemanticKernel.Connectors.SqliteVec`). In-memory mode uses `InMemoryVectorStore` from the Memori package — data is lost on restart. SQLite stores vectors in `.memorycode/sqlvec.db` per repo.
 
 Each repo gets its own URL:
 
@@ -81,6 +86,10 @@ POST http://localhost:4792/api/mcp/repo1   # JSON-RPC to repo1
 POST http://localhost:4792/api/mcp/repo2   # JSON-RPC to repo2
 ```
 
+The root route (`GET /`) returns storage provider, per-repo indexing status, and registry info.
+
+> **For agents:** Indexing is non-blocking in both hosts. Poll the `ping` tool until `indexingCompleted` is `true` before calling other tools, or results will be empty/partial.
+
 ## Requirements
 
 - .NET 10 SDK or newer
@@ -88,23 +97,23 @@ POST http://localhost:4792/api/mcp/repo2   # JSON-RPC to repo2
 ## Architecture
 
 - **Host**: ASP.NET Core with MCP over Streamable HTTP
-- **Storage**: SQLite with vector extensions via `Microsoft.SemanticKernel.Connectors.SqliteVec`
+- **Storage**: In-memory (`InMemoryVectorStore`, default) or SQLite with vector extensions (`Microsoft.SemanticKernel.Connectors.SqliteVec`) — configurable per deployment
 - **Parsing**: Roslyn (C#), with language detection for other file types
-- **Embeddings**: Memori n-gram embedding generator (via Memori NuGet) or pluggable via `IEmbeddingGenerator<string, Embedding<float>>`
+- **Embeddings**: Memori n-gram embedding generator (offline, no API key) or pluggable via `IEmbeddingGenerator<string, Embedding<float>>`
 - **Relationship extraction**: Syntax-based (Inherits, Implements, Calls, References)
 - **Git analysis**: Shell git commands with in-memory caching
-- **Multi-repo**: `StorageServiceRouter` + `IRepoContextAccessor` (AsyncLocal) + MCP `ConfigureSessionOptions` — no keyed DI, no middleware
+- **Multi-repo**: `ServiceRegistry` + `StorageServiceRouter` + `IRepoContextAccessor` (AsyncLocal) + MCP `ConfigureSessionOptions` — no keyed DI, no middleware
 
 ## Dependencies
 
 Key external packages and version constraints:
 
-- Memori
+- Memori (dual role: `NgramEmbeddingGenerator` for offline embeddings + `InMemoryVectorStore` — chosen for smooth out-of-box experience: no API keys, no model downloads, no database native binaries required for the default configuration)
 - Microsoft.CodeAnalaysis.CSharp
 - Microsoft.Extensions.AI.Abstractions
 - Microsoft.Extensions.VectorData.Abstractions
     - Pinned — `10.1.0` is the highest version compatible with `Microsoft.SemanticKernel.Connectors.SqliteVec 1.74.0-preview` at runtime. Newer `10.x` minors add members to `VectorSearchOptions<T>` (e.g. `OldFilter`) that cause `MissingMethodException` in the SK connector. Bump only when the SK connector's minimum dependency moves past `10.1.0`
-- Microsoft.SemanticKernel.Connectors.SqliteVec
+- Microsoft.SemanticKernel.Connectors.SqliteVec (optional — only for SQLite storage)
 - ModelContextProtocol
 - System.Numerics.Tensors
 - TreeSitter.DotNet

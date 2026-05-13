@@ -1,4 +1,5 @@
 using CodeMemory.AspNet.Configuration;
+using CodeMemory.Indexing;
 using CodeMemory.Services;
 
 namespace CodeMemory.AspNet.Services;
@@ -65,6 +66,7 @@ public sealed class IndexingHostedService : BackgroundService
                 try
                 {
                     await engine.RunIndexingAsync(repoPath, stoppingToken);
+                    IndexingState.MarkCompleted(name);
                 }
                 catch (OperationCanceledException)
                 {

@@ -1,5 +1,6 @@
 using CodeMemory.Indexing;
 using CodeMemory.Indexing.Chunking;
+using Microsoft.Extensions.Configuration;
 using CodeMemory.Indexing.Extraction;
 using CodeMemory.Indexing.Parsing;
 using CodeMemory.Indexing.Search;
@@ -34,12 +35,21 @@ builder.Services.AddSingleton<TreeSitterSymbolExtractor>();
 builder.Services.AddSingleton<TreeSitterRelationshipExtractor>();
 builder.Services.AddSingleton<SemanticChunker>();
 
-// Storage (.memorycode/{provider}.db relative to repo root)
-var provider = "sqlvec";
-var memoryPath = Path.Combine(repoRoot, ".memorycode");
-Directory.CreateDirectory(memoryPath);
-var connectionString = $"Data Source={Path.Combine(memoryPath, $"{provider}.db")}";
-builder.Services.AddCodeMemorySqlliteStorage(repoRoot, connectionString);
+// Storage provider selection — "inmemory" (default) or "sqlite"
+var provider = builder.Configuration.GetValue<string>("Storage:Provider") ?? "inmemory";
+
+if (string.Equals(provider, "sqlite", StringComparison.OrdinalIgnoreCase))
+{
+    var memoryPath = Path.Combine(repoRoot, ".memorycode");
+    Directory.CreateDirectory(memoryPath);
+    var connectionString = $"Data Source={Path.Combine(memoryPath, "sqlvec.db")}";
+    builder.Services.AddCodeMemorySqlliteStorage(repoRoot, connectionString);
+}
+else
+{
+    provider = "inmemory";
+    builder.Services.AddCodeMemoryInMemoryStorage(repoRoot);
+}
 
 // Built-in n-gram embedding generator
 builder.Services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>, NgramEmbeddingGenerator>();
@@ -65,9 +75,21 @@ builder.Services.AddMcpServer()
 
 var host = builder.Build();
 
-// Index before serving requests
-var engine = host.Services.GetRequiredService<IndexingEngine>();
-await engine.RunIndexingAsync(Environment.CurrentDirectory, CancellationToken.None);
+// Non-blocking: start indexing in background, serve MCP tools immediately
+// Ping tool returns indexingCompleted=false until this finishes.
+_ = Task.Run(async () =>
+{
+    try
+    {
+        var engine = host.Services.GetRequiredService<IndexingEngine>();
+        await engine.RunIndexingAsync(repoRoot, CancellationToken.None);
+        IndexingState.MarkCompleted(repoRoot);
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"Indexing failed: {ex.Message}");
+    }
+});
 
-// Start MCP server loop (reads JSON-RPC from stdin, writes to stdout)
+// Start MCP server loop immediately (reads JSON-RPC from stdin, writes to stdout)
 await host.RunAsync();

@@ -2,9 +2,28 @@
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <OutputType>Library</OutputType>
-    <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+
+    <Version>0.1.0</Version>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Authors>CodeMemory Contributors</Authors>
+    <Company>uWorx</Company>
+    <Description>Transform repositories into queryable intelligence — a persistent, semantic memory layer for codebases exposed via MCP.</Description>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/khurram-uworx/CodeMemory</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <PackageProjectUrl>https://github.com/khurram-uworx/CodeMemory</PackageProjectUrl>
+    <PackageTags>memory;semantic-memory;vector-search;mcp;code-analysis;repository-intelligence;dependency-graph</PackageTags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <Copyright>Copyright (c) 2026 uWorx</Copyright>
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+
+    <OutputType>Library</OutputType>
   </PropertyGroup>
 
   <ItemGroup>
@@ -19,6 +38,14 @@
     <PackageReference Include="ModelContextProtocol" Version="1.3.0" />
     <PackageReference Include="System.Numerics.Tensors" Version="10.0.7" />
     <PackageReference Include="TreeSitter.DotNet" Version="1.3.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="All" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include=".\README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
   <ItemGroup>

@@ -13,11 +13,11 @@ public sealed class McpInfrastructureTests : BaseToolTests
         await using var factory = new WebApplicationFactory<Program>();
         var client = factory.CreateClient();
 
-        var response = await client.GetAsync("/health");
+        var response = await client.GetAsync("/");
 
         Assert.That(response.StatusCode, Is.EqualTo(System.Net.HttpStatusCode.OK));
         var body = await response.Content.ReadFromJsonAsync<JsonObject>();
-        Assert.That(body?["status"]?.GetValue<string>(), Is.EqualTo("healthy"));
+        Assert.That(body?["service"]?.GetValue<string>(), Does.StartWith("CodeMemory"));
     }
 
     [Test]

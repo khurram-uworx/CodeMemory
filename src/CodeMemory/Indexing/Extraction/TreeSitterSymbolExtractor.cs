@@ -14,8 +14,8 @@ public sealed class TreeSitterSymbolExtractor : ISymbolExtractor
     static string? buildFullName(Node node, CodeSymbolKind kind, LanguageConfig config, string name)
     {
         var parts = new List<string>();
-
         var current = node.Parent;
+
         while (current != default && current.Type != "program")
         {
             if (classLikeTypes.Contains(current.Type) || config.KindMap.ContainsKey(current.Type))
@@ -47,11 +47,13 @@ public sealed class TreeSitterSymbolExtractor : ISymbolExtractor
             {
                 var typeField = param.Fields.FirstOrDefault(f => f.Key == "type");
                 var typeName = "var";
+
                 if (typeField.Key != null)
                 {
                     var typeNode = typeField.Value;
                     typeName = typeNode.Text;
                 }
+
                 var nameField = param.Fields.FirstOrDefault(f => f.Key == "name");
                 var paramName = nameField.Key != null ? nameField.Value.Text : "";
                 paramNames.Add($"{typeName} {paramName}");
@@ -154,6 +156,7 @@ public sealed class TreeSitterSymbolExtractor : ISymbolExtractor
         if (prev != default && prev.Type == "comment")
         {
             var text = prev.Text;
+
             if (text.StartsWith("/**") || text.StartsWith("///") || text.StartsWith("/*"))
             {
                 var doc = text.TrimStart('/', '*', ' ', '\t').TrimEnd('*', '/', ' ', '\t');
@@ -295,9 +298,7 @@ public sealed class TreeSitterSymbolExtractor : ISymbolExtractor
 
         // Handle variable declarations: only include top-level ones
         if (variableDeclTypes.Contains(nodeType))
-        {
             nodeType = "variable_declarator";
-        }
 
         if (nodeType == "variable_declarator" && !isTopLevelVariable(node))
             return;
