@@ -1,9 +1,9 @@
+using CodeMemory.Storage;
 using LiteGraph;
 using LiteGraph.GraphRepositories;
-using Microsoft.Extensions.Logging;
 using System.Collections.Specialized;
 
-namespace CodeMemory.Storage.LiteGraph;
+namespace CodeMemory.AspNet.LiteGraph;
 
 public record LiteGraphStorageOptions
 {

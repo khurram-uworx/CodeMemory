@@ -1,4 +1,5 @@
 using CodeMemory.AspNet.Configuration;
+using CodeMemory.AspNet.LiteGraph;
 using CodeMemory.AspNet.Services;
 using CodeMemory.Indexing;
 using CodeMemory.Indexing.Chunking;
@@ -11,7 +12,6 @@ using CodeMemory.Services.Git;
 using CodeMemory.Services.Graph;
 using CodeMemory.Services.Query;
 using CodeMemory.Storage;
-using CodeMemory.Storage.LiteGraph;
 using Memori.Embeddings;
 using Memori.Storage;
 using Microsoft.Extensions.AI;

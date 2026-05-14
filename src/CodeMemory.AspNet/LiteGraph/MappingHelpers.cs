@@ -1,7 +1,8 @@
+using CodeMemory.Storage;
 using System.Collections.Specialized;
 using System.Text.Json;
 
-namespace CodeMemory.Storage.LiteGraph;
+namespace CodeMemory.AspNet.LiteGraph;
 
 using LEdge = global::LiteGraph.Edge;
 using LNode = global::LiteGraph.Node;

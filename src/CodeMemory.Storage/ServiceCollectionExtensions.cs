@@ -1,4 +1,3 @@
-using CodeMemory.Storage.LiteGraph;
 using Memori.Storage;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
@@ -41,19 +40,6 @@ public static class ServiceCollectionExtensions
             var store = sp.GetRequiredService<VectorStore>();
             var generator = sp.GetService<IEmbeddingGenerator<string, Embedding<float>>>();
             return new StorageService(repoRoot, logger, store, generator, configuredDimension);
-        });
-
-        return services;
-    }
-
-    public static IServiceCollection AddCodeMemoryLiteGraphStorage(this IServiceCollection services,
-        string repoRoot,
-        LiteGraphStorageOptions? options = null)
-    {
-        services.AddSingleton<IStorageService>(sp =>
-        {
-            var logger = sp.GetService<ILogger<LiteGraphStorageService>>();
-            return new LiteGraphStorageService(repoRoot, options, logger);
         });
 
         return services;

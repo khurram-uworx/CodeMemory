@@ -15,7 +15,7 @@ public sealed class StorageServiceRouter : IStorageService
 
     public string RepoRoot => registry.GetStorage(repoContext.CurrentRepoName).RepoRoot;
 
-    IStorageService GetStorage()
+    public IStorageService GetStorage()
         => registry.GetStorage(repoContext.CurrentRepoName);
 
     public Task InitializeAsync(CancellationToken ct = default)

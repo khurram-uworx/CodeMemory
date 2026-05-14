@@ -9,7 +9,6 @@ using CodeMemory.Services.Git;
 using CodeMemory.Services.Graph;
 using CodeMemory.Services.Query;
 using CodeMemory.Storage;
-using CodeMemory.Storage.LiteGraph;
 using Memori.Embeddings;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
@@ -46,13 +45,13 @@ if (string.Equals(provider, "sqlite", StringComparison.OrdinalIgnoreCase))
     var connectionString = $"Data Source={Path.Combine(memoryPath, "sqlvec.db")}";
     builder.Services.AddCodeMemorySqlliteStorage(repoRoot, connectionString);
 }
-else if (string.Equals(provider, "litegraph", StringComparison.OrdinalIgnoreCase))
-{
-    var liteGraphOptions = builder.Configuration
-        .GetSection("Storage:LiteGraph")
-        .Get<LiteGraphStorageOptions>();
-    builder.Services.AddCodeMemoryLiteGraphStorage(repoRoot, liteGraphOptions);
-}
+//else if (string.Equals(provider, "litegraph", StringComparison.OrdinalIgnoreCase))
+//{
+//    var liteGraphOptions = builder.Configuration
+//        .GetSection("Storage:LiteGraph")
+//        .Get<LiteGraphStorageOptions>();
+//    builder.Services.AddCodeMemoryLiteGraphStorage(repoRoot, liteGraphOptions);
+//}
 else
 {
     provider = "inmemory";
