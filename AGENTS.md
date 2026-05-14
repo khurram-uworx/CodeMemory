@@ -124,6 +124,8 @@ or when still indexing:
 - **In-memory storage (`Storage:Provider: "inmemory"`)** loses all data on restart — do not use for production persistence. SQLite (`"sqlite"`) persists vectors in `.memorycode/sqlvec.db`.
 - **Ping before use** — indexing is non-blocking in both hosts; agents MUST poll `ping` until `indexingCompleted: true` (see [Non-Blocking Indexing](#non-blocking-indexing--ping-contract) above).
 - The `IndexingState` static class uses `ConcurrentDictionary` — it is process-scoped. In multi-repo ASP.NET, `IndexingState.IsCompleted()` without a repo name checks all repos are done.
+- **LiteGraph `ReadFirst(name:)` uses substring/LIKE matching**, not exact match. A query for `"persistent"` also matches `"persistent_chunk"`. Never rely on the first result being the correct type — always namespace node names with a type prefix (`"s:"` for symbols, `"c:"` for chunks) to guarantee zero collisions. See `MappingHelpers.cs` `StripPrefix()` for the round-trip logic.
+- **LiteGraph SQLite does not persist `NameValueCollection` tags** reliably across connections. Tags function correctly in ephemeral/in-memory mode but may be `null` or incomplete after dispose-and-recreate against the same SQLite file. Use `Labels` (a core `List<string>` property that survives SQLite round-trips) for any filtering that must work across connection lifetimes.
 
 ## Summary
 

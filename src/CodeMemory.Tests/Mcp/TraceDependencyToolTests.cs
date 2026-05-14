@@ -1,3 +1,4 @@
+using CodeMemory.Indexing;
 using CodeMemory.Indexing.Graph;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -25,6 +26,9 @@ public sealed class TraceDependencyToolTests : BaseToolTests
     {
         await using var factory = new WebApplicationFactory<Program>();
         var client = factory.CreateClient();
+
+        while (!IndexingState.IsCompleted())
+            await Task.Delay(100);
 
         var result = await CallTool(client, "trace_dependency",
             new JsonObject { ["symbolPath"] = "MyClass.MyMethod" });

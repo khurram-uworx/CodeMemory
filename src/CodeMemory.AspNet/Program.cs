@@ -11,6 +11,7 @@ using CodeMemory.Services.Git;
 using CodeMemory.Services.Graph;
 using CodeMemory.Services.Query;
 using CodeMemory.Storage;
+using CodeMemory.Storage.LiteGraph;
 using Memori.Embeddings;
 using Memori.Storage;
 using Microsoft.Extensions.AI;
@@ -76,7 +77,8 @@ builder.Services.AddMcpServer()
             return Task.CompletedTask;
         };
     })
-    .WithToolsFromAssembly(typeof(CodeMemory.Mcp.McpTools).Assembly);
+    .WithToolsFromAssembly(typeof(CodeMemory.Mcp.McpTools).Assembly)
+    .WithToolsFromAssembly(typeof(CodeMemory.AspNet.Tools.GraphQueryTool).Assembly);
 
 // CORS — origins configured in appsettings.json:Cors:AllowedOrigins
 var corsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>();
@@ -104,9 +106,14 @@ var repoInfos = new List<(string name, string path, string? dbPath)>();
 
 var provider = builder.Configuration.GetValue<string>("Storage:Provider") ?? "inmemory";
 var useSqlite = string.Equals(provider, "sqlite", StringComparison.OrdinalIgnoreCase);
+var useLiteGraph = string.Equals(provider, "litegraph", StringComparison.OrdinalIgnoreCase);
 
-if (!useSqlite)
+if (!useSqlite && !useLiteGraph)
     provider = "inmemory";
+
+var liteGraphOptions = builder.Configuration
+    .GetSection("Storage:LiteGraph")
+    .Get<LiteGraphStorageOptions>();
 
 foreach (var (name, path) in repositories ?? [])
 {
@@ -122,6 +129,15 @@ foreach (var (name, path) in repositories ?? [])
         var storageService = new StorageService(repoRoot, loggerFactory.CreateLogger<StorageService>(), store, embeddingGenerator);
         storageRegistry.Register(name, storageService);
         repoInfos.Add((name, repoRoot, Path.Combine(memoryPath, "sqlvec.db")));
+    }
+    else if (useLiteGraph)
+    {
+        var storageService = new LiteGraphStorageService(
+            repoRoot,
+            liteGraphOptions,
+            loggerFactory.CreateLogger<LiteGraphStorageService>());
+        storageRegistry.Register(name, storageService);
+        repoInfos.Add((name, repoRoot, liteGraphOptions?.Filename));
     }
     else
     {
@@ -141,31 +157,56 @@ foreach (var (name, _, _) in repoInfos)
 app.MapGet("/", () =>
 {
     var service = "CodeMemory — Repository Intelligence Substrate";
-    var repos = repoInfos.Select(r => new
+    if (useLiteGraph)
     {
-        r.name, r.path,
-        indexDb = r.dbPath,
-        indexingCompleted = IndexingState.IsCompleted(r.name)
-    });
-
-    if (useSqlite)
+        var repos = repoInfos.Select(r => new
+        {
+            r.name,
+            r.path,
+            storageFile = r.dbPath,
+            indexingCompleted = IndexingState.IsCompleted(r.name)
+        });
         return Results.Ok(new
         {
-            service, timestamp = DateTimeOffset.UtcNow,
+            service,
+            timestamp = DateTimeOffset.UtcNow,
             storageProvider = provider,
             repositories = repos
         });
-    else
+    }
+    else if (useSqlite)
+    {
+        var repos = repoInfos.Select(r => new
+        {
+            r.name,
+            r.path,
+            indexDb = r.dbPath,
+            indexingCompleted = IndexingState.IsCompleted(r.name)
+        });
         return Results.Ok(new
         {
-            service, timestamp = DateTimeOffset.UtcNow,
+            service,
+            timestamp = DateTimeOffset.UtcNow,
             storageProvider = provider,
-            repositories = repos.Select(r => new
-            {
-                r.name, r.path,
-                r.indexingCompleted
-            })
+            repositories = repos
         });
+    }
+    else
+    {
+        var repos = repoInfos.Select(r => new
+        {
+            r.name,
+            r.path,
+            indexingCompleted = IndexingState.IsCompleted(r.name)
+        });
+        return Results.Ok(new
+        {
+            service,
+            timestamp = DateTimeOffset.UtcNow,
+            storageProvider = provider,
+            repositories = repos
+        });
+    }
 });
 
 app.Run();
