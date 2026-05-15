@@ -498,6 +498,149 @@ public sealed class StorageServiceTests : BaseServicesTests
         Assert.That(results, Has.Count.EqualTo(3));
     }
 
+    [Test]
+    public async Task StoreSymbolsAsync_IsIdempotent()
+    {
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
+        await storage.InitializeAsync();
+
+        var symbol = new SymbolRecord
+        {
+            Id = "idempotent",
+            Name = "Original",
+            Kind = "Class",
+            FilePath = "/src/A.cs",
+            LineStart = 1,
+            LineEnd = 10,
+            FullName = "idempotent"
+        };
+
+        await storage.StoreSymbolsAsync([symbol]);
+
+        symbol.Name = "Updated";
+        await storage.StoreSymbolsAsync([symbol]);
+
+        var retrieved = await storage.GetSymbolAsync("idempotent");
+        Assert.That(retrieved, Is.Not.Null);
+        Assert.That(retrieved!.Name, Is.EqualTo("Updated"));
+    }
+
+    [Test]
+    public async Task BatchStore_200Symbols_Completes()
+    {
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
+        await storage.InitializeAsync();
+
+        var symbols = new List<SymbolRecord>();
+        for (int i = 0; i < 200; i++)
+        {
+            symbols.Add(new SymbolRecord
+            {
+                Id = $"sym{i}",
+                Name = $"Sym{i}",
+                Kind = i % 2 == 0 ? "Class" : "Method",
+                FilePath = $"/src/{i}.cs",
+                LineStart = 1,
+                LineEnd = 10,
+                FullName = $"Sym{i}"
+            });
+        }
+
+        await storage.StoreSymbolsAsync(symbols);
+
+        var retrieved = await storage.GetSymbolAsync("sym199");
+        Assert.That(retrieved, Is.Not.Null);
+        Assert.That(retrieved!.Name, Is.EqualTo("Sym199"));
+    }
+
+    [Test]
+    public async Task BatchStore_100Relationships_Completes()
+    {
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
+        await storage.InitializeAsync();
+
+        var relationships = new List<RelationshipRecord>();
+        for (int i = 0; i < 100; i++)
+        {
+            relationships.Add(new RelationshipRecord
+            {
+                Id = $"rel{i}",
+                SourceSymbolId = $"Node{i}",
+                TargetSymbolId = $"Node{i + 1}",
+                RelationshipType = "References"
+            });
+        }
+
+        await storage.StoreRelationshipsAsync(relationships);
+
+        var sourceRels = await storage.GetRelationshipsBySourceAsync("Node0");
+        Assert.That(sourceRels, Has.Count.EqualTo(1));
+        Assert.That(sourceRels[0].Id, Is.EqualTo("rel0"));
+    }
+
+    [Test]
+    public async Task GetChunksBySymbolAsync_ReturnsEmpty_WhenNoChunks()
+    {
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
+        await storage.InitializeAsync();
+
+        var results = await storage.GetChunksBySymbolAsync("nonexistent");
+        Assert.That(results, Is.Empty);
+    }
+
+    [Test]
+    public async Task GetRelationshipsBySourceAsync_ReturnsEmpty_WhenNoSymbol()
+    {
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
+        await storage.InitializeAsync();
+
+        var results = await storage.GetRelationshipsBySourceAsync("nonexistent");
+        Assert.That(results, Is.Empty);
+    }
+
+    [Test]
+    public async Task GetRelationshipsByTargetAsync_ReturnsEmpty_WhenNoSymbol()
+    {
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
+        await storage.InitializeAsync();
+
+        var results = await storage.GetRelationshipsByTargetAsync("nonexistent");
+        Assert.That(results, Is.Empty);
+    }
+
+    [Test]
+    public async Task SearchChunksAsync_ReturnsEmpty_WhenNoChunks()
+    {
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
+        await storage.InitializeAsync();
+
+        var query = new float[TestConstants.EmbeddingDimension];
+        var results = await storage.SearchChunksAsync(query.AsMemory());
+        Assert.That(results, Is.Empty);
+    }
+
+    [Test]
+    public async Task CancellationToken_IsRespected()
+    {
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
+        await storage.InitializeAsync();
+
+        var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        var ex = Assert.CatchAsync(async () =>
+            await storage.GetSymbolAsync("test", cts.Token));
+        Assert.That(ex, Is.InstanceOf<OperationCanceledException>());
+    }
+
     [TearDown]
     public void TearDown()
     {

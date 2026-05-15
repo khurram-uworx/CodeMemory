@@ -1,5 +1,4 @@
 using CodeMemory.AspNet.Configuration;
-using CodeMemory.AspNet.LiteGraph;
 using CodeMemory.AspNet.Services;
 using CodeMemory.Indexing;
 using CodeMemory.Indexing.Chunking;
@@ -83,7 +82,7 @@ builder.Services.AddMcpServer()
         };
     })
     .WithToolsFromAssembly(typeof(CodeMemory.Mcp.McpTools).Assembly)
-    .WithToolsFromAssembly(typeof(CodeMemory.AspNet.Tools.GraphQueryTool).Assembly);
+    .WithToolsFromAssembly(typeof(CodeMemory.AspNet.Tools.SqlQueryTool).Assembly);
 
 // CORS — origins configured in appsettings.json:Cors:AllowedOrigins
 var corsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>();
@@ -111,14 +110,9 @@ var repoInfos = new List<(string name, string path, string? dbPath)>();
 
 var provider = builder.Configuration.GetValue<string>("Storage:Provider") ?? "inmemory";
 var useSqlite = string.Equals(provider, "sqlite", StringComparison.OrdinalIgnoreCase);
-var useLiteGraph = string.Equals(provider, "litegraph", StringComparison.OrdinalIgnoreCase);
 
-if (!useSqlite && !useLiteGraph)
+if (!useSqlite)
     provider = "inmemory";
-
-var liteGraphOptions = builder.Configuration
-    .GetSection("Storage:LiteGraph")
-    .Get<LiteGraphStorageOptions>();
 
 foreach (var (name, path) in repositories ?? [])
 {
@@ -134,15 +128,6 @@ foreach (var (name, path) in repositories ?? [])
         var storageService = new StorageService(repoRoot, loggerFactory.CreateLogger<StorageService>(), store, embeddingGenerator);
         storageRegistry.Register(name, storageService);
         repoInfos.Add((name, repoRoot, Path.Combine(memoryPath, "sqlvec.db")));
-    }
-    else if (useLiteGraph)
-    {
-        var storageService = new LiteGraphStorageService(
-            repoRoot,
-            liteGraphOptions,
-            loggerFactory.CreateLogger<LiteGraphStorageService>());
-        storageRegistry.Register(name, storageService);
-        repoInfos.Add((name, repoRoot, liteGraphOptions?.Filename));
     }
     else
     {
@@ -162,24 +147,7 @@ foreach (var (name, _, _) in repoInfos)
 app.MapGet("/", () =>
 {
     var service = "CodeMemory — Repository Intelligence Substrate";
-    if (useLiteGraph)
-    {
-        var repos = repoInfos.Select(r => new
-        {
-            r.name,
-            r.path,
-            storageFile = r.dbPath,
-            indexingCompleted = IndexingState.IsCompleted(r.name)
-        });
-        return Results.Ok(new
-        {
-            service,
-            timestamp = DateTimeOffset.UtcNow,
-            storageProvider = provider,
-            repositories = repos
-        });
-    }
-    else if (useSqlite)
+    if (useSqlite)
     {
         var repos = repoInfos.Select(r => new
         {
