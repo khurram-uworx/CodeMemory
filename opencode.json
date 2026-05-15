@@ -6,13 +6,17 @@
       "url": "https://learn.microsoft.com/api/mcp"
     },
     "code-memory": {
-      "type": "local",
-      "command": [
-        "dotnet",
-        "run",
-        "--project",
-        ".\\src\\CodeMemory.Mcp\\CodeMemory.Mcp.csproj"
-      ]
-    }
+      "type": "remote",
+      "url": "http://localhost:4792/api/mcp/codememory"
+    },
+    //"code-memory": {
+    //  "type": "local",
+    //  "command": [
+    //    "dotnet",
+    //    "run",
+    //    "--project",
+    //    ".\\src\\CodeMemory.Mcp\\CodeMemory.Mcp.csproj"
+    //  ]
+    //}
   }
 }

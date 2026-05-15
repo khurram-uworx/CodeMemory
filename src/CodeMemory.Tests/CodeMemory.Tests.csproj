@@ -35,6 +35,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.8" />
+    <PackageReference Include="Memori" Version="0.2.2" />
     <PackageReference Include="TreeSitter.DotNet" Version="1.3.0" />
   </ItemGroup>
 

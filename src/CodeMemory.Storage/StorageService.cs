@@ -39,6 +39,8 @@ public sealed class StorageService : IStorageService, IDisposable
 
     public string RepoRoot => this.repoRoot;
 
+    public VectorStore? Store => vectorStore;
+
     public async Task InitializeAsync(CancellationToken ct = default)
     {
         var dimension = configuredDimension;

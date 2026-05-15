@@ -1,4 +1,5 @@
 using CodeMemory.Storage;
+using Microsoft.Extensions.VectorData;
 
 namespace CodeMemory.AspNet.Configuration;
 
@@ -14,6 +15,8 @@ public sealed class StorageServiceRouter : IStorageService
     }
 
     public string RepoRoot => registry.GetStorage(repoContext.CurrentRepoName).RepoRoot;
+
+    public VectorStore? Store => GetStorage().Store;
 
     public IStorageService GetStorage()
         => registry.GetStorage(repoContext.CurrentRepoName);

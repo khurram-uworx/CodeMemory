@@ -3,12 +3,15 @@ using CodeMemory.Indexing.Git;
 using CodeMemory.Indexing.Graph;
 using CodeMemory.Indexing.Search;
 using CodeMemory.Storage;
+using Microsoft.Extensions.VectorData;
 
 namespace CodeMemory.Tests;
 
 sealed class MockStorageService : IStorageService
 {
     public string RepoRoot => Environment.CurrentDirectory;
+
+    public VectorStore? Store => null;
 
     public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
 
