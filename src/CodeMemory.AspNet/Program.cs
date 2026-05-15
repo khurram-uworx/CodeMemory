@@ -44,10 +44,18 @@ builder.Services.AddSingleton<ISemanticSearchService, SemanticSearchService>();
 builder.Services.AddSingleton<SymbolQueryService>();
 builder.Services.AddSingleton<RelationshipQueryService>();
 
-// SQL query services (InMemoryVectorStore backend)
-builder.Services.AddSingleton<CodeMemory.AspNet.SqlQuery.CollectionRegistry>();
-builder.Services.AddSingleton<CodeMemory.AspNet.SqlQuery.SqlQueryService>();
-builder.Services.AddSingleton<CodeMemory.AspNet.SqlQuery.TableSchemaProvider>();
+var provider = builder.Configuration.GetValue<string>("Storage:Provider") ?? "inmemory";
+var useSqlite = string.Equals(provider, "sqlite", StringComparison.OrdinalIgnoreCase);
+
+if (!useSqlite)
+{
+    provider = "inmemory";
+
+    // SQL query services (InMemoryVectorStore backend)
+    builder.Services.AddSingleton<CodeMemory.SqlQuery.CollectionRegistry>();
+    builder.Services.AddSingleton<CodeMemory.SqlQuery.SqlQueryService>();
+    builder.Services.AddSingleton<CodeMemory.SqlQuery.TableSchemaProvider>();
+}
 
 // Architecture intelligence services
 builder.Services.AddSingleton<CodeMemory.Indexing.Graph.IDependencyGraphService, DependencyGraphService>();
@@ -81,8 +89,8 @@ builder.Services.AddMcpServer()
             return Task.CompletedTask;
         };
     })
-    .WithToolsFromAssembly(typeof(CodeMemory.Mcp.McpTools).Assembly)
-    .WithToolsFromAssembly(typeof(CodeMemory.AspNet.Tools.SqlQueryTool).Assembly);
+    .WithToolsFromAssembly(typeof(CodeMemory.Mcp.McpTools).Assembly);
+//.WithToolsFromAssembly(typeof(CodeMemory.AspNet.Tools.AnyAspNetTool).Assembly);
 
 // CORS — origins configured in appsettings.json:Cors:AllowedOrigins
 var corsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>();
@@ -107,12 +115,6 @@ var loggerFactory = app.Services.GetRequiredService<ILoggerFactory>();
 var embeddingGenerator = app.Services.GetRequiredService<IEmbeddingGenerator<string, Embedding<float>>>();
 var repositories = builder.Configuration.GetSection("Repositories").Get<Dictionary<string, string>>();
 var repoInfos = new List<(string name, string path, string? dbPath)>();
-
-var provider = builder.Configuration.GetValue<string>("Storage:Provider") ?? "inmemory";
-var useSqlite = string.Equals(provider, "sqlite", StringComparison.OrdinalIgnoreCase);
-
-if (!useSqlite)
-    provider = "inmemory";
 
 foreach (var (name, path) in repositories ?? [])
 {

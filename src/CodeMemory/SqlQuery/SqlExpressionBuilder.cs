@@ -5,7 +5,7 @@ using ConstantExpression = System.Linq.Expressions.ConstantExpression;
 using LinqExpr = System.Linq.Expressions.Expression;
 using ParameterExpression = System.Linq.Expressions.ParameterExpression;
 
-namespace CodeMemory.AspNet.SqlQuery;
+namespace CodeMemory.SqlQuery;
 
 public sealed partial class SqlExpressionBuilder
 {
@@ -149,6 +149,7 @@ public sealed partial class SqlExpressionBuilder
             AstExpr.IsNotNull isNotNull => visitIsNotNull(isNotNull, param, recordType),
             AstExpr.Between between => visitBetween(between, param, recordType),
             AstExpr.UnaryOp unary => visitUnaryOp(unary, param, recordType),
+            AstExpr.Nested nested => visit(nested.Expression, param, recordType),
             _ => throw new NotSupportedException($"SQL expression type '{expr.GetType().Name}' is not supported in WHERE clauses")
         };
 

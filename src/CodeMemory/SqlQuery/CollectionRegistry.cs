@@ -1,7 +1,7 @@
 using CodeMemory.Storage;
 using Microsoft.Extensions.VectorData;
 
-namespace CodeMemory.AspNet.SqlQuery;
+namespace CodeMemory.SqlQuery;
 
 public sealed record CollectionEntry(string CollectionName, Type RecordType,
     Func<VectorStore, object> GetCollection);

@@ -1,4 +1,4 @@
-using CodeMemory.AspNet.SqlQuery;
+using CodeMemory.SqlQuery;
 using CodeMemory.Storage;
 using Memori.Embeddings;
 using Memori.Storage;
@@ -794,5 +794,307 @@ public sealed class SqlQueryServiceTests
         Assert.That(result.Columns, Does.Contain("s.Name"));
         Assert.That(result.Columns, Does.Contain("s.Kind"));
         Assert.That(result.Rows!.Select(r => r["s.Name"]), Is.EquivalentTo(["Helper", "MyClass"]));
+    }
+
+    // ----- Fix verification tests -----
+
+    [Test]
+    public async Task LimitZero_ReturnsEmptyResult()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT * FROM SymbolRecord LIMIT 0");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(0));
+    }
+
+    [Test]
+    public async Task WhereWithParenthesizedExpression_ReturnsMatchingRows()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT Name FROM SymbolRecord WHERE (Kind = 'Class') ORDER BY Name");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(2));
+        Assert.That(result.Rows!.Select(r => r["Name"]), Is.EqualTo(["Helper", "MyClass"]));
+    }
+
+    [Test]
+    public async Task WhereWithNestedAndOrParentheses_ReturnsCorrectRows()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT Name FROM SymbolRecord WHERE (Kind = 'Class' OR Kind = 'Interface') AND FilePath LIKE '%Helper%'");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(1));
+        Assert.That(result.Rows![0]["Name"], Is.EqualTo("Helper"));
+    }
+
+    [Test]
+    public async Task OrderBy_ComputedAlias_SortsCorrectly()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT Name, LineEnd - LineStart AS Length FROM SymbolRecord ORDER BY Length");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(5));
+
+        var lengths = result.Rows!.Select(r => Convert.ToDouble(r["Length"])).ToList();
+        Assert.That(lengths, Is.Ordered.Ascending);
+        Assert.That(lengths[0], Is.EqualTo(0.0)); // _private: 5-5
+        Assert.That(lengths[4], Is.EqualTo(49.0)); // MyClass: 50-1
+    }
+
+    [Test]
+    public async Task StringConcat_WithColumns_ReturnsConcatenated()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT Name || ':' || Kind AS combined FROM SymbolRecord WHERE Kind = 'Class' ORDER BY Name");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(2));
+        Assert.That(result.Rows![0]["combined"], Is.EqualTo("Helper:Class"));
+        Assert.That(result.Rows[1]["combined"], Is.EqualTo("MyClass:Class"));
+    }
+
+    [Test]
+    public async Task OrderBy_ColumnInRecordNotInSelect_ReturnsSorted()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT Name FROM SymbolRecord ORDER BY LineEnd");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(5));
+        Assert.That(result.Rows!.Select(r => r["Name"]),
+            Is.EqualTo(["_private", "IOld", "MyMethod", "Helper", "MyClass"]));
+    }
+
+    // ----- Remaining gap tests -----
+
+    [Test]
+    public async Task OrderBy_AmbiguousColumnName_ReturnsFirstMatch()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT Kind AS Kind, COUNT(*) AS Kind FROM SymbolRecord GROUP BY Kind ORDER BY Kind");
+
+        Assert.That(result.Success, Is.True);
+        // Resolves to first match (Kind column) — no error, no warning
+    }
+
+    [Test]
+    public async Task Subquery_ReturnsError()
+    {
+        var (store, registry, service) = createServices();
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT * FROM (SELECT * FROM SymbolRecord) AS sub");
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Error, Does.Contain("table name"));
+    }
+
+    [Test]
+    public async Task UnionQuery_ReturnsError()
+    {
+        var (store, registry, service) = createServices();
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT Name FROM SymbolRecord UNION SELECT Name FROM SymbolRecord");
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Error, Does.Contain("simple SELECT"));
+    }
+
+    [Test]
+    public async Task CaseExpression_ReturnsNull()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        // CASE parses as an expression; evaluateExpression returns null for unknown types
+        var result = await service.ExecuteAsync(store,
+            "SELECT CASE WHEN Kind = 'Class' THEN 'yes' ELSE 'no' END AS verdict FROM SymbolRecord LIMIT 1");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.Columns, Does.Contain("verdict"));
+        // Expression evaluated as null (not supported)
+        Assert.That(result.Rows![0]["verdict"], Is.Null);
+    }
+
+    [Test]
+    public async Task CoalesceExpression_ReturnsNull()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        // COALESCE parses as a function (unknown aggregate); computeAggregate returns null
+        var result = await service.ExecuteAsync(store,
+            "SELECT COALESCE(Modifiers, 'none') AS fallback FROM SymbolRecord LIMIT 1");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.Columns, Does.Contain("fallback"));
+    }
+
+    [Test]
+    public async Task CastExpression_ReturnsNull()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        // CAST parses as an expression; evaluateExpression returns null for unknown types
+        var result = await service.ExecuteAsync(store,
+            "SELECT CAST(LineStart AS TEXT) AS conv FROM SymbolRecord LIMIT 1");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.Columns, Does.Contain("conv"));
+        Assert.That(result.Rows![0]["conv"], Is.Null);
+    }
+
+    [Test]
+    public async Task MixedTypeOrderBy_HandlesConvertToDouble()
+    {
+        var (store, registry, service) = createServices();
+        var coll = store.GetCollection<string, SymbolRecord>("symbols");
+        await coll.UpsertAsync(new SymbolRecord
+        {
+            Id = "s:stringVal",
+            Name = "StringVal",
+            Kind = "999",
+            FilePath = "/src/x.cs",
+            FullName = "StringVal",
+            LineStart = 1,
+            LineEnd = 2
+        });
+        await coll.UpsertAsync(new SymbolRecord
+        {
+            Id = "s:numVal",
+            Name = "NumVal",
+            Kind = "123",
+            FilePath = "/src/x.cs",
+            FullName = "NumVal",
+            LineStart = 1,
+            LineEnd = 2
+        });
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT Name FROM SymbolRecord WHERE Kind IN ('999', '123') ORDER BY Kind");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(2));
+        Assert.That(result.Rows![0]["Name"], Is.EqualTo("NumVal")); // 123 < 999
+    }
+
+    [Test]
+    public async Task CountColumn_WithEmptyString_IncludesIt()
+    {
+        var (store, registry, service) = createServices();
+        var coll = store.GetCollection<string, SymbolRecord>("symbols");
+        await coll.UpsertAsync(new SymbolRecord
+        {
+            Id = "s:emptyMod",
+            Name = "EmptyMod",
+            Kind = "Test",
+            FilePath = "/src/x.cs",
+            FullName = "EmptyMod",
+            LineStart = 1,
+            LineEnd = 2,
+            Modifiers = ""
+        });
+        await coll.UpsertAsync(new SymbolRecord
+        {
+            Id = "s:nullMod",
+            Name = "NullMod",
+            Kind = "Test",
+            FilePath = "/src/x.cs",
+            FullName = "NullMod",
+            LineStart = 1,
+            LineEnd = 2
+        });
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT COUNT(Modifiers) AS cnt FROM SymbolRecord WHERE Kind = 'Test' GROUP BY Kind");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(1));
+        // Empty string is included, null is excluded
+        Assert.That((long)result.Rows![0]["cnt"], Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task DeepWhereExpressionTree_WorksCorrectly()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT Name FROM SymbolRecord WHERE " +
+            "Kind = 'Class' AND Kind = 'Class' AND Kind = 'Class' AND Kind = 'Class' " +
+            "AND Kind = 'Class' AND Kind = 'Class' AND Kind = 'Class' AND Kind = 'Class' " +
+            "ORDER BY Name");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(2));
+    }
+
+    [Test]
+    public async Task SqlCommentBeforeQuery_Succeeds()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        // The parser ignores SQL comments before the statement
+        var result = await service.ExecuteAsync(store,
+            "-- comment\nSELECT * FROM SymbolRecord LIMIT 1");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task MultipleStatements_ReturnsError()
+    {
+        var (store, registry, service) = createServices();
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT 1; SELECT 2");
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Error, Does.Contain("single-statement"));
+    }
+
+    [Test]
+    public async Task Distinct_WithComputedExpression_IgnoresComputedColumns()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        // DISTINCT on computed expressions has no raw columns to compare,
+        // so all rows collapse to one
+        var result = await service.ExecuteAsync(store,
+            "SELECT DISTINCT LineEnd - LineStart FROM SymbolRecord");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(1));
     }
 }

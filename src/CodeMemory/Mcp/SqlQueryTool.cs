@@ -1,21 +1,23 @@
-using CodeMemory.AspNet.Configuration;
-using CodeMemory.AspNet.SqlQuery;
+using CodeMemory.SqlQuery;
 using CodeMemory.Storage;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
 using System.ComponentModel;
 
-namespace CodeMemory.AspNet.Tools;
+namespace CodeMemory.Mcp;
 
 [McpServerToolType]
 public sealed class SqlQueryTool
 {
-    readonly IStorageService? storageService;
+    static readonly Lock failedQueriesLock = new();
+
+    readonly IStorageService storageService;
     readonly SqlQueryService sqlQueryService;
-    readonly TableSchemaProvider schemaProvider;
+    //readonly TableSchemaProvider schemaProvider;
     readonly ILogger<SqlQueryTool> logger;
 
     public SqlQueryTool(
-        IStorageService? storageService,
+        IStorageService storageService,
         SqlQueryService sqlQueryService,
         TableSchemaProvider schemaProvider,
         ILogger<SqlQueryTool> logger)
@@ -59,6 +61,8 @@ BEHAVIOR:
   - GROUP BY, DISTINCT, HAVING, and aggregates are applied client-side after fetching all matching rows
    - HAVING supports aggregate function references (COUNT(*) > 1) and column aliases (cnt > 1)
    - SELECT supports arithmetic expressions: +, -, *, / (e.g. SELECT LineEnd - LineStart AS Length FROM SymbolRecord)
+   - String concatenation with || operator supported (e.g. SELECT Name || ':' || Kind AS combined)
+   - Parenthesized WHERE conditions supported: WHERE (Kind = 'Class' OR Kind = 'Interface') AND Name LIKE '%Helper%'
    - Only InMemoryVectorStore backend supported; other backends return an error
 
 EXAMPLES:
@@ -81,12 +85,8 @@ RETURNS JSON: success, rowCount, executionTimeMs, columns, rows, error
         [Description("Maximum number of results to return (1-10000, default 100)")]
         int maxResults = 100)
     {
-        string repoRoot = null;
-        IStorageService? givenStorageService = storageService;
-        if (storageService is StorageServiceRouter r)
-            (givenStorageService, repoRoot) = (r.GetStorage(), r.RepoRoot);
-
-        var vectorStore = givenStorageService?.Store;
+        var repoRoot = storageService.RepoRoot;
+        var vectorStore = storageService?.Store;
 
         if (vectorStore is null)
         {
@@ -116,7 +116,8 @@ RETURNS JSON: success, rowCount, executionTimeMs, columns, rows, error
                 toWrite += $"{error}{Environment.NewLine}";
 
             string path = Path.Combine(AppContext.BaseDirectory, "failed-queries.txt");
-            File.AppendAllText(path, toWrite);
+            lock (failedQueriesLock)
+                File.AppendAllText(path, toWrite);
         };
 
         try

@@ -56,6 +56,11 @@ else
 {
     provider = "inmemory";
     builder.Services.AddCodeMemoryInMemoryStorage(repoRoot);
+
+    // SQL query services (InMemoryVectorStore backend)
+    builder.Services.AddSingleton<CodeMemory.SqlQuery.CollectionRegistry>();
+    builder.Services.AddSingleton<CodeMemory.SqlQuery.SqlQueryService>();
+    builder.Services.AddSingleton<CodeMemory.SqlQuery.TableSchemaProvider>();
 }
 
 // Built-in n-gram embedding generator

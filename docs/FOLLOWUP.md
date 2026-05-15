@@ -1,7 +1,5 @@
 # Follow-Up Items
 
-Assessment of each item from [FOLLOWUP.md](./FOLLOWUP.md) against the current codebase (May 2026). Items marked **Done** or **No longer applicable** have been omitted from this file.
-
 ---
 
 ## Suggestions for Future Work

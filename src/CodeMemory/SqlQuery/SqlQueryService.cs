@@ -1,9 +1,11 @@
 using CodeMemory.Storage;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.VectorData;
 using SqlParser;
 using SqlParser.Ast;
 using SqlParser.Dialects;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Reflection;
 using System.Text;
@@ -11,7 +13,7 @@ using AstExpr = SqlParser.Ast.Expression;
 using LambdaExpression = System.Linq.Expressions.LambdaExpression;
 using LinqExpr = System.Linq.Expressions.Expression;
 
-namespace CodeMemory.AspNet.SqlQuery;
+namespace CodeMemory.SqlQuery;
 
 public sealed record SqlQueryResult(bool Success, long RowCount, long ExecutionTimeMs,
     List<string>? Columns,
@@ -170,13 +172,13 @@ public sealed class SqlQueryService
                 }
             case "MIN":
                 {
-                    var vals = group.Select(r => r.GetValueOrDefault(col.AggregateArg)).Where(v => v is not null).ToList();
-                    return vals.Count > 0 ? vals.OrderBy(v => Convert.ToDouble(v)).First() : null;
+                    var vals = group.Select(r => r.GetValueOrDefault(col.AggregateArg)).Where(v => v is not null);
+                    return vals.Any() ? vals.Min(v => Convert.ToDouble(v)) : null;
                 }
             case "MAX":
                 {
-                    var vals = group.Select(r => r.GetValueOrDefault(col.AggregateArg)).Where(v => v is not null).ToList();
-                    return vals.Count > 0 ? vals.OrderByDescending(v => Convert.ToDouble(v)).First() : null;
+                    var vals = group.Select(r => r.GetValueOrDefault(col.AggregateArg)).Where(v => v is not null);
+                    return vals.Any() ? vals.Max(v => Convert.ToDouble(v)) : null;
                 }
             default:
                 return null;
@@ -193,9 +195,23 @@ public sealed class SqlQueryService
             // Check alias — for aggregates, grouped results use alias as key;
             // for non-aggregates, resolve to original column name for raw data
             if (col.Alias is not null && string.Equals(col.Alias, orderByName, StringComparison.OrdinalIgnoreCase))
-                return col.IsAggregate ? col.Alias : (col.Name ?? col.Alias);
+                return col.Name ?? col.Alias;
         }
         return null;
+    }
+
+    static Func<Dictionary<string, object?>, object?> makeSortSelector(string sortColumn, List<SelectColumnInfo> parsedColumns)
+    {
+        // Check if the sort column is a computed expression that needs evaluation
+        foreach (var col in parsedColumns)
+        {
+            if (col.Expression is not null && col.Alias is not null
+                && string.Equals(col.Alias, sortColumn, StringComparison.OrdinalIgnoreCase))
+            {
+                return r => evaluateExpression(col.Expression, r);
+            }
+        }
+        return r => r.GetValueOrDefault(sortColumn);
     }
 
     static List<Dictionary<string, object?>> applyOrderBy(
@@ -234,17 +250,19 @@ public sealed class SqlQueryService
 
             if (sortColumn is null) continue;
 
+            var selector = makeSortSelector(sortColumn, parsedColumns);
+
             if (i == 0)
             {
                 ordered = orderCol.Ascending
-                    ? rows.OrderBy(r => r.GetValueOrDefault(sortColumn))
-                    : rows.OrderByDescending(r => r.GetValueOrDefault(sortColumn));
+                    ? rows.OrderBy(selector)
+                    : rows.OrderByDescending(selector);
             }
             else
             {
                 ordered = orderCol.Ascending
-                    ? ordered!.ThenBy(r => r.GetValueOrDefault(sortColumn))
-                    : ordered!.ThenByDescending(r => r.GetValueOrDefault(sortColumn));
+                    ? ordered!.ThenBy(selector)
+                    : ordered!.ThenByDescending(selector);
             }
         }
 
@@ -402,6 +420,7 @@ public sealed class SqlQueryService
                         BinaryOperator.Minus => Convert.ToDouble(left) - Convert.ToDouble(right),
                         BinaryOperator.Multiply => Convert.ToDouble(left) * Convert.ToDouble(right),
                         BinaryOperator.Divide => Convert.ToDouble(left) / Convert.ToDouble(right),
+                        BinaryOperator.StringConcat => (left?.ToString() ?? "") + (right?.ToString() ?? ""),
                         _ => null
                     };
                 }
@@ -512,11 +531,11 @@ public sealed class SqlQueryService
     }
 
     static MethodInfo? findGetAsyncFilterMethod(Type collectionType)
-        => collectionType.GetMethods()
-        .FirstOrDefault(m => m.Name == "GetAsync"
-        && m.GetParameters().Length == 4
-        && m.GetParameters()[0].ParameterType.IsGenericType
-        && m.GetParameters()[0].ParameterType.GetGenericTypeDefinition() == typeof(System.Linq.Expressions.Expression<>));
+        => GetAsyncMethodCache.GetOrAdd(collectionType, t => t.GetMethods()
+            .FirstOrDefault(m => m.Name == "GetAsync"
+            && m.GetParameters().Length == 4
+            && m.GetParameters()[0].ParameterType.IsGenericType
+            && m.GetParameters()[0].ParameterType.GetGenericTypeDefinition() == typeof(System.Linq.Expressions.Expression<>)));
 
     static LambdaExpression makeTrueExpression(Type recordType)
     {
@@ -656,20 +675,48 @@ public sealed class SqlQueryService
 
     static Dictionary<string, object?> recordToDictionary(object record, Type recordType)
     {
-        var dict = new Dictionary<string, object?>();
+        var factory = (Func<object, Dictionary<string, object?>>)RecordToDictCache.GetOrAdd(recordType, BuildRecordToDict);
+        return factory(record);
+    }
 
-        foreach (var prop in recordType.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+    static Delegate BuildRecordToDict(Type recordType)
+    {
+        var param = LinqExpr.Parameter(typeof(object), "r");
+        var typed = LinqExpr.Variable(recordType, "typed");
+        var dict = LinqExpr.Variable(typeof(Dictionary<string, object?>), "d");
+        var addMethod = typeof(Dictionary<string, object?>).GetMethod("Add")!;
+        var convert = LinqExpr.Convert(param, recordType);
+
+        var properties = recordType.GetProperties(BindingFlags.Public | BindingFlags.Instance);
+
+        var assignments = new List<System.Linq.Expressions.Expression>
         {
-            if (prop.CanRead && prop.Name != "Embedding")
-            {
-                var value = prop.GetValue(record);
-                if (value is ReadOnlyMemory<float> || value is null && prop.PropertyType == typeof(ReadOnlyMemory<float>?))
-                    continue;
-                dict[prop.Name] = value;
-            }
+            LinqExpr.Assign(typed, convert),
+            LinqExpr.Assign(dict, LinqExpr.New(typeof(Dictionary<string, object?>)))
+        };
+
+        foreach (var prop in properties)
+        {
+            if (!prop.CanRead || prop.Name == "Embedding")
+                continue;
+
+            if (prop.PropertyType == typeof(ReadOnlyMemory<float>) || prop.PropertyType == typeof(ReadOnlyMemory<float>?))
+                continue;
+
+            var value = LinqExpr.Property(typed, prop);
+            assignments.Add(LinqExpr.Call(dict, addMethod,
+                LinqExpr.Constant(prop.Name),
+                LinqExpr.Convert(value, typeof(object))));
         }
 
-        return dict;
+        assignments.Add(dict);
+
+        var block = LinqExpr.Block(
+            [typed, dict],
+            assignments
+        );
+
+        return LinqExpr.Lambda<Func<object, Dictionary<string, object?>>>(block, param).Compile();
     }
 
     static async IAsyncEnumerable<T> toAsyncEnumerable<T>(object enumerable)
@@ -729,6 +776,9 @@ public sealed class SqlQueryService
 
     //
     static readonly GenericDialect Dialect = new();
+    static readonly ConcurrentDictionary<Type, MethodInfo?> GetAsyncMethodCache = new();
+    static readonly ConcurrentDictionary<Type, MethodInfo> BuildFilterMethodCache = new();
+    static readonly ConcurrentDictionary<Type, Delegate> RecordToDictCache = new();
 
     readonly CollectionRegistry registry;
     readonly IEmbeddingGenerator<string, Embedding<float>> embeddingGenerator;
@@ -744,12 +794,15 @@ public sealed class SqlQueryService
 
     LambdaExpression buildFilterExpression(Type recordType, AstExpr? whereExpr)
     {
-        var genericBuilder = typeof(SqlExpressionBuilder)
-            .GetMethods(BindingFlags.Public | BindingFlags.Instance)
-            .First(m => m.Name == "BuildFilter" && m.IsGenericMethodDefinition)
-            .MakeGenericMethod(recordType);
+        var genericMethod = BuildFilterMethodCache.GetOrAdd(recordType, t =>
+        {
+            var method = typeof(SqlExpressionBuilder)
+                .GetMethods(BindingFlags.Public | BindingFlags.Instance)
+                .First(m => m.Name == "BuildFilter" && m.IsGenericMethodDefinition);
+            return method.MakeGenericMethod(t);
+        });
 
-        return (LambdaExpression)genericBuilder.Invoke(builder, [whereExpr])!;
+        return (LambdaExpression)genericMethod.Invoke(builder, [whereExpr])!;
     }
 
     async Task<List<Dictionary<string, object?>>> queryFilteredAsync(VectorStore store, CollectionEntry entry,
@@ -929,15 +982,17 @@ public sealed class SqlQueryService
             else
                 result = await queryFilteredAsync(store, entry, whereExpr, fetchTop, ct);
 
-            // Apply DISTINCT
+            // Apply DISTINCT on raw row column names
             if (hasDistinct && !hasGroupBy && !hasAggregates)
             {
                 var seen = new HashSet<string>();
+                var distinctKeys = hasExplicitProjection
+                    ? parsedColumns.Select(c => c.Name).Where(n => n is not null).ToList()
+                    : entry.RecordType.GetProperties().Select(p => p.Name).ToList();
                 result = [.. result.Where(r =>
                 {
                     var key = string.Join('\0',
-                        (hasExplicitProjection ? parsedColumns.Select(c => c.Name) : entry.RecordType.GetProperties().Select(p => p.Name))
-                        .Select(n => r.GetValueOrDefault(n)?.ToString() ?? "NULL"));
+                        distinctKeys.Select(n => r.GetValueOrDefault(n)?.ToString() ?? "NULL"));
                     return seen.Add(key);
                 })];
             }
@@ -950,7 +1005,7 @@ public sealed class SqlQueryService
             if (havingExpr is not null)
                 result = applyHaving(result, havingExpr, parsedColumns);
 
-            // Centralized ORDER BY
+            // Centralized ORDER BY (computed aliases evaluated on-the-fly)
             result = applyOrderBy(result, orderBy, parsedColumns, hasExplicitProjection);
 
             // Apply LIMIT
@@ -1001,8 +1056,8 @@ public sealed class SqlQueryService
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "SQL query execution failed");
-            return fail($"Execution error: {ex.Message}", sw);
+            logger.LogError(ex, "SQL query execution failed: {Sql}", sql);
+            return fail($"Execution error at stage '{sw.Elapsed}' for SQL '{sql}': {ex.Message}", sw);
         }
     }
 }
