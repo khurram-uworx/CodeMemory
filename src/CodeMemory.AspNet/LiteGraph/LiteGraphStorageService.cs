@@ -1,6 +1,7 @@
 using CodeMemory.Storage;
 using LiteGraph;
 using LiteGraph.GraphRepositories;
+using Microsoft.Extensions.VectorData;
 using System.Collections.Specialized;
 
 namespace CodeMemory.AspNet.LiteGraph;
@@ -47,6 +48,8 @@ public sealed class LiteGraphStorageService : IStorageService, IDisposable
     }
 
     public string RepoRoot => repoRoot;
+
+    public VectorStore? Store => null;
     public LiteGraphClient Client => client;
     public Guid TenantGuid => tenantGuid;
     public Guid GraphGuid => graphGuid;

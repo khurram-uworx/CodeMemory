@@ -16,7 +16,6 @@
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <PackageProjectUrl>https://github.com/khurram-uworx/CodeMemory</PackageProjectUrl>
     <PackageTags>memory;semantic-memory;vector-search;mcp;code-analysis;repository-intelligence;dependency-graph</PackageTags>
-    <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
     <Copyright>Copyright (c) 2026 uWorx</Copyright>
     <Deterministic>true</Deterministic>

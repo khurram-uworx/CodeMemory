@@ -1,8 +1,12 @@
+using Microsoft.Extensions.VectorData;
+
 namespace CodeMemory.Storage;
 
 public interface IStorageService
 {
     public string RepoRoot { get; }
+
+    public VectorStore? Store { get; }
 
     Task InitializeAsync(CancellationToken ct = default);
 

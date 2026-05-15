@@ -45,6 +45,11 @@ builder.Services.AddSingleton<ISemanticSearchService, SemanticSearchService>();
 builder.Services.AddSingleton<SymbolQueryService>();
 builder.Services.AddSingleton<RelationshipQueryService>();
 
+// SQL query services (InMemoryVectorStore backend)
+builder.Services.AddSingleton<CodeMemory.AspNet.SqlQuery.CollectionRegistry>();
+builder.Services.AddSingleton<CodeMemory.AspNet.SqlQuery.SqlQueryService>();
+builder.Services.AddSingleton<CodeMemory.AspNet.SqlQuery.TableSchemaProvider>();
+
 // Architecture intelligence services
 builder.Services.AddSingleton<CodeMemory.Indexing.Graph.IDependencyGraphService, DependencyGraphService>();
 builder.Services.AddSingleton<CodeMemory.Indexing.Architecture.IArchitectureService, ArchitectureService>();
