@@ -5,9 +5,13 @@
       "type": "remote",
       "url": "https://learn.microsoft.com/api/mcp"
     },
-    //"code-memory": {
+    //"memori": {
     //  "type": "remote",
-    //  "url": "http://localhost:4792/api/mcp/codememory"
+    //  "url": "http://localhost:4792/api/mcp/memori"
+    //},
+    //"tree-sitter": {
+    //  "type": "remote",
+    //  "url": "http://localhost:4792/api/mcp/treesitter"
     //},
     "code-memory": {
       "type": "local",

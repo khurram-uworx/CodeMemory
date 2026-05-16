@@ -325,6 +325,9 @@ MigrationBackup/
 # CodeMemory index databases — add .memorycode/ to exclude from version control
 .memorycode/
 
+# NPM package downloaded binaries
+packages/code-memory/bin/code-memory*.exe
+
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
 /src/Meridian/appsettings.Development.json
