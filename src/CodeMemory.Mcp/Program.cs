@@ -11,7 +11,6 @@ using CodeMemory.Services.Query;
 using CodeMemory.Storage;
 using Memori.Embeddings;
 using Microsoft.Extensions.AI;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -35,33 +34,12 @@ builder.Services.AddSingleton<TreeSitterSymbolExtractor>();
 builder.Services.AddSingleton<TreeSitterRelationshipExtractor>();
 builder.Services.AddSingleton<SemanticChunker>();
 
-// Storage provider selection — "inmemory" (default), "sqlite", or "litegraph"
-var provider = builder.Configuration.GetValue<string>("Storage:Provider") ?? "inmemory";
+builder.Services.AddCodeMemoryInMemoryStorage(repoRoot);
 
-if (string.Equals(provider, "sqlite", StringComparison.OrdinalIgnoreCase))
-{
-    var memoryPath = Path.Combine(repoRoot, ".memorycode");
-    Directory.CreateDirectory(memoryPath);
-    var connectionString = $"Data Source={Path.Combine(memoryPath, "sqlvec.db")}";
-    builder.Services.AddCodeMemorySqlliteStorage(repoRoot, connectionString);
-}
-//else if (string.Equals(provider, "litegraph", StringComparison.OrdinalIgnoreCase))
-//{
-//    var liteGraphOptions = builder.Configuration
-//        .GetSection("Storage:LiteGraph")
-//        .Get<LiteGraphStorageOptions>();
-//    builder.Services.AddCodeMemoryLiteGraphStorage(repoRoot, liteGraphOptions);
-//}
-else
-{
-    provider = "inmemory";
-    builder.Services.AddCodeMemoryInMemoryStorage(repoRoot);
-
-    // SQL query services (InMemoryVectorStore backend)
-    builder.Services.AddSingleton<CodeMemory.SqlQuery.CollectionRegistry>();
-    builder.Services.AddSingleton<CodeMemory.SqlQuery.SqlQueryService>();
-    builder.Services.AddSingleton<CodeMemory.SqlQuery.TableSchemaProvider>();
-}
+// SQL query services (InMemoryVectorStore backend)
+builder.Services.AddSingleton<CodeMemory.SqlQuery.CollectionRegistry>();
+builder.Services.AddSingleton<CodeMemory.SqlQuery.SqlQueryService>();
+builder.Services.AddSingleton<CodeMemory.SqlQuery.TableSchemaProvider>();
 
 // Built-in n-gram embedding generator
 builder.Services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>, NgramEmbeddingGenerator>();

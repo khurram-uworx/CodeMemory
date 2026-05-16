@@ -9,7 +9,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\CodeMemory\CodeMemory.csproj" />
-    <ProjectReference Include="..\CodeMemory.Storage\CodeMemory.Storage.csproj" />
   </ItemGroup>
 
   <ItemGroup>

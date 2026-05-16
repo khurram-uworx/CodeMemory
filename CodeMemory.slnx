@@ -8,7 +8,6 @@
   </Folder>
   <Project Path="src/CodeMemory.AspNet/CodeMemory.AspNet.csproj" />
   <Project Path="src/CodeMemory.Mcp/CodeMemory.Mcp.csproj" />
-  <Project Path="src/CodeMemory.Storage/CodeMemory.Storage.csproj" />
   <Project Path="src/CodeMemory.Tests/CodeMemory.Tests.csproj" />
   <Project Path="src/CodeMemory/CodeMemory.csproj" />
 </Solution>
