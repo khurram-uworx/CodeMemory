@@ -7,9 +7,7 @@ namespace CodeMemory.Indexing.Extraction;
 public sealed class TreeSitterRelationshipExtractor : IRelationshipExtractor
 {
     static string relationshipId(string source, string target, string type)
-    {
-        return $"{source}->{target}:{type}";
-    }
+        => $"{source}->{target}:{type}";
 
     static Symbol? findContainingSymbol(Node node, IReadOnlyList<Symbol> symbols, string filePath)
     {
@@ -37,17 +35,14 @@ public sealed class TreeSitterRelationshipExtractor : IRelationshipExtractor
             return byName[withParens].First();
 
         foreach (var entry in byName)
-        {
             if (entry.Key.StartsWith(name + "(", StringComparison.Ordinal))
                 return entry.First();
-        }
 
         return null;
     }
 
     static string? extractTypeName(Node node)
-    {
-        return node.Type switch
+        => node.Type switch
         {
             "type_identifier" or "identifier" => node.Text,
             "predefined_type" => node.Text,
@@ -56,7 +51,6 @@ public sealed class TreeSitterRelationshipExtractor : IRelationshipExtractor
             "array_type" => node.NamedChildren is { Count: > 0 } aChild ? extractTypeName(aChild[0]) : null,
             _ => null,
         };
-    }
 
     static readonly HashSet<string> primitiveTypes = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -71,9 +65,7 @@ public sealed class TreeSitterRelationshipExtractor : IRelationshipExtractor
     readonly ILogger<TreeSitterRelationshipExtractor> logger;
 
     public TreeSitterRelationshipExtractor(ILogger<TreeSitterRelationshipExtractor> logger)
-    {
-        this.logger = logger;
-    }
+        => this.logger = logger;
 
     void walkTree(Node node,
         IReadOnlyList<Symbol> symbols,
@@ -91,9 +83,11 @@ public sealed class TreeSitterRelationshipExtractor : IRelationshipExtractor
             case "class_declaration":
             case "abstract_class_declaration":
             case "interface_declaration":
+            case "class_definition":
                 processHeritage(node, symbols, byName, byFullName, filePath, language, seen, results);
                 break;
             case "call_expression":
+            case "call":
                 processCall(node, symbols, byName, byFullName, filePath, seen, results);
                 break;
             case "method_invocation":
@@ -108,9 +102,7 @@ public sealed class TreeSitterRelationshipExtractor : IRelationshipExtractor
         checkTypeAnnotation(node, symbols, byName, byFullName, filePath, seen, results);
 
         foreach (var child in node.NamedChildren)
-        {
             walkTree(child, symbols, byName, byFullName, filePath, language, seen, results);
-        }
     }
 
     void processHeritageClause(Node clause, Symbol source, string relType,
@@ -150,13 +142,25 @@ public sealed class TreeSitterRelationshipExtractor : IRelationshipExtractor
             }
 
             if (child.Type is "heritage_clause" or "extends_clause" or "superclass")
-            {
                 processHeritageClause(child, source, "Inherits", byName, byFullName, seen, results);
-            }
 
             if (child.Type == "implements_clause")
-            {
                 processHeritageClause(child, source, "Implements", byName, byFullName, seen, results);
+        }
+
+        if (language == Parsing.Language.Python)
+        {
+            var superField = node.Fields.FirstOrDefault(f => f.Key == "superclasses");
+            if (superField.Key != null)
+            {
+                foreach (var child in superField.Value.NamedChildren)
+                {
+                    var typeName = extractTypeName(child);
+                    if (typeName == null || primitiveTypes.Contains(typeName)) continue;
+                    var target = findSymbolByName(typeName, byName, byFullName);
+                    if (target == null || target.FullName == source.FullName) continue;
+                    addRelationship(source.FullName, target.FullName, "Inherits", seen, results);
+                }
             }
         }
 
@@ -166,9 +170,11 @@ public sealed class TreeSitterRelationshipExtractor : IRelationshipExtractor
             if (superField.Key != null)
             {
                 var typeName = extractTypeName(superField.Value);
+
                 if (typeName != null && !primitiveTypes.Contains(typeName))
                 {
                     var target = findSymbolByName(typeName, byName, byFullName);
+
                     if (target != null && target.FullName != source.FullName)
                         addRelationship(source.FullName, target.FullName, "Inherits", seen, results);
                 }
@@ -176,17 +182,13 @@ public sealed class TreeSitterRelationshipExtractor : IRelationshipExtractor
 
             var interfacesField = node.Fields.FirstOrDefault(f => f.Key == "interfaces");
             if (interfacesField.Key != null)
-            {
                 collectTypeRefs(interfacesField.Value, source, "Implements", byName, byFullName, seen, results);
-            }
 
             if (node.Type == "interface_declaration")
             {
                 var extendsField = node.Fields.FirstOrDefault(f => f.Key == "extends");
                 if (extendsField.Key != null)
-                {
                     collectTypeRefs(extendsField.Value, source, "Inherits", byName, byFullName, seen, results);
-                }
             }
         }
     }
@@ -213,8 +215,10 @@ public sealed class TreeSitterRelationshipExtractor : IRelationshipExtractor
             {
                 var typeName = extractTypeName(child);
                 if (typeName == null || primitiveTypes.Contains(typeName)) continue;
+
                 var target = findSymbolByName(typeName, byName, byFullName);
                 if (target == null || target.FullName == source.FullName) continue;
+
                 addRelationship(source.FullName, target.FullName, relType, seen, results);
             }
         }
@@ -248,9 +252,7 @@ public sealed class TreeSitterRelationshipExtractor : IRelationshipExtractor
         string? methodName = null;
 
         if (funcNode.Type is "identifier" or "property_identifier")
-        {
             methodName = funcNode.Text;
-        }
         else if (funcNode.Type == "member_expression")
         {
             var propField = funcNode.Fields.FirstOrDefault(f => f.Key == "property");
@@ -340,9 +342,7 @@ public sealed class TreeSitterRelationshipExtractor : IRelationshipExtractor
             typeName = extractTypeName(typeExpr);
         }
         else
-        {
             typeName = extractTypeName(typeField.Value);
-        }
 
         if (typeName == null || primitiveTypes.Contains(typeName))
             return;

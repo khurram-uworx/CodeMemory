@@ -7,6 +7,8 @@ public enum Language
     TypeScript,
     JavaScript,
     Java,
+    Python,
+    HTML,
 }
 
 public static class LanguageDetector
@@ -19,6 +21,9 @@ public static class LanguageDetector
         [".js"] = Language.JavaScript,
         [".jsx"] = Language.JavaScript,
         [".java"] = Language.Java,
+        [".py"] = Language.Python,
+        [".html"] = Language.HTML,
+        [".htm"] = Language.HTML,
     };
 
     public static Language Detect(string filePath)

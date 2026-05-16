@@ -142,6 +142,51 @@ public sealed class TreeSitterRelationshipExtractorTests
     }
 
     [Test]
+    public async Task ExtractRelationships_PythonExtends_CreatesInherits()
+    {
+        Assume.That(isTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            class BaseClass:
+                pass
+
+            class DerivedClass(BaseClass):
+                pass
+            """;
+
+        var (symbols, result, path) = await extractFromCode(code, ".py");
+        var extractor = new TreeSitterRelationshipExtractor(NullLogger<TreeSitterRelationshipExtractor>.Instance);
+        var relationships = extractor.ExtractRelationships(result, symbols, path);
+
+        Assert.That(relationships.Any(r =>
+            r.SourceSymbolId == "DerivedClass" &&
+            r.TargetSymbolId == "BaseClass" &&
+            r.RelationshipType == "Inherits"), Is.True);
+    }
+
+    [Test]
+    public async Task ExtractRelationships_PythonMethodCall_CreatesCalls()
+    {
+        Assume.That(isTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            class Callee:
+                def target_method(self):
+                    pass
+
+            class Caller:
+                def call_it(self):
+                    c = Callee()
+                    c.target_method()
+            """;
+
+        var (symbols, result, path) = await extractFromCode(code, ".py");
+        var extractor = new TreeSitterRelationshipExtractor(NullLogger<TreeSitterRelationshipExtractor>.Instance);
+        var relationships = extractor.ExtractRelationships(result, symbols, path);
+
+        Assert.That(relationships.Any(r =>
+            r.RelationshipType == "Calls"), Is.True);
+    }
+
+    [Test]
     public async Task ExtractRelationships_NoDuplicateRelationships()
     {
         Assume.That(isTreeSitterAvailable(), "Tree-sitter native libraries not available");

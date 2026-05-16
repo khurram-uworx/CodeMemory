@@ -91,14 +91,60 @@ public sealed class TreeSitterParserTests
     public async Task ParseAsync_WithUnknownExtension_ReturnsNull()
     {
         var parser = new TreeSitterParser(NullLogger<TreeSitterParser>.Instance);
-        var path = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}.py");
+        var path = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}.rb");
         try
         {
-            await File.WriteAllTextAsync(path, "def foo(): pass");
+            await File.WriteAllTextAsync(path, "def foo; end");
 
             var result = await parser.ParseAsync(path);
 
             Assert.That(result, Is.Null);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Test]
+    public async Task ParseAsync_WithPythonFile_ReturnsParseResultWithTsTree()
+    {
+        Assume.That(isTreeSitterAvailable(), "Tree-sitter native libraries not available");
+
+        var parser = new TreeSitterParser(NullLogger<TreeSitterParser>.Instance);
+        var path = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}.py");
+        try
+        {
+            await File.WriteAllTextAsync(path, "class Foo:\n    def bar(self):\n        pass");
+
+            var result = await parser.ParseAsync(path);
+
+            Assert.That(result, Is.Not.Null);
+            Assert.That(result!.TsTree, Is.Not.Null);
+            Assert.That(result.Language, Is.EqualTo(Language.Python));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Test]
+    public async Task ParseAsync_WithHtmlFile_ReturnsParseResultWithTsTree()
+    {
+        Assume.That(isTreeSitterAvailable(), "Tree-sitter native libraries not available");
+
+        var parser = new TreeSitterParser(NullLogger<TreeSitterParser>.Instance);
+        var path = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}.html");
+        try
+        {
+            await File.WriteAllTextAsync(path, "<html><body><p>Hello</p></body></html>");
+
+            var result = await parser.ParseAsync(path);
+
+            Assert.That(result, Is.Not.Null);
+            Assert.That(result!.TsTree, Is.Not.Null);
+            Assert.That(result.Language, Is.EqualTo(Language.HTML));
         }
         finally
         {

@@ -10,14 +10,14 @@ public sealed class TreeSitterParser : ILanguageParser
         [Language.TypeScript] = new TreeSitter.Language("TypeScript"),
         [Language.JavaScript] = new TreeSitter.Language("JavaScript"),
         [Language.Java] = new TreeSitter.Language("Java"),
+        [Language.Python] = new TreeSitter.Language("Python"),
+        [Language.HTML] = new TreeSitter.Language("HTML"),
     };
 
     readonly ILogger<TreeSitterParser> logger;
 
     public TreeSitterParser(ILogger<TreeSitterParser> logger)
-    {
-        this.logger = logger;
-    }
+        => this.logger = logger;
 
     public async Task<ParseResult?> ParseAsync(string filePath, CancellationToken cancellationToken = default)
     {

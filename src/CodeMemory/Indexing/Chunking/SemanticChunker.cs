@@ -29,8 +29,7 @@ public sealed class SemanticChunker
     }
 
     static bool isImportOrHeaderLine(string trimmed, Language language)
-    {
-        return language switch
+        => language switch
         {
             Language.CSharp => trimmed.StartsWith("using ") || trimmed.StartsWith("namespace "),
             Language.TypeScript or Language.JavaScript =>
@@ -38,9 +37,9 @@ public sealed class SemanticChunker
                 trimmed.StartsWith("require(") || trimmed.StartsWith("/// <reference") ||
                 trimmed.StartsWith("module "),
             Language.Java => trimmed.StartsWith("import ") || trimmed.StartsWith("package "),
+            Language.Python => trimmed.StartsWith("import ") || trimmed.StartsWith("from "),
             _ => false,
         };
-    }
 
     static DocumentChunk createTypeChunk(
         Symbol symbol,
@@ -109,18 +108,19 @@ public sealed class SemanticChunker
     static string extractLines(string[] fileLines, LineRange range)
     {
         var sb = new StringBuilder();
+
         for (int i = range.Start - 1; i < range.End && i < fileLines.Length; i++)
         {
             sb.AppendLine(fileLines[i].TrimEnd('\r'));
         }
+
         return sb.ToString().TrimEnd();
     }
 
     static string? extractParentName(string fullName)
     {
         var lastDot = fullName.LastIndexOf('.');
-        if (lastDot <= 0)
-            return null;
+        if (lastDot <= 0) return null;
 
         // Check if the part after the last dot is a method signature with parentheses
         var afterDot = fullName[(lastDot + 1)..];
@@ -137,15 +137,14 @@ public sealed class SemanticChunker
     {
         var input = $"{symbolId}|{content}|{filePath}";
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(input));
+
         return Convert.ToHexString(bytes)[..32].ToLowerInvariant();
     }
 
     readonly ILogger<SemanticChunker> logger;
 
     public SemanticChunker(ILogger<SemanticChunker> logger)
-    {
-        this.logger = logger;
-    }
+        => this.logger = logger;
 
     public IReadOnlyList<DocumentChunk> ChunkAll(
         IReadOnlyList<Symbol> symbols,
@@ -180,6 +179,16 @@ public sealed class SemanticChunker
         {
             var memberChunk = createMemberChunk(memberSymbol, fileLines, filePath, language);
             chunks.Add(memberChunk);
+        }
+
+        // For document languages (e.g. HTML, Markdown) with no symbols,
+        // create a single file-level chunk for semantic search indexing
+        if (chunks.Count == 0 && !string.IsNullOrWhiteSpace(fileText))
+        {
+            var id = computeId(filePath, fileText, filePath);
+            var fileRange = new LineRange(1, fileLines.Length);
+            var metadata = new Dictionary<string, string> { ["chunkType"] = "file" };
+            chunks.Add(new DocumentChunk(id, "", filePath, fileText.TrimEnd('\r', '\n'), language.ToString(), fileRange, metadata));
         }
 
         logger.LogDebug(

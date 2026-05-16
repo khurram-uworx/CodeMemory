@@ -18,7 +18,6 @@ public sealed class LanguageDetectorTests
         Assert.That(result, Is.EqualTo(Language.CSharp));
     }
 
-    [TestCase("foo.py")]
     [TestCase("foo.rb")]
     [TestCase("foo.go")]
     [TestCase("foo.csproj")]
@@ -44,5 +43,20 @@ public sealed class LanguageDetectorTests
     {
         var result = LanguageDetector.Detect("Foo.java");
         Assert.That(result, Is.EqualTo(Language.Java));
+    }
+
+    [Test]
+    public void Detect_WithPythonExtension_ReturnsPython()
+    {
+        var result = LanguageDetector.Detect("foo.py");
+        Assert.That(result, Is.EqualTo(Language.Python));
+    }
+
+    [TestCase("foo.html")]
+    [TestCase("foo.htm")]
+    public void Detect_WithHtmlExtension_ReturnsHtml(string path)
+    {
+        var result = LanguageDetector.Detect(path);
+        Assert.That(result, Is.EqualTo(Language.HTML));
     }
 }

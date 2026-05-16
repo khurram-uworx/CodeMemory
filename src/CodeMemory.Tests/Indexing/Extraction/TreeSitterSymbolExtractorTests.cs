@@ -140,6 +140,70 @@ public sealed class TreeSitterSymbolExtractorTests
     }
 
     [Test]
+    public async Task Extract_Python_ContainsClassAndFunction()
+    {
+        Assume.That(IsTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            class MyClass:
+                def my_method(self):
+                    pass
+
+            def top_level():
+                pass
+            """;
+
+        var (symbols, _) = await ExtractFromCode(code, ".py");
+
+        var cls = symbols.FirstOrDefault(s => s.Name == "MyClass");
+        Assert.That(cls, Is.Not.Null);
+        Assert.That(cls!.Kind, Is.EqualTo(CodeSymbolKind.Class));
+
+        var method = symbols.FirstOrDefault(s => s.Name.StartsWith("my_method"));
+        Assert.That(method, Is.Not.Null);
+        Assert.That(method!.Kind, Is.EqualTo(CodeSymbolKind.Method));
+
+        var func = symbols.FirstOrDefault(s => s.Name.StartsWith("top_level"));
+        Assert.That(func, Is.Not.Null);
+        Assert.That(func!.Kind, Is.EqualTo(CodeSymbolKind.Function));
+    }
+
+    [Test]
+    public async Task Extract_Python_NestedMethodHasFullName()
+    {
+        Assume.That(IsTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            class Outer:
+                def inner_method(self):
+                    pass
+            """;
+
+        var (symbols, _) = await ExtractFromCode(code, ".py");
+
+        var method = symbols.FirstOrDefault(s => s.Name.StartsWith("inner_method"));
+        Assert.That(method, Is.Not.Null);
+        Assert.That(method!.FullName, Is.EqualTo("Outer.inner_method(self)"));
+    }
+
+    [Test]
+    public async Task Extract_Python_LineRangesAreValid()
+    {
+        Assume.That(IsTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            class Foo:
+                def bar(self):
+                    pass
+            """;
+
+        var (symbols, _) = await ExtractFromCode(code, ".py");
+
+        foreach (var sym in symbols)
+        {
+            Assert.That(sym.LineRange.End, Is.GreaterThanOrEqualTo(sym.LineRange.Start),
+                $"Symbol {sym.FullName} has invalid line range");
+        }
+    }
+
+    [Test]
     public async Task Extract_TypeScript_LineRangesAreValid()
     {
         Assume.That(IsTreeSitterAvailable(), "Tree-sitter native libraries not available");

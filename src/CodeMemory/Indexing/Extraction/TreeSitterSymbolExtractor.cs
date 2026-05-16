@@ -46,7 +46,7 @@ public sealed class TreeSitterSymbolExtractor : ISymbolExtractor
             foreach (var param in paramsField.Value.NamedChildren)
             {
                 var typeField = param.Fields.FirstOrDefault(f => f.Key == "type");
-                var typeName = "var";
+                var typeName = param.Type == "identifier" ? "" : "var";
 
                 if (typeField.Key != null)
                 {
@@ -55,8 +55,14 @@ public sealed class TreeSitterSymbolExtractor : ISymbolExtractor
                 }
 
                 var nameField = param.Fields.FirstOrDefault(f => f.Key == "name");
-                var paramName = nameField.Key != null ? nameField.Value.Text : "";
-                paramNames.Add($"{typeName} {paramName}");
+                var paramName = nameField.Key != null ? nameField.Value.Text
+                    : param.Type == "identifier" ? param.Text
+                    : "";
+
+                if (string.IsNullOrEmpty(typeName))
+                    paramNames.Add(paramName);
+                else
+                    paramNames.Add($"{typeName} {paramName}");
             }
 
         return $"{baseName}({string.Join(", ", paramNames)})";
@@ -173,12 +179,15 @@ public sealed class TreeSitterSymbolExtractor : ISymbolExtractor
             Parsing.Language.TypeScript => new LanguageConfig(tsLanguage, tsQuery, tsKindMap),
             Parsing.Language.JavaScript => new LanguageConfig(jsLanguage, jsQuery, jsKindMap),
             Parsing.Language.Java => new LanguageConfig(javaLanguage, javaQuery, javaKindMap),
+            Parsing.Language.Python => new LanguageConfig(pythonLanguage, pythonQuery, pythonKindMap),
+            Parsing.Language.HTML => null,
             _ => null,
         };
 
     static readonly TreeSitter.Language tsLanguage = new("TypeScript");
     static readonly TreeSitter.Language jsLanguage = new("JavaScript");
     static readonly TreeSitter.Language javaLanguage = new("Java");
+    static readonly TreeSitter.Language pythonLanguage = new("Python");
 
     static readonly string tsQuery = string.Join(" ",
         "(class_declaration name: (_) @name) @node",
@@ -216,10 +225,16 @@ public sealed class TreeSitterSymbolExtractor : ISymbolExtractor
         "(annotation_type_declaration name: (_) @name) @node"
     );
 
+    static readonly string pythonQuery = string.Join(" ",
+        "(class_definition name: (_) @name) @node",
+        "(function_definition name: (_) @name) @node"
+    );
+
     static readonly HashSet<string> methodLikeTypes = new(StringComparer.Ordinal)
     {
         "method_definition", "method_signature", "abstract_method_signature",
         "function_declaration", "method_declaration", "constructor_declaration",
+        "function_definition",
     };
 
     static readonly HashSet<string> classLikeTypes = new(StringComparer.Ordinal)
@@ -228,6 +243,7 @@ public sealed class TreeSitterSymbolExtractor : ISymbolExtractor
         "interface_declaration", "enum_declaration",
         "record_declaration", "annotation_type_declaration",
         "struct_declaration",
+        "class_definition",
     };
 
     static readonly HashSet<string> variableDeclTypes = new(StringComparer.Ordinal)
@@ -270,6 +286,26 @@ public sealed class TreeSitterSymbolExtractor : ISymbolExtractor
         ["annotation_type_declaration"] = CodeSymbolKind.Annotation,
     };
 
+    static readonly Dictionary<string, CodeSymbolKind> pythonKindMap = new(StringComparer.Ordinal)
+    {
+        ["class_definition"] = CodeSymbolKind.Class,
+        ["function_definition"] = CodeSymbolKind.Function,
+    };
+
+    static bool isInsideClass(Node node)
+    {
+        var current = node.Parent;
+        while (current != default)
+        {
+            if (current.Type == "class_definition")
+                return true;
+            if (current.Type is "program" or "module")
+                return false;
+            current = current.Parent;
+        }
+        return false;
+    }
+
     readonly ILogger<TreeSitterSymbolExtractor> logger;
 
     public TreeSitterSymbolExtractor(ILogger<TreeSitterSymbolExtractor> logger)
@@ -306,6 +342,10 @@ public sealed class TreeSitterSymbolExtractor : ISymbolExtractor
         var kind = getKind(nodeType, config.KindMap);
         if (kind == null)
             return;
+
+        // Python: reclassify function_definition inside class_definition as Method
+        if (nodeType == "function_definition" && isInsideClass(node))
+            kind = CodeSymbolKind.Method;
 
         var name = nameNode.Text;
         var lineRange = new LineRange(
