@@ -2,6 +2,7 @@ const { platform, arch } = process;
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
+const AdmZip = require('adm-zip');
 const pkg = require('./package.json');
 
 const version = pkg.version;
@@ -26,16 +27,15 @@ if (!rid) {
   process.exit(1);
 }
 
-const binaryName = `code-memory-${rid}.exe`;
-const url = `https://github.com/${repo}/releases/download/v${version}/${binaryName}`;
+const zipName = `code-memory-${rid}.zip`;
+const url = `https://github.com/${repo}/releases/download/v${version}/${zipName}`;
 const destDir = path.join(__dirname, 'bin');
-const destPath = path.join(destDir, 'code-memory.exe');
 
 // Ensure bin/ exists
 fs.mkdirSync(destDir, { recursive: true });
 
-// Temp file for atomic write
-const tmpPath = destPath + '.tmp.' + process.pid;
+// Temp file for atomic download
+const tmpPath = path.join(destDir, zipName + '.tmp.' + process.pid);
 
 function cleanup() {
   try { fs.unlinkSync(tmpPath); } catch { /* ok */ }
@@ -65,7 +65,7 @@ function handleResponse(originalUrl, res) {
     console.error(
       `Download failed: HTTP ${res.statusCode} ${res.statusMessage}\n` +
       `  URL: ${originalUrl}\n` +
-      `  Does the release v${version} exist with asset "${binaryName}"?`
+      `  Does the release v${version} exist with asset "${zipName}"?`
     );
     cleanup();
     process.exit(1);
@@ -89,10 +89,17 @@ function handleResponse(originalUrl, res) {
     file.close();
     process.stdout.write('\n');
 
-    // Atomic rename
-    fs.renameSync(tmpPath, destPath);
-    console.log(`  Saved to ${destPath}`);
-    console.log('Done.');
+    try {
+      const zip = new AdmZip(tmpPath);
+      zip.extractAllTo(destDir, true);
+      console.log(`  Extracted to ${destDir}`);
+      cleanup();
+      console.log('Done.');
+    } catch (err) {
+      console.error(`Extraction failed: ${err.message}`);
+      cleanup();
+      process.exit(1);
+    }
   });
 
   file.on('error', (err) => {

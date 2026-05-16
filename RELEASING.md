@@ -4,7 +4,7 @@
 
 CodeMemory is released in two channels that share the same version number:
 
-1. **GitHub Release** — self-contained single-file binaries for each platform (triggered by git tag)
+1. **GitHub Release** — self-contained binaries for each platform (triggered by git tag)
 2. **NPM package** (`@uworx/code-memory`) — CLI wrapper that downloads the platform-specific binary on install
 
 ## Step-by-Step
@@ -25,7 +25,8 @@ git push origin v1.1.0
 
 This triggers the **Release** GitHub Action (`.github/workflows/release.yml`) which:
 - Builds the project for each platform in the build matrix (`win-x64` initially)
-- Creates a GitHub Release with attached binaries named `code-memory-{rid}.exe`
+- Zips the publish folder (including Tree-sitter native binaries) into `code-memory-{rid}.zip`
+- Creates a GitHub Release with the attached bundle
 
 ### 3. Wait for the build to finish
 
@@ -33,7 +34,7 @@ Verify the release exists at:
 `https://github.com/khurram-uworx/CodeMemory/releases/tag/v1.1.0`
 
 The NPM postinstall script downloads from:
-`https://github.com/khurram-uworx/CodeMemory/releases/download/v1.1.0/code-memory-win-x64.exe`
+`https://github.com/khurram-uworx/CodeMemory/releases/download/v1.1.0/code-memory-win-x64.zip`
 
 ### 4. Publish the NPM package
 

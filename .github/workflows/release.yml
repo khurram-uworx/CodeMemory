@@ -14,7 +14,6 @@ jobs:
         include:
           - os: windows-latest
             rid: win-x64
-            suffix: .exe
           # Future: linux-x64, osx-x64, osx-arm64
 
     runs-on: ${{ matrix.os }}
@@ -27,19 +26,18 @@ jobs:
       with:
         dotnet-version: '10.0.x'
 
-    - name: Publish self-contained single-file
-      run: dotnet publish src/CodeMemory.Mcp/CodeMemory.Mcp.csproj -c Release -r ${{ matrix.rid }} --self-contained true /p:PublishSingleFile=true
+    - name: Publish self-contained
+      run: dotnet publish src/CodeMemory.Mcp/CodeMemory.Mcp.csproj -c Release -r ${{ matrix.rid }} --self-contained true
 
-    - name: Rename binary for release
+    - name: Zip publish output
       shell: pwsh
       run: |
-        $source = "src/CodeMemory.Mcp/bin/Release/net10.0/${{ matrix.rid }}/publish/CodeMemory.Mcp.exe"
-        $dest = "code-memory-${{ matrix.rid }}${{ matrix.suffix }}"
-        Move-Item -LiteralPath $source -Destination $dest -Force
+        $source = Resolve-Path "src/CodeMemory.Mcp/bin/Release/net10.0/${{ matrix.rid }}/publish"
+        Compress-Archive -Path @(Get-ChildItem -Path $source | Select-Object -ExpandProperty FullName) -DestinationPath "code-memory-${{ matrix.rid }}.zip" -Force
 
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:
         name: CodeMemory ${{ github.ref_name }}
-        files: code-memory-${{ matrix.rid }}${{ matrix.suffix }}
+        files: code-memory-${{ matrix.rid }}.zip
         fail_on_unmatched_files: true

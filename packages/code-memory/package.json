@@ -1,12 +1,15 @@
 {
   "name": "@uworx/code-memory",
-  "version": "0.2.1",
+  "version": "0.2.3",
   "description": "Repository intelligence substrate — a persistent, queryable semantic memory layer for codebases, exposed via the Model Context Protocol (MCP).",
   "bin": {
     "code-memory": "bin/code-memory.js"
   },
   "scripts": {
     "postinstall": "node download-binary.js"
+  },
+  "dependencies": {
+    "adm-zip": "^0.5.16"
   },
   "engines": {
     "node": ">=18"
@@ -31,6 +34,7 @@
   "files": [
     "bin/code-memory.js",
     "download-binary.js",
-    "package.json"
+    "package.json",
+    "README.md"
   ]
 }
