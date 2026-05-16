@@ -1,0 +1,36 @@
+{
+  "name": "@uworx/code-memory",
+  "version": "0.2.1",
+  "description": "Repository intelligence substrate — a persistent, queryable semantic memory layer for codebases, exposed via the Model Context Protocol (MCP).",
+  "bin": {
+    "code-memory": "bin/code-memory.js"
+  },
+  "scripts": {
+    "postinstall": "node download-binary.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/khurram-uworx/CodeMemory.git"
+  },
+  "keywords": [
+    "memory",
+    "semantic-memory",
+    "vector-search",
+    "mcp",
+    "code-analysis",
+    "repository-intelligence",
+    "dependency-graph"
+  ],
+  "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "bin/code-memory.js",
+    "download-binary.js",
+    "package.json"
+  ]
+}
