@@ -13,6 +13,8 @@ using Memori.Embeddings;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using System.Reflection;
 
 var repoRoot = args switch
 {
@@ -20,9 +22,21 @@ var repoRoot = args switch
     _ => Environment.CurrentDirectory
 };
 
-Console.Error.WriteLine($"CodeMemory MCP (stdio) — repo: {repoRoot}");
+var version = Assembly.GetExecutingAssembly()
+    .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+    ?.InformationalVersion
+    ?? Assembly.GetExecutingAssembly().GetName().Version?.ToString()
+    ?? "unknown";
+
+Console.Error.WriteLine($"CodeMemory MCP v{version} (stdio) — repo: {repoRoot}");
 
 var builder = Host.CreateApplicationBuilder(args);
+
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole(options => options.LogToStandardErrorThreshold = LogLevel.Trace);
+
+if (!builder.Environment.IsDevelopment())
+    builder.Logging.SetMinimumLevel(LogLevel.Warning);
 
 // Indexing services
 builder.Services.AddSingleton<FileCrawler>();

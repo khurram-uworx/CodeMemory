@@ -21,7 +21,15 @@ public sealed record SqlQueryResult(bool Success, long RowCount, long ExecutionT
 
 public sealed class SqlQueryService
 {
+    sealed record SelectColumnInfo(string? Name, string? Alias, bool IsAggregate, string? AggregateFunction,
+        string? AggregateArg = null, AstExpr? Expression = null);
+
     sealed record OrderColumn(string Name, bool Ascending);
+
+    static readonly HashSet<string> AggregateFunctions = ["COUNT", "SUM", "AVG", "MIN", "MAX"];
+
+    static bool isAggregateFunction(AstExpr.Function func)
+        => AggregateFunctions.Contains(extractFunctionName(func).ToUpperInvariant());
 
     static OrderColumn? extractOrderByColumn(AstExpr expr, bool ascending)
     {
@@ -34,11 +42,10 @@ public sealed class SqlQueryService
         return null;
     }
 
-    sealed record SelectColumnInfo(string? Name, string? Alias, bool IsAggregate, string? AggregateFunction, string? AggregateArg = null, AstExpr? Expression = null);
-
     static List<SelectColumnInfo> parseSelectColumns(IEnumerable<SelectItem> projection)
     {
         var columns = new List<SelectColumnInfo>();
+
         foreach (var item in projection)
         {
             switch (item)
@@ -48,7 +55,7 @@ public sealed class SqlQueryService
                     break;
 
                 case SelectItem.UnnamedExpression ue:
-                    if (ue.Expression is AstExpr.Function func)
+                    if (ue.Expression is AstExpr.Function func && isAggregateFunction(func))
                         columns.Add(new SelectColumnInfo(null, null, true, extractFunctionName(func), extractFunctionArg(func)));
                     else if (ue.Expression is AstExpr.Identifier id)
                         columns.Add(new SelectColumnInfo(id.Ident.Value, null, false, null));
@@ -57,7 +64,7 @@ public sealed class SqlQueryService
                     break;
 
                 case SelectItem.ExpressionWithAlias ea:
-                    if (ea.Expression is AstExpr.Function eaFunc)
+                    if (ea.Expression is AstExpr.Function eaFunc && isAggregateFunction(eaFunc))
                         columns.Add(new SelectColumnInfo(null, ea.Alias.Value, true, extractFunctionName(eaFunc), extractFunctionArg(eaFunc)));
                     else if (ea.Expression is AstExpr.Identifier id)
                         columns.Add(new SelectColumnInfo(id.Ident.Value, ea.Alias.Value, false, null));
@@ -66,6 +73,7 @@ public sealed class SqlQueryService
                     break;
             }
         }
+
         return columns;
     }
 
@@ -77,10 +85,12 @@ public sealed class SqlQueryService
         if (func.Args is FunctionArguments.List listArgs)
         {
             var args = listArgs.ArgumentList.Args;
+
             if (args.Count >= 1 && args[0] is FunctionArg.Unnamed unnamed)
             {
                 if (unnamed.FunctionArgExpression is FunctionArgExpression.Wildcard)
                     return null;
+
                 if (unnamed.FunctionArgExpression is FunctionArgExpression.FunctionExpression fe
                     && fe.Expression is AstExpr.Identifier id)
                     return id.Ident.Value;
@@ -92,6 +102,7 @@ public sealed class SqlQueryService
     static List<string> extractGroupByColumns(GroupByExpression.Expressions groupBy)
     {
         var names = new List<string>();
+
         foreach (var expr in groupBy.ColumnNames)
         {
             if (expr is AstExpr.Identifier id)
@@ -99,6 +110,7 @@ public sealed class SqlQueryService
             else if (expr is AstExpr.CompoundIdentifier comp)
                 names.Add(comp.Idents[^1].Value);
         }
+
         return names;
     }
 
@@ -115,11 +127,13 @@ public sealed class SqlQueryService
             groups = rows.GroupBy(r =>
             {
                 var sb = new StringBuilder();
+
                 foreach (var col in groupByColumns)
                 {
                     sb.Append(r.GetValueOrDefault(col)?.ToString() ?? "NULL");
                     sb.Append('\0');
                 }
+
                 return sb.ToString();
             });
         }
@@ -132,17 +146,15 @@ public sealed class SqlQueryService
         foreach (var group in groups)
         {
             var row = new Dictionary<string, object?>();
+
             foreach (var col in columns)
             {
                 if (col.IsAggregate)
-                {
                     row[col.Alias ?? col.AggregateFunction + "(*)"] = computeAggregate(group, col);
-                }
                 else if (col.Name is not null)
-                {
                     row[col.Alias ?? col.Name] = group.First().GetValueOrDefault(col.Name);
-                }
             }
+
             results.Add(row);
         }
 
@@ -162,42 +174,66 @@ public sealed class SqlQueryService
                 }
             case "SUM":
                 {
-                    var vals = group.Select(r => r.GetValueOrDefault(col.AggregateArg)).Where(v => v is not null);
-                    return vals.Any() ? vals.Sum(v => Convert.ToDouble(v)) : null;
+                    var vals = group
+                        .Select(r => safeToDouble(r.GetValueOrDefault(col.AggregateArg)))
+                        .Where(v => v is not null)
+                        .Select(v => v!.Value)
+                        .ToList();
+                    return vals.Count > 0 ? vals.Sum() : null;
                 }
             case "AVG":
                 {
-                    var vals = group.Select(r => r.GetValueOrDefault(col.AggregateArg)).Where(v => v is not null);
-                    return vals.Any() ? vals.Average(v => Convert.ToDouble(v)) : null;
+                    var vals = group
+                        .Select(r => safeToDouble(r.GetValueOrDefault(col.AggregateArg)))
+                        .Where(v => v is not null)
+                        .Select(v => v!.Value)
+                        .ToList();
+                    return vals.Count > 0 ? vals.Average() : null;
                 }
             case "MIN":
                 {
-                    var vals = group.Select(r => r.GetValueOrDefault(col.AggregateArg)).Where(v => v is not null);
-                    return vals.Any() ? vals.Min(v => Convert.ToDouble(v)) : null;
+                    var vals = group
+                        .Select(r => safeToDouble(r.GetValueOrDefault(col.AggregateArg)))
+                        .Where(v => v is not null)
+                        .Select(v => v!.Value)
+                        .ToList();
+                    return vals.Count > 0 ? vals.Min() : null;
                 }
             case "MAX":
                 {
-                    var vals = group.Select(r => r.GetValueOrDefault(col.AggregateArg)).Where(v => v is not null);
-                    return vals.Any() ? vals.Max(v => Convert.ToDouble(v)) : null;
+                    var vals = group
+                        .Select(r => safeToDouble(r.GetValueOrDefault(col.AggregateArg)))
+                        .Where(v => v is not null)
+                        .Select(v => v!.Value)
+                        .ToList();
+                    return vals.Count > 0 ? vals.Max() : null;
                 }
             default:
                 return null;
         }
     }
 
-    static string? resolveSortColumn(string orderByName, List<SelectColumnInfo> parsedColumns)
+    string? resolveSortColumn(string orderByName, List<SelectColumnInfo> parsedColumns)
     {
+        string? firstMatch = null;
         foreach (var col in parsedColumns)
         {
-            // Check original column name first (works for non-GROUP BY raw data)
-            if (col.Name is not null && string.Equals(col.Name, orderByName, StringComparison.OrdinalIgnoreCase))
-                return col.Name;
-            // Check alias — for aggregates, grouped results use alias as key;
-            // for non-aggregates, resolve to original column name for raw data
-            if (col.Alias is not null && string.Equals(col.Alias, orderByName, StringComparison.OrdinalIgnoreCase))
-                return col.Name ?? col.Alias;
+            bool nameMatch = col.Name is not null
+                && string.Equals(col.Name, orderByName, StringComparison.OrdinalIgnoreCase);
+            bool aliasMatch = col.Alias is not null
+                && string.Equals(col.Alias, orderByName, StringComparison.OrdinalIgnoreCase);
+            if (!nameMatch && !aliasMatch) continue;
+
+            if (firstMatch is not null)
+            {
+                logger.LogWarning(
+                    "Ambiguous ORDER BY column '{Column}' — multiple matches in SELECT list, resolved to first",
+                    orderByName);
+                return firstMatch;
+            }
+            firstMatch = nameMatch ? col.Name : (col.Name ?? col.Alias);
         }
-        return null;
+        return firstMatch;
     }
 
     static Func<Dictionary<string, object?>, object?> makeSortSelector(string sortColumn, List<SelectColumnInfo> parsedColumns)
@@ -207,14 +243,13 @@ public sealed class SqlQueryService
         {
             if (col.Expression is not null && col.Alias is not null
                 && string.Equals(col.Alias, sortColumn, StringComparison.OrdinalIgnoreCase))
-            {
+
                 return r => evaluateExpression(col.Expression, r);
-            }
         }
         return r => r.GetValueOrDefault(sortColumn);
     }
 
-    static List<Dictionary<string, object?>> applyOrderBy(
+    List<Dictionary<string, object?>> applyOrderBy(
         List<Dictionary<string, object?>> rows,
         OrderBy? orderBy,
         List<SelectColumnInfo> parsedColumns,
@@ -244,9 +279,7 @@ public sealed class SqlQueryService
                 }
             }
             else
-            {
                 sortColumn = resolveSortColumn(orderCol.Name, parsedColumns) ?? orderCol.Name;
-            }
 
             if (sortColumn is null) continue;
 
@@ -259,11 +292,9 @@ public sealed class SqlQueryService
                     : rows.OrderByDescending(selector);
             }
             else
-            {
                 ordered = orderCol.Ascending
                     ? ordered!.ThenBy(selector)
                     : ordered!.ThenByDescending(selector);
-            }
         }
 
         return ordered?.ToList() ?? rows;
@@ -337,7 +368,12 @@ public sealed class SqlQueryService
             if (lv is IComparable comparable && lv.GetType() == rv.GetType())
                 cmp = comparable.CompareTo(rv);
             else
-                cmp = Convert.ToDouble(lv).CompareTo(Convert.ToDouble(rv));
+            {
+                var ld = safeToDouble(lv);
+                var rd = safeToDouble(rv);
+                if (ld is null || rd is null) return null;
+                cmp = ld.Value.CompareTo(rd.Value);
+            }
 
             return bop.Op switch
             {
@@ -386,6 +422,18 @@ public sealed class SqlQueryService
         throw new NotSupportedException($"HAVING value expression '{expr.GetType().Name}' not supported");
     }
 
+    static double? safeToDouble(object? value)
+    {
+        if (value is null) return null;
+        if (value is double d) return d;
+        if (value is long l) return l;
+        if (value is int i) return i;
+        if (value is float f) return f;
+        if (value is decimal m) return (double)m;
+        if (value is string s && double.TryParse(s, out var parsed)) return parsed;
+        return null;
+    }
+
     static object? convertHavingLiteral(Value value)
         => value switch
         {
@@ -413,14 +461,53 @@ public sealed class SqlQueryService
                 {
                     var left = evaluateExpression(bop.Left, row);
                     var right = evaluateExpression(bop.Right, row);
+
+                    if (bop.Op is BinaryOperator.And)
+                        return isTruthy(left) && isTruthy(right);
+
+                    if (bop.Op is BinaryOperator.Or)
+                        return isTruthy(left) || isTruthy(right);
+
                     if (left is null || right is null) return null;
+
+                    if (bop.Op is BinaryOperator.StringConcat)
+                        return left.ToString() + right.ToString();
+
+                    // Comparison operators
+                    if (bop.Op is BinaryOperator.Eq or BinaryOperator.NotEq
+                        or BinaryOperator.Gt or BinaryOperator.Lt
+                        or BinaryOperator.GtEq or BinaryOperator.LtEq)
+                    {
+                        int cmp;
+                        if (left is IComparable comparable && left.GetType() == right.GetType())
+                            cmp = comparable.CompareTo(right);
+                        else if (left.Equals(right))
+                            cmp = 0;
+                        else
+                            cmp = string.Compare(left?.ToString(), right?.ToString(),
+                                StringComparison.OrdinalIgnoreCase);
+                        return bop.Op switch
+                        {
+                            BinaryOperator.Eq => cmp == 0,
+                            BinaryOperator.NotEq => cmp != 0,
+                            BinaryOperator.Gt => cmp > 0,
+                            BinaryOperator.Lt => cmp < 0,
+                            BinaryOperator.GtEq => cmp >= 0,
+                            BinaryOperator.LtEq => cmp <= 0,
+                            _ => null
+                        };
+                    }
+
+                    // Arithmetic operators
+                    var ld = safeToDouble(left);
+                    var rd = safeToDouble(right);
+                    if (ld is null || rd is null) return null;
                     return bop.Op switch
                     {
-                        BinaryOperator.Plus => Convert.ToDouble(left) + Convert.ToDouble(right),
-                        BinaryOperator.Minus => Convert.ToDouble(left) - Convert.ToDouble(right),
-                        BinaryOperator.Multiply => Convert.ToDouble(left) * Convert.ToDouble(right),
-                        BinaryOperator.Divide => Convert.ToDouble(left) / Convert.ToDouble(right),
-                        BinaryOperator.StringConcat => (left?.ToString() ?? "") + (right?.ToString() ?? ""),
+                        BinaryOperator.Plus => ld.Value + rd.Value,
+                        BinaryOperator.Minus => ld.Value - rd.Value,
+                        BinaryOperator.Multiply => ld.Value * rd.Value,
+                        BinaryOperator.Divide => ld.Value / rd.Value,
                         _ => null
                     };
                 }
@@ -428,7 +515,8 @@ public sealed class SqlQueryService
             case AstExpr.UnaryOp uop when uop.Op == UnaryOperator.Minus:
                 {
                     var inner = evaluateExpression(uop.Expression, row);
-                    return inner is null ? null : -Convert.ToDouble(inner);
+                    var d = safeToDouble(inner);
+                    return d is null ? null : -d.Value;
                 }
 
             case AstExpr.UnaryOp uop when uop.Op == UnaryOperator.Plus:
@@ -440,9 +528,84 @@ public sealed class SqlQueryService
             case AstExpr.Named named:
                 return evaluateExpression(named.Expression, row);
 
+            case AstExpr.Case caseExpr:
+                {
+                    if (caseExpr.Operand is not null)
+                    {
+                        var operandValue = evaluateExpression(caseExpr.Operand, row);
+                        for (int i = 0; i < caseExpr.Conditions.Count; i++)
+                        {
+                            if (Equals(operandValue, evaluateExpression(caseExpr.Conditions[i], row)))
+                                return evaluateExpression(caseExpr.Results[i], row);
+                        }
+                    }
+                    else
+                    {
+                        for (int i = 0; i < caseExpr.Conditions.Count; i++)
+                        {
+                            if (isTruthy(evaluateExpression(caseExpr.Conditions[i], row)))
+                                return evaluateExpression(caseExpr.Results[i], row);
+                        }
+                    }
+                    return caseExpr.ElseResult is not null
+                        ? evaluateExpression(caseExpr.ElseResult, row)
+                        : null;
+                }
+
+            case AstExpr.Cast cast:
+                {
+                    var val = evaluateExpression(cast.Expression, row);
+                    return cast.DataType switch
+                    {
+                        DataType.Varchar or DataType.Char or DataType.Text => val?.ToString(),
+                        _ => val
+                    };
+                }
+
+            case AstExpr.Function func:
+                {
+                    var name = func.Name.Values.Last().Value.ToUpperInvariant();
+                    var args = func.Args switch
+                    {
+                        FunctionArguments.List list => list.ArgumentList.Args,
+                        _ => null
+                    };
+                    if (args is null || args.Count == 0) return null;
+
+                    return name switch
+                    {
+                        "COALESCE" or "IFNULL" or "NVL" or "ISNULL" => coalesceArgs(args, row),
+                        _ => null
+                    };
+                }
+
             default:
                 return null;
         }
+    }
+
+    static object? coalesceArgs(Sequence<FunctionArg> args, Dictionary<string, object?> row)
+    {
+        foreach (var arg in args)
+        {
+            if (arg is FunctionArg.Unnamed u && u.FunctionArgExpression is FunctionArgExpression.FunctionExpression fe)
+            {
+                var val = evaluateExpression(fe.Expression, row);
+                if (val is not null) return val;
+            }
+        }
+        return null;
+    }
+
+    static bool isTruthy(object? value)
+    {
+        if (value is null) return false;
+        if (value is bool b) return b;
+        if (value is long l) return l != 0;
+        if (value is int i) return i != 0;
+        if (value is double d) return d != 0;
+        if (value is string s) return s.Length > 0;
+        return true;
     }
 
     static string expressionToString(AstExpr expr)
@@ -510,6 +673,7 @@ public sealed class SqlQueryService
         return [.. rows.Select(r =>
         {
             var newRow = new Dictionary<string, object?>();
+
             foreach (var col in parsedColumns)
             {
                 if (col.Name is not null && r.TryGetValue(col.Name, out var val))
@@ -520,12 +684,12 @@ public sealed class SqlQueryService
                     newRow[col.Alias ?? expressionToString(col.Expression)] = ev;
                 }
             }
+
             // Preserve runtime meta-columns (e.g. __score from vector search)
             foreach (var kvp in r)
-            {
                 if (kvp.Key.StartsWith("__"))
                     newRow[kvp.Key] = kvp.Value;
-            }
+
             return newRow;
         })];
     }
@@ -550,10 +714,8 @@ public sealed class SqlQueryService
         if (whereExpr is AstExpr.Like like)
         {
             if (isColumnReference(like.Expression, "Content"))
-            {
                 if (like.Pattern is AstExpr.LiteralValue lv && lv.Value is Value.SingleQuotedString sqs)
                     return (extractCleanText(sqs.Value), null);
-            }
         }
 
         if (whereExpr is AstExpr.BinaryOp bop && bop.Op == BinaryOperator.And)
@@ -607,70 +769,26 @@ public sealed class SqlQueryService
         return null;
     }
 
-    static async Task<List<Dictionary<string, object?>>> materializeAsync(object asyncEnumerable, Type recordType, CancellationToken ct)
+    static async Task<List<Dictionary<string, object?>>> materializeAsyncCore<T>(IAsyncEnumerable<T> source, Type recordType, CancellationToken ct)
     {
         var results = new List<Dictionary<string, object?>>();
-        var type = asyncEnumerable.GetType();
+        await foreach (var item in source.WithCancellation(ct).ConfigureAwait(false))
+            results.Add(recordToDictionary(item!, recordType));
+        return results;
+    }
 
+    static Task<List<Dictionary<string, object?>>> materializeAsync(object asyncEnumerable, Type recordType, CancellationToken ct)
+    {
+        var type = asyncEnumerable.GetType();
         var asyncEnumInterface = type.GetInterfaces()
             .FirstOrDefault(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IAsyncEnumerable<>));
-
         if (asyncEnumInterface is null)
-            return results;
+            return Task.FromResult(new List<Dictionary<string, object?>>());
 
         var elementType = asyncEnumInterface.GetGenericArguments()[0];
-        var getAsyncEnumerator = asyncEnumInterface.GetMethod("GetAsyncEnumerator");
-
-        if (getAsyncEnumerator is null)
-            return results;
-
-        var enumerator = getAsyncEnumerator.Invoke(asyncEnumerable, [ct]);
-        if (enumerator is null)
-            return results;
-
-        try
-        {
-            var enumType = enumerator.GetType();
-            var asyncEnumeratorInterface = enumType.GetInterfaces()
-                .FirstOrDefault(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IAsyncEnumerator<>));
-
-            if (asyncEnumeratorInterface is null)
-                return results;
-
-            var moveNextMethod = asyncEnumeratorInterface.GetMethod("MoveNextAsync");
-            var currentProperty = asyncEnumeratorInterface.GetProperty("Current");
-
-            if (moveNextMethod is null || currentProperty is null)
-                return results;
-
-            while (true)
-            {
-                var moveNextTask = moveNextMethod.Invoke(enumerator, null);
-                if (moveNextTask is null) break;
-
-                var awaiter = moveNextTask.GetType().GetMethod("GetAwaiter")?.Invoke(moveNextTask, null);
-                if (awaiter is null) break;
-
-                var getResult = awaiter.GetType().GetMethod("GetResult");
-                if (getResult is null) break;
-
-                var hasNext = (bool)(getResult.Invoke(awaiter, null) ?? false);
-                if (!hasNext) break;
-
-                var current = currentProperty.GetValue(enumerator);
-                if (current is not null)
-                    results.Add(recordToDictionary(current, elementType));
-            }
-        }
-        finally
-        {
-            var disposableInterface = enumerator.GetType().GetInterfaces()
-                .FirstOrDefault(i => i == typeof(IAsyncDisposable));
-            var disposeMethod = disposableInterface?.GetMethod("DisposeAsync");
-            disposeMethod?.Invoke(enumerator, null);
-        }
-
-        return results;
+        var method = typeof(SqlQueryService).GetMethod("materializeAsyncCore", BindingFlags.NonPublic | BindingFlags.Static)!
+            .MakeGenericMethod(elementType);
+        return (Task<List<Dictionary<string, object?>>>)method.Invoke(null, [asyncEnumerable, recordType, ct])!;
     }
 
     static Dictionary<string, object?> recordToDictionary(object record, Type recordType)
@@ -719,52 +837,26 @@ public sealed class SqlQueryService
         return LinqExpr.Lambda<Func<object, Dictionary<string, object?>>>(block, param).Compile();
     }
 
+    static async IAsyncEnumerable<T> toAsyncEnumerableCore<T>(IAsyncEnumerable<T> source)
+    {
+        await foreach (var item in source)
+            yield return item;
+    }
+
     static async IAsyncEnumerable<T> toAsyncEnumerable<T>(object enumerable)
     {
         var type = enumerable.GetType();
-
         var asyncEnumInterface = type.GetInterfaces()
             .FirstOrDefault(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IAsyncEnumerable<>));
         if (asyncEnumInterface is null)
             yield break;
 
-        var getAsyncEnumerator = asyncEnumInterface.GetMethod("GetAsyncEnumerator");
-        if (getAsyncEnumerator is null)
-            yield break;
-
-        var enumerator = getAsyncEnumerator.Invoke(enumerable, [CancellationToken.None]);
-        if (enumerator is null)
-            yield break;
-
-        var enumType = enumerator.GetType();
-        var asyncEnumeratorInterface = enumType.GetInterfaces()
-            .FirstOrDefault(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IAsyncEnumerator<>));
-        if (asyncEnumeratorInterface is null)
-            yield break;
-
-        var moveNextMethod = asyncEnumeratorInterface.GetMethod("MoveNextAsync");
-        var currentProperty = asyncEnumeratorInterface.GetProperty("Current");
-        if (moveNextMethod is null || currentProperty is null)
-            yield break;
-
-        while (true)
-        {
-            var moveNextTask = moveNextMethod.Invoke(enumerator, null);
-            if (moveNextTask is null) yield break;
-
-            var awaiter = moveNextTask.GetType().GetMethod("GetAwaiter")?.Invoke(moveNextTask, null);
-            if (awaiter is null) yield break;
-
-            var getResult = awaiter.GetType().GetMethod("GetResult");
-            if (getResult is null) yield break;
-
-            var hasNext = (bool)(getResult.Invoke(awaiter, null) ?? false);
-            if (!hasNext) yield break;
-
-            var current = currentProperty.GetValue(enumerator);
-            if (current is not null)
-                yield return (T)current;
-        }
+        var elementType = asyncEnumInterface.GetGenericArguments()[0];
+        var method = typeof(SqlQueryService).GetMethod("toAsyncEnumerableCore", BindingFlags.NonPublic | BindingFlags.Static)!
+            .MakeGenericMethod(elementType);
+        var result = (IAsyncEnumerable<T>)method.Invoke(null, [enumerable])!;
+        await foreach (var item in result)
+            yield return item;
     }
 
     static SqlQueryResult fail(string error, Stopwatch sw)
@@ -982,19 +1074,36 @@ public sealed class SqlQueryService
             else
                 result = await queryFilteredAsync(store, entry, whereExpr, fetchTop, ct);
 
-            // Apply DISTINCT on raw row column names
+            // Apply DISTINCT — evaluates computed expressions inline so aliased/math columns work
             if (hasDistinct && !hasGroupBy && !hasAggregates)
             {
                 var seen = new HashSet<string>();
-                var distinctKeys = hasExplicitProjection
-                    ? parsedColumns.Select(c => c.Name).Where(n => n is not null).ToList()
-                    : entry.RecordType.GetProperties().Select(p => p.Name).ToList();
-                result = [.. result.Where(r =>
+                if (hasExplicitProjection)
                 {
-                    var key = string.Join('\0',
-                        distinctKeys.Select(n => r.GetValueOrDefault(n)?.ToString() ?? "NULL"));
-                    return seen.Add(key);
-                })];
+                    result = [.. result.Where(r =>
+                    {
+                        var key = string.Join('\0',
+                            parsedColumns.Select(c =>
+                            {
+                                if (c.Expression is not null)
+                                    return evaluateExpression(c.Expression, r)?.ToString() ?? "NULL";
+                                if (c.Name is not null)
+                                    return r.GetValueOrDefault(c.Name)?.ToString() ?? "NULL";
+                                return "NULL";
+                            }));
+                        return seen.Add(key);
+                    })];
+                }
+                else
+                {
+                    var keys = entry.RecordType.GetProperties().Select(p => p.Name).ToList();
+                    result = [.. result.Where(r =>
+                    {
+                        var key = string.Join('\0',
+                            keys.Select(n => r.GetValueOrDefault(n)?.ToString() ?? "NULL"));
+                        return seen.Add(key);
+                    })];
+                }
             }
 
             // Apply GROUP BY or global aggregates

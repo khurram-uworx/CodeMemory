@@ -99,7 +99,7 @@ public sealed partial class SqlExpressionBuilder
         try
         {
             var lambda = LinqExpr.Lambda<Func<string>>(expr);
-            return lambda.Compile()();
+            return lambda.Compile(preferInterpretation: true)();
         }
         catch
         {

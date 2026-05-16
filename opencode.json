@@ -13,6 +13,13 @@
     //  "type": "remote",
     //  "url": "http://localhost:4792/api/mcp/treesitter"
     //},
+    //"code-memory": {
+    //  "type": "local",
+    //  "command": [
+    //    "npx",
+    //    "@uworx/code-memory",
+    //  ]
+    //}
     "code-memory": {
       "type": "local",
       "command": [
