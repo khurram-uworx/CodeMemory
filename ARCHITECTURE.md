@@ -28,6 +28,11 @@ CodeMemory/
 │   │   │   ├── Git/              # GitHistoryService
 │   │   │   ├── Graph/            # DependencyGraphService
 │   │   │   └── Query/            # SymbolQueryService, RelationshipQueryService, SemanticSearchService
+│   │   ├── SqlQuery/             # SQL query engine (SqlParserCS → LINQ over InMemoryVectorStore)
+│   │   │   ├── SqlQueryService.cs
+│   │   │   ├── SqlExpressionBuilder.cs
+│   │   │   ├── CollectionRegistry.cs
+│   │   │   └── TableSchemaProvider.cs
 │   │   └── Storage/              # IStorageService interface + storage model types
 │   │       ├── Models/           # SymbolRecord, ChunkRecord, RelationshipRecord, ScoredChunk
 │   │       └── Services/         # IStorageService interface
@@ -127,6 +132,7 @@ Notes:
 - Relationship extraction is syntax-only (no SemanticModel) — sufficient for MVP cross-file references
 - External/BCL type references are omitted; only intra-repo relationships recorded
 - Full re-index on each startup (incremental planned); non-blocking in both hosts
+- SQL queries are only supported on the InMemoryVectorStore backend (`Storage:Provider: "inmemory"`); Sqlite backend returns an error since it already speaks SQL natively
 
 ### Search Pipeline
 
@@ -137,6 +143,43 @@ SemanticSearchService.SearchByTextAsync(query)
   ├─ storage.SearchChunksAsync(normalized, top) → vector store cosine similarity search
   ├─ optional: filter results by minimumSimilarity threshold (score ≤ 1 - minSimilarity)
   └─ return ranked List<ScoredChunk>
+```
+
+### SQL Query Engine
+
+```
+SqlQueryTool.SqlQueryAsync("SELECT Name FROM SymbolRecord WHERE Kind = 'Class' LIMIT 10")
+  └─ SqlQueryService.ExecuteAsync(store, sql)
+       ├─ SqlParserCS.Parse(sql) → AST
+       ├─ validate: single SELECT, known table, no subqueries/JOINs
+       ├─ extract: FROM → table, WHERE → filter, ORDER BY → sort, LIMIT → top
+       │
+       ├─ Standard query path:
+       │    ├─ SqlExpressionBuilder.BuildFilter<TRecord>(where)
+       │    │    └─ SQL WHERE AST → System.Linq.Expressions.Expression<Func<TRecord, bool>>
+       │    ├─ CollectionRegistry → resolve table name → VectorStore collection
+       │    ├─ collection.GetAsync(filter, top) → IAsyncEnumerable<TRecord>
+       │    └─ materializeAsync → List<Dictionary<string, object?>>
+       │
+       ├─ Vector search path (ORDER BY Similarity DESC):
+       │    ├─ extract search text from Content LIKE '%pattern%' in WHERE
+       │    ├─ NgramEmbeddingGenerator.GenerateAsync([text]) → embedding vector
+       │    ├─ collection.SearchAsync(vector, top, options with remaining Filter)
+       │    └─ return results with __score (0-1) per row
+       │
+       ├─ Client-side post-processing:
+       │    ├─ GROUP BY / aggregates (COUNT/SUM/AVG/MIN/MAX)
+       │    ├─ DISTINCT dedup
+       │    ├─ HAVING filter
+       │    ├─ ORDER BY (column names, aliases, numeric positions, multiple expressions)
+       │    ├─ LIMIT truncation
+       │    └─ column projection (explicit SELECT list or wildcard)
+       │
+       └─ return SqlQueryResult(success, rowCount, executionTimeMs, columns, rows)
+
+Storage schema metadata via TableSchemaProvider:
+  └─ GetColumns<T>() → ColumnInfo[] (name, type, nullable, key, vector flag)
+  └─ DescribeAll() → formatted text for MCP tool [Description] attribute
 ```
 
 ### Architecture Intelligence Queries
@@ -227,12 +270,16 @@ Query methods on `IStorageService`:
 | `IArchitectureService` | `CodeMemory.Indexing.Architecture` | Component grouping, language breakdown, file/symbol counts |
 | `IComponentClusteringService` | `CodeMemory.Indexing.Architecture` | Threshold-based component coupling clustering |
 | `IGitHistoryService` | `CodeMemory.Indexing.Git` | Symbol git history, hotspot analysis |
+| `SqlQueryService` | `CodeMemory.SqlQuery` | SQL parsing + execution: SqlParserCS → LINQ → InMemoryVectorStore |
+| `CollectionRegistry` | `CodeMemory.SqlQuery` | Table name → VectorStore collection mapping (SymbolRecord, ChunkRecord, RelationshipRecord) |
+| `SqlExpressionBuilder` | `CodeMemory.SqlQuery` | SQL WHERE AST → `Expression<Func<TRecord, bool>>` via `System.Linq.Expressions` |
+| `TableSchemaProvider` | `CodeMemory.SqlQuery` | Reflective column metadata for MCP tool descriptions |
 
 ---
 
 ## MCP Tool Surface
 
-Ten tools auto-discovered via `AddMcpServer().WithToolsFromAssembly(typeof(McpTools).Assembly)` from `CodeMemory.AspNet.Program.cs`:
+Eleven tools auto-discovered via `AddMcpServer().WithToolsFromAssembly(typeof(McpTools).Assembly)` from `CodeMemory.AspNet.Program.cs`:
 
 | Tool | Description |
 |---|---|
@@ -246,6 +293,7 @@ Ten tools auto-discovered via `AddMcpServer().WithToolsFromAssembly(typeof(McpTo
 | `get_component_clusters` | Logical component groupings based on inter-component coupling |
 | `get_symbol_history` | Git commit history for a symbol (commits, authors, dates, recent commits) |
 | `get_hotspots` | Most frequently changed files ranked by commit count |
+| `sql_query` | SQL queries over indexed repo data (SELECT/WHERE/ORDER BY/GROUP BY/HAVING, aggregates, vector search, arithmetic expressions) |
 
 All tools return structured JSON. Tools with external service dependencies use `GetService<T>` fallback — gracefully degrade when backing services are unavailable.
 

@@ -20,6 +20,7 @@ dotnet add package CodeMemory
 - **Symbol history** — per-symbol git commit history with authors and timestamps
 - **Hotspot detection** — most frequently changed files ranked by commit count
 - **Edit context** — comprehensive context for a symbol: source code, dependency chains, related symbols, and test coverage
+- **SQL queries** — compose arbitrary filters across indexed fields using SQL (`SELECT`, `WHERE`, `ORDER BY`, `GROUP BY`, `HAVING`, aggregates, vector search) — parsed by SqlParserCS, executed as LINQ over InMemoryVectorStore
 - **Multi-repo support** — per-repository storage isolation via `ServiceRegistry` + `IRepoContextAccessor`
 - **Pluggable storage** — in-memory (`InMemoryVectorStore`, default, zero-dependency) or SQLite with vector extensions (`Microsoft.SemanticKernel.Connectors.SqliteVec`)
 
@@ -34,6 +35,8 @@ services.AddSingleton<ArchitectureService>();
 services.AddSingleton<ComponentClusteringService>();
 services.AddSingleton<GitHistoryService>();
 services.AddSingleton<SemanticSearchService>();
+services.AddSingleton<SqlQueryService>();
+services.AddSingleton<CollectionRegistry>();
 ```
 
 ## Key Dependencies
@@ -41,6 +44,7 @@ services.AddSingleton<SemanticSearchService>();
 | Package | Role |
 |---|---|
 | **Memori** | `NgramEmbeddingGenerator` for offline embeddings + `InMemoryVectorStore` — no API keys, no model downloads |
+| **SqlParserCS** | SQL parsing (SELECT, WHERE, ORDER BY, GROUP BY, HAVING, aggregates) |
 | **Microsoft.Extensions.AI.Abstractions** | `IEmbeddingGenerator`, `IChatClient` abstractions |
 | **Microsoft.Extensions.VectorData.Abstractions** | Vector store abstractions |
 | **ModelContextProtocol** | MCP server types and tool attributes |
