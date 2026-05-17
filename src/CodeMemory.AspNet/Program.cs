@@ -52,9 +52,11 @@ if (!useSqlite)
     provider = "inmemory";
 
     // SQL query services (InMemoryVectorStore backend)
-    builder.Services.AddSingleton<CodeMemory.SqlQuery.CollectionRegistry>();
-    builder.Services.AddSingleton<CodeMemory.SqlQuery.SqlQueryService>();
-    builder.Services.AddSingleton<CodeMemory.SqlQuery.TableSchemaProvider>();
+    //builder.Services.AddSingleton<CodeMemory.SqlQuery.CollectionRegistry>();
+    //builder.Services.AddSingleton<CodeMemory.SqlQuery.SqlQueryService>();
+    //builder.Services.AddSingleton<CodeMemory.SqlQuery.TableSchemaProvider>();
+    // we are moving SQL query services to CodeMemory.Mcp; inmemory will only be supported there
+    // inmemroy support will be removed from ASP.NET soon
 }
 
 // Architecture intelligence services

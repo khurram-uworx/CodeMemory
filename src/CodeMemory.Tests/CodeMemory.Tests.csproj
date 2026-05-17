@@ -9,6 +9,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="..\CodeMemory.Mcp\SqlQuery\CollectionRegistry.cs" Link="Includes\CollectionRegistry.cs" />
+    <Compile Include="..\CodeMemory.Mcp\SqlQuery\SqlExpressionBuilder.cs" Link="Includes\SqlExpressionBuilder.cs" />
+    <Compile Include="..\CodeMemory.Mcp\SqlQuery\SqlQueryService.cs" Link="Includes\SqlQueryService.cs" />
+    <Compile Include="..\CodeMemory.Mcp\SqlQuery\TableSchemaProvider.cs" Link="Includes\TableSchemaProvider.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="coverlet.collector" Version="10.0.0">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
@@ -36,6 +43,10 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.8" />
     <PackageReference Include="Memori" Version="0.2.2" />
     <PackageReference Include="TreeSitter.DotNet" Version="1.3.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Includes\" />
   </ItemGroup>
 
 </Project>

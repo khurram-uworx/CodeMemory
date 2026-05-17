@@ -51,9 +51,9 @@ builder.Services.AddSingleton<SemanticChunker>();
 builder.Services.AddCodeMemoryInMemoryStorage(repoRoot);
 
 // SQL query services (InMemoryVectorStore backend)
-builder.Services.AddSingleton<CodeMemory.SqlQuery.CollectionRegistry>();
-builder.Services.AddSingleton<CodeMemory.SqlQuery.SqlQueryService>();
-builder.Services.AddSingleton<CodeMemory.SqlQuery.TableSchemaProvider>();
+builder.Services.AddSingleton<CodeMemory.Mcp.SqlQuery.CollectionRegistry>();
+builder.Services.AddSingleton<CodeMemory.Mcp.SqlQuery.SqlQueryService>();
+builder.Services.AddSingleton<CodeMemory.Mcp.SqlQuery.TableSchemaProvider>();
 
 // Built-in n-gram embedding generator
 builder.Services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>, NgramEmbeddingGenerator>();
@@ -75,7 +75,8 @@ builder.Services.AddSingleton<CodeMemory.Mcp.Services.IEditContextService, CodeM
 // MCP server (stdio transport)
 builder.Services.AddMcpServer()
     .WithStdioServerTransport()
-    .WithToolsFromAssembly(typeof(CodeMemory.Mcp.McpTools).Assembly);
+    .WithToolsFromAssembly(typeof(CodeMemory.Mcp.McpTools).Assembly)
+    .WithToolsFromAssembly(typeof(CodeMemory.Mcp.Tools.SqlQueryTool).Assembly);
 
 var host = builder.Build();
 

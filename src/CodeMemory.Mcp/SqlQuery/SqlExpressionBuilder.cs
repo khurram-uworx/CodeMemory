@@ -5,7 +5,7 @@ using ConstantExpression = System.Linq.Expressions.ConstantExpression;
 using LinqExpr = System.Linq.Expressions.Expression;
 using ParameterExpression = System.Linq.Expressions.ParameterExpression;
 
-namespace CodeMemory.SqlQuery;
+namespace CodeMemory.Mcp.SqlQuery;
 
 public sealed partial class SqlExpressionBuilder
 {

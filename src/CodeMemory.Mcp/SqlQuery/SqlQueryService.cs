@@ -13,7 +13,7 @@ using AstExpr = SqlParser.Ast.Expression;
 using LambdaExpression = System.Linq.Expressions.LambdaExpression;
 using LinqExpr = System.Linq.Expressions.Expression;
 
-namespace CodeMemory.SqlQuery;
+namespace CodeMemory.Mcp.SqlQuery;
 
 public sealed record SqlQueryResult(bool Success, long RowCount, long ExecutionTimeMs,
     List<string>? Columns,

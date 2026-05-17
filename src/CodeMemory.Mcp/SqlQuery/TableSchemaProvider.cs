@@ -1,7 +1,7 @@
 using CodeMemory.Storage;
 using System.Reflection;
 
-namespace CodeMemory.SqlQuery;
+namespace CodeMemory.Mcp.SqlQuery;
 
 public sealed class TableSchemaProvider
 {

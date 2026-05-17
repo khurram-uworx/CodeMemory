@@ -7,6 +7,9 @@ namespace CodeMemory.AspNet.Storage;
 
 public static class ServiceCollectionExtensions
 {
+    // we need to hook in memory storage here
+    // keeping in mind repoRoot; to support multiple repos
+
     public static IServiceCollection AddCodeMemorySqlliteStorage(this IServiceCollection services,
         string repoRoot, string connectionString,
         int configuredDimension = 1536)
@@ -25,4 +28,7 @@ public static class ServiceCollectionExtensions
 
         return services;
     }
+
+    // we need to hook PgVector storage here
+    // keeping in mind repoRoot; to support multiple repos, use schemas may be?
 }

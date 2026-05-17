@@ -1,4 +1,4 @@
-using CodeMemory.SqlQuery;
+using CodeMemory.Mcp.SqlQuery;
 using CodeMemory.Storage;
 using Memori.Embeddings;
 using Memori.Storage;

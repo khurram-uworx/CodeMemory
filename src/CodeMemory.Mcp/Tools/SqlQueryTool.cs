@@ -1,10 +1,10 @@
-using CodeMemory.SqlQuery;
+using CodeMemory.Mcp.SqlQuery;
 using CodeMemory.Storage;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
 using System.ComponentModel;
 
-namespace CodeMemory.Mcp;
+namespace CodeMemory.Mcp.Tools;
 
 [McpServerToolType]
 public sealed class SqlQueryTool
