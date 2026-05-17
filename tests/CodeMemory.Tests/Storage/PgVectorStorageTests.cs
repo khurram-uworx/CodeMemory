@@ -4,7 +4,8 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace CodeMemory.Tests.Storage;
 
 [TestFixture]
-[Explicit("Requires PostgreSQL with pgvector running on localhost:5433")]
+[Category("Integration")]
+[Explicit("PgVector required")]
 public sealed class PgVectorStorageTests
 {
     const string ConnectionString = "Host=localhost;Port=5433;Database=postgres;Username=postgres;Password=postgres";
@@ -12,7 +13,7 @@ public sealed class PgVectorStorageTests
     [Test]
     public async Task CreatePgVectorStorage_InitializesCollections()
     {
-        var storage = CodeMemory.AspNet.Storage.ServiceCollectionExtensions.CreatePgVectorStorage(
+        var storage = AspNet.Storage.ServiceCollectionExtensions.CreatePgVectorStorage(
             Environment.CurrentDirectory,
             ConnectionString,
             "cm_test",
@@ -40,11 +41,11 @@ public sealed class PgVectorStorageTests
     [Test]
     public async Task PgVector_ReposIsolatedBySchema()
     {
-        var storage1 = CodeMemory.AspNet.Storage.ServiceCollectionExtensions.CreatePgVectorStorage(
+        var storage1 = AspNet.Storage.ServiceCollectionExtensions.CreatePgVectorStorage(
             "C:\\repo1", ConnectionString, "cm_repo1",
             NullLogger<StorageService>.Instance);
 
-        var storage2 = CodeMemory.AspNet.Storage.ServiceCollectionExtensions.CreatePgVectorStorage(
+        var storage2 = AspNet.Storage.ServiceCollectionExtensions.CreatePgVectorStorage(
             "C:\\repo2", ConnectionString, "cm_repo2",
             NullLogger<StorageService>.Instance);
 

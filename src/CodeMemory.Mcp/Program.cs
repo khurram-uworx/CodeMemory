@@ -34,9 +34,13 @@ var builder = Host.CreateApplicationBuilder(args);
 
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole(options => options.LogToStandardErrorThreshold = LogLevel.Trace);
+builder.Logging.AddProvider(new CodeMemory.Mcp.CodeMemoryFileLoggerProvider());
 
 if (!builder.Environment.IsDevelopment())
     builder.Logging.SetMinimumLevel(LogLevel.Warning);
+
+// Storage
+builder.Services.AddCodeMemoryInMemoryStorage(repoRoot);
 
 // Indexing services
 builder.Services.AddSingleton<FileCrawler>();
@@ -47,8 +51,6 @@ builder.Services.AddSingleton<RoslynRelationshipExtractor>();
 builder.Services.AddSingleton<TreeSitterSymbolExtractor>();
 builder.Services.AddSingleton<TreeSitterRelationshipExtractor>();
 builder.Services.AddSingleton<SemanticChunker>();
-
-builder.Services.AddCodeMemoryInMemoryStorage(repoRoot);
 
 // SQL query services (InMemoryVectorStore backend)
 builder.Services.AddSingleton<CodeMemory.Mcp.SqlQuery.CollectionRegistry>();
@@ -78,7 +80,11 @@ builder.Services.AddMcpServer()
     .WithToolsFromAssembly(typeof(CodeMemory.Mcp.McpTools).Assembly)
     .WithToolsFromAssembly(typeof(CodeMemory.Mcp.Tools.SqlQueryTool).Assembly);
 
-var host = builder.Build();
+var app = builder.Build();
+
+var loggerFactory = app.Services.GetRequiredService<ILoggerFactory>();
+var embeddingGenerator = app.Services.GetRequiredService<IEmbeddingGenerator<string, Embedding<float>>>();
+
 
 // Non-blocking: start indexing in background, serve MCP tools immediately
 // Ping tool returns indexingCompleted=false until this finishes.
@@ -86,7 +92,7 @@ _ = Task.Run(async () =>
 {
     try
     {
-        var engine = host.Services.GetRequiredService<IndexingEngine>();
+        var engine = app.Services.GetRequiredService<IndexingEngine>();
         await engine.RunIndexingAsync(repoRoot, CancellationToken.None);
         IndexingState.MarkCompleted(repoRoot);
     }
@@ -97,4 +103,4 @@ _ = Task.Run(async () =>
 });
 
 // Start MCP server loop immediately (reads JSON-RPC from stdin, writes to stdout)
-await host.RunAsync();
+await app.RunAsync();

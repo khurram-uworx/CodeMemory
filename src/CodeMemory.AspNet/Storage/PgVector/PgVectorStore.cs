@@ -1,7 +1,7 @@
-using System.Collections.Concurrent;
-using System.Runtime.CompilerServices;
 using Microsoft.Extensions.VectorData;
 using Npgsql;
+using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
 
 namespace CodeMemory.AspNet.Storage.PgVector;
 

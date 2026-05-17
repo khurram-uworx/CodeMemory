@@ -28,7 +28,11 @@ jobs:
       run: dotnet build --no-restore --configuration Release
       
     - name: Test
+      # Override to Production so that appsettings.Development.json (which may contain
+      # local-only config like pgvector provider and dev repo paths) is NOT loaded in CI.
       run: dotnet test --no-build --configuration Release --verbosity normal --collect:"XPlat Code Coverage" --filter "Category!=Integration"
+      # env:
+      #   ASPNETCORE_ENVIRONMENT: Production
       
     - name: Upload coverage reports
       if: matrix.os == 'ubuntu-latest'

@@ -2,7 +2,7 @@ using Microsoft.Extensions.Logging;
 
 namespace CodeMemory.Mcp;
 
-internal class StdErrorLogger<T> : ILogger<T>, IDisposable
+class StdErrorLogger<T> : ILogger<T>, IDisposable
 {
     public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception exception, Func<TState, Exception, string> formatter)
     {

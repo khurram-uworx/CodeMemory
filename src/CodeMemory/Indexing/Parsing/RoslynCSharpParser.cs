@@ -9,9 +9,7 @@ public sealed class RoslynCSharpParser : ILanguageParser
     readonly ILogger<RoslynCSharpParser> logger;
 
     public RoslynCSharpParser(ILogger<RoslynCSharpParser> logger)
-    {
-        this.logger = logger;
-    }
+        => this.logger = logger;
 
     public async Task<ParseResult?> ParseAsync(string filePath, CancellationToken cancellationToken = default)
     {

@@ -7,7 +7,7 @@ namespace CodeMemory.Tests.Storage;
 
 [TestFixture]
 [Category("Integration")]
-[Category("PgVector")]
+[Explicit("PgVector required")]
 public sealed class PgVectorStorageServiceTests
 {
     const string ConnectionString = "Host=localhost;Port=5432;Database=codememory;Username=codememory;Password=codememory";

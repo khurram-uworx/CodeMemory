@@ -4,7 +4,6 @@ using CodeMemory.Indexing.Graph;
 using CodeMemory.Indexing.Search;
 using CodeMemory.Storage;
 using Microsoft.Extensions.VectorData;
-using Microsoft.Extensions.VectorData;
 
 namespace CodeMemory.Tests;
 

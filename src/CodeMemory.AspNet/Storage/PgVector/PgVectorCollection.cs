@@ -1,9 +1,9 @@
-using System.Linq.Expressions;
-using System.Reflection;
-using System.Runtime.CompilerServices;
 using Microsoft.Extensions.VectorData;
 using Npgsql;
 using Pgvector;
+using System.Linq.Expressions;
+using System.Reflection;
+using System.Runtime.CompilerServices;
 
 namespace CodeMemory.AspNet.Storage.PgVector;
 

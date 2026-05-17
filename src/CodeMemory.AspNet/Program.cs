@@ -1,5 +1,6 @@
 using CodeMemory.AspNet.Configuration;
 using CodeMemory.AspNet.Services;
+using CodeMemory.AspNet.Storage;
 using CodeMemory.Indexing;
 using CodeMemory.Indexing.Chunking;
 using CodeMemory.Indexing.Extraction;
@@ -43,15 +44,6 @@ builder.Services.AddSingleton<ISemanticSearchService, SemanticSearchService>();
 builder.Services.AddSingleton<SymbolQueryService>();
 builder.Services.AddSingleton<RelationshipQueryService>();
 
-var provider = builder.Configuration.GetValue<string>("Storage:Provider") ?? "inmemory";
-var useSqlite = string.Equals(provider, "sqlite", StringComparison.OrdinalIgnoreCase);
-var usePgVector = string.Equals(provider, "pgvector", StringComparison.OrdinalIgnoreCase);
-
-if (!useSqlite && !usePgVector)
-    provider = "inmemory";
-
-var pgConnectionString = builder.Configuration.GetValue<string>("Storage:ConnectionStrings:pgvector");
-
 // Architecture intelligence services
 builder.Services.AddSingleton<CodeMemory.Indexing.Graph.IDependencyGraphService, DependencyGraphService>();
 builder.Services.AddSingleton<CodeMemory.Indexing.Architecture.IArchitectureService, ArchitectureService>();
@@ -85,7 +77,6 @@ builder.Services.AddMcpServer()
         };
     })
     .WithToolsFromAssembly(typeof(CodeMemory.Mcp.McpTools).Assembly);
-//.WithToolsFromAssembly(typeof(CodeMemory.AspNet.Tools.AnyAspNetTool).Assembly);
 
 // CORS — origins configured in appsettings.json:Cors:AllowedOrigins
 var corsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>();
@@ -100,6 +91,8 @@ builder.Services.AddCors(options =>
     });
 });
 
+var provider = builder.Configuration.GetValue<string>("Storage:Provider") ?? "inmemory";
+
 var app = builder.Build();
 app.UseCors();
 
@@ -113,43 +106,19 @@ var repoInfos = new List<(string name, string path, string? dbPath)>();
 
 foreach (var (name, path) in repositories ?? [])
 {
-    var repoRoot = Path.IsPathRooted(path) ? path
+    var repoRoot = Path.IsPathRooted(path)
+        ? path
         : Path.GetFullPath(Path.Combine(Environment.CurrentDirectory, path));
-    var memoryPath = Path.Combine(repoRoot, ".memorycode");
-    Directory.CreateDirectory(memoryPath);
 
-    IStorageService storageService;
-    string? dbPath = null;
+    (provider, var dbPath, var storageService) = builder.CreateStorage(provider, name, repoRoot,
+        loggerFactory.CreateLogger<StorageService>(),
+        embeddingGenerator);
 
-    if (usePgVector)
-    {
-        if (string.IsNullOrEmpty(pgConnectionString))
-            throw new InvalidOperationException(
-                "PgVector provider selected but 'Storage:ConnectionStrings:pgvector' is not configured.");
-
-        var schema = sanitizeSchemaName(name);
-        storageService = CodeMemory.AspNet.Storage.ServiceCollectionExtensions.CreatePgVectorStorage(
-            repoRoot, pgConnectionString, schema,
-            loggerFactory.CreateLogger<StorageService>(),
-            embeddingGenerator);
-        dbPath = $"pgvector://{schema}";
-    }
-    else if (useSqlite)
-    {
-        var sqliteConnectionString = $"Data Source={Path.Combine(memoryPath, "sqlvec.db")}";
-        storageService = CodeMemory.AspNet.Storage.ServiceCollectionExtensions.CreateSqliteStorage(
-            repoRoot, sqliteConnectionString,
-            loggerFactory.CreateLogger<StorageService>(),
-            embeddingGenerator);
-        dbPath = Path.Combine(memoryPath, "sqlvec.db");
-    }
-    else
-    {
-        storageService = CodeMemory.AspNet.Storage.ServiceCollectionExtensions.CreateInMemoryStorage(
+    if (storageService is null)
+        storageService = app.Services.CreateInMemoryStorage(
             repoRoot,
             loggerFactory.CreateLogger<StorageService>(),
             embeddingGenerator);
-    }
 
     storageRegistry.Register(name, storageService);
     repoInfos.Add((name, repoRoot, dbPath));
@@ -165,12 +134,14 @@ app.MapGet("/", () =>
 {
     var service = "CodeMemory — Repository Intelligence Substrate";
     var repos = repoInfos.Select(r =>
-    {
-        if (useSqlite || usePgVector)
-            return new { r.name, r.path, indexDb = r.dbPath, indexingCompleted = IndexingState.IsCompleted(r.name) } as object;
-        else
-            return new { r.name, r.path, indexingCompleted = IndexingState.IsCompleted(r.name) } as object;
-    });
+        new
+        {
+            r.name,
+            r.path,
+            indexDb = r.dbPath,
+            indexingCompleted = IndexingState.IsCompleted(r.name)
+        } as object);
+
     return Results.Ok(new
     {
         service,
@@ -179,19 +150,5 @@ app.MapGet("/", () =>
         repositories = repos
     });
 });
-
-static string sanitizeSchemaName(string name)
-{
-    var sanitized = new System.Text.StringBuilder(name.Length);
-    foreach (var ch in name)
-    {
-        if (char.IsLetterOrDigit(ch) || ch == '_')
-            sanitized.Append(ch);
-        else
-            sanitized.Append('_');
-    }
-    var result = sanitized.ToString();
-    return string.IsNullOrEmpty(result) ? "default" : result.ToLowerInvariant();
-}
 
 app.Run();
