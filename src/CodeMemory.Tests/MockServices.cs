@@ -4,6 +4,7 @@ using CodeMemory.Indexing.Graph;
 using CodeMemory.Indexing.Search;
 using CodeMemory.Storage;
 using Microsoft.Extensions.VectorData;
+using Microsoft.Extensions.VectorData;
 
 namespace CodeMemory.Tests;
 
@@ -70,7 +71,7 @@ sealed class MockStorageService : IStorageService
     public Task<IReadOnlyList<RelationshipRecord>> GetRelationshipsByTargetAsync(string targetSymbolId, CancellationToken ct = default)
         => Task.FromResult<IReadOnlyList<RelationshipRecord>>([]);
 
-    public Task<IReadOnlyList<ScoredChunk>> SearchChunksAsync(ReadOnlyMemory<float> embedding, int top = 10, CancellationToken ct = default)
+    public Task<IReadOnlyList<ScoredChunk>> SearchChunksAsync(ReadOnlyMemory<float> embedding, int top = 10, VectorSearchOptions<ChunkRecord>? options = null, CancellationToken ct = default)
         => Task.FromResult<IReadOnlyList<ScoredChunk>>([]);
 
     public Task ClearAllAsync(CancellationToken ct = default)
