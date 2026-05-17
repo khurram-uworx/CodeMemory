@@ -57,8 +57,8 @@ public sealed class StorageServiceRouter : IStorageService
     public Task<IReadOnlyList<RelationshipRecord>> GetRelationshipsByTargetAsync(string targetSymbolId, CancellationToken ct = default)
         => GetStorage().GetRelationshipsByTargetAsync(targetSymbolId, ct);
 
-    public Task<IReadOnlyList<ScoredChunk>> SearchChunksAsync(ReadOnlyMemory<float> embedding, int top = 10, CancellationToken ct = default)
-        => GetStorage().SearchChunksAsync(embedding, top, ct);
+    public Task<IReadOnlyList<ScoredChunk>> SearchChunksAsync(ReadOnlyMemory<float> embedding, int top = 10, VectorSearchOptions<ChunkRecord>? options = null, CancellationToken ct = default)
+        => GetStorage().SearchChunksAsync(embedding, top, options, ct);
 
     public Task ClearAllAsync(CancellationToken ct = default)
         => GetStorage().ClearAllAsync(ct);
