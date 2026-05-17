@@ -10,6 +10,7 @@
     <PackageReference Include="ModelContextProtocol.AspNetCore" Version="1.3.0" />
     <PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="10.6.0" />
     <PackageReference Include="Microsoft.SemanticKernel.Connectors.SqliteVec" Version="1.74.0-preview" />
+    <PackageReference Include="Pgvector" Version="0.3.2" />
   </ItemGroup>
 
   <PropertyGroup>

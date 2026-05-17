@@ -180,7 +180,8 @@ public sealed class StorageService : IStorageService, IDisposable
     }
 
     public async Task<IReadOnlyList<ScoredChunk>> SearchChunksAsync(
-        ReadOnlyMemory<float> embedding, int top = 10, CancellationToken ct = default)
+        ReadOnlyMemory<float> embedding, int top = 10,
+        VectorSearchOptions<ChunkRecord>? options = null, CancellationToken ct = default)
     {
         throwIfNotInitialized();
         if (embedding.Length != actualDimension)
@@ -191,7 +192,7 @@ public sealed class StorageService : IStorageService, IDisposable
 
         var results = new List<ScoredChunk>();
         await foreach (var result in chunks!.SearchAsync<ReadOnlyMemory<float>>(
-            embedding, top, options: null, ct))
+            embedding, top, options: options, ct))
         {
             results.Add(new ScoredChunk { Chunk = result.Record, Score = result.Score ?? 0 });
         }

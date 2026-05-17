@@ -45,7 +45,7 @@ public sealed class SemanticSearchService : ISemanticSearchService
         }
 
         logger.LogDebug("Semantic search for \"{Query}\" — embedding dimension {Dim}", query, normalized.Length);
-        var results = await storage.SearchChunksAsync(normalized, top, ct);
+        var results = await storage.SearchChunksAsync(normalized, top, options: null, ct);
 
         if (minimumSimilarity > 0)
         {
@@ -60,6 +60,6 @@ public sealed class SemanticSearchService : ISemanticSearchService
     public Task<IReadOnlyList<ScoredChunk>> SearchByVectorAsync(
         ReadOnlyMemory<float> vector, int top = 10, CancellationToken ct = default)
     {
-        return storage.SearchChunksAsync(vector, top, ct);
+        return storage.SearchChunksAsync(vector, top, options: null, ct);
     }
 }
