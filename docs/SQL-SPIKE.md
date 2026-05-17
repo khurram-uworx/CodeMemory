@@ -45,7 +45,7 @@ SqlParserCS supports:
 - Round-trip SQL generation (`ToSql()`)
 - Visitor pattern for AST traversal
 
-### 2. InMemoryVectorStore (Memori 0.2.2) — Already Integrated
+### 2. InMemoryVectorStore (Memori) — Already Integrated
 
 Memori's `InMemoryVectorStoreCollection<TKey, TRecord>` (extends `VectorStoreCollection<TKey, TRecord>`) has a **Memori-specific method**:
 

@@ -33,7 +33,7 @@ Long-term division of concerns:
 
 ### Already moved (completed)
 
-- `NgramEmbeddingGenerator` → Memori's `Embeddings/` namespace (`Memori` NuGet package v0.2.2+)
+- `NgramEmbeddingGenerator` → Memori's `Embeddings/` namespace (`Memori` NuGet package)
 
 ---
 
