@@ -219,6 +219,7 @@ public sealed class StorageService : IStorageService, IDisposable
 
     public void Dispose()
     {
+        (this.vectorStore as IDisposable)?.Dispose();
         (symbols as IDisposable)?.Dispose();
         (chunks as IDisposable)?.Dispose();
         (relationships as IDisposable)?.Dispose();
