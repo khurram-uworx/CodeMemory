@@ -7,7 +7,6 @@ using SqlParser;
 using SqlParser.Ast;
 using SqlParser.Dialects;
 using System.ComponentModel;
-using System.Data.Common;
 using System.Diagnostics;
 using System.Text;
 

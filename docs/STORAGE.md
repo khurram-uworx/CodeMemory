@@ -369,7 +369,7 @@ Tasks follow the template in `docs/TASKS-TEMPLATE.md`. Implementation order refl
 3. Task 3: Implement `HybridStorageService : IStorageService` ✅
 4. Task 4: Wire `HybridStorageService` into `Program.cs` + `StorageServiceRouter` ✅
 5. Task 5: Implement AspNet `sql_query` tool ✅
-6. Task 6: Update `IndexingState` for per-repo completion across both stores
+6. Task 6: Update `IndexingState` for per-repo completion across both stores ✅
 
 ### Coordination Notes
 
@@ -589,7 +589,7 @@ Create an AspNet-specific `sql_query` MCP tool that forwards SQL queries for `Sy
 
 ---
 
-## Task 6: Update `IndexingState` for per-repo completion across both stores
+## Task 6: Update `IndexingState` for per-repo completion across both stores ✅
 
 ### Priority
 
