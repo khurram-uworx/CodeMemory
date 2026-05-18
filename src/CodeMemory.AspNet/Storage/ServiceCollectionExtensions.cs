@@ -152,9 +152,6 @@ public static class ServiceCollectionExtensions
         ILoggerFactory loggerFactory,
         IEmbeddingGenerator<string, Embedding<float>>? embeddingGenerator = null)
     {
-        var memoryPath = Path.Combine(repoRoot, ".memorycode");
-        Directory.CreateDirectory(memoryPath);
-
         var useSqlite = string.Equals(provider, "sqlite", StringComparison.OrdinalIgnoreCase);
         var usePgVector = string.Equals(provider, "pgvector", StringComparison.OrdinalIgnoreCase);
         var useSqlServer = string.Equals(provider, "sqlserver", StringComparison.OrdinalIgnoreCase);
@@ -193,6 +190,9 @@ public static class ServiceCollectionExtensions
         }
         else if (useSqlite)
         {
+            var memoryPath = Path.Combine(repoRoot, ".memorycode");
+            Directory.CreateDirectory(memoryPath);
+
             var sqliteConnectionString = $"Data Source={Path.Combine(memoryPath, "sqlvec.db")}";
             storageService = createSqliteStorage(
                 repoRoot, sqliteConnectionString,
