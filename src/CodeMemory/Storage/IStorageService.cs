@@ -18,6 +18,8 @@ public interface IStorageService
 
     Task<SymbolRecord?> GetSymbolAsync(string id, CancellationToken ct = default);
 
+    Task<SymbolRecord?> GetSymbolByFullNameAsync(string fullName, CancellationToken ct = default);
+
     Task<ChunkRecord?> GetChunkAsync(string id, CancellationToken ct = default);
 
     Task<RelationshipRecord?> GetRelationshipAsync(string id, CancellationToken ct = default);

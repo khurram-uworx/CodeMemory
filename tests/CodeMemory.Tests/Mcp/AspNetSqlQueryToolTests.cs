@@ -2,9 +2,9 @@ using CodeMemory.AspNet.Storage;
 using CodeMemory.AspNet.Tools;
 using CodeMemory.Storage;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.Extensions.Configuration;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.SemanticKernel.Connectors.SqliteVec;
 
