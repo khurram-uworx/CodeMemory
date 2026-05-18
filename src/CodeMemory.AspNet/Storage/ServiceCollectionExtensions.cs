@@ -1,6 +1,8 @@
 using CodeMemory.AspNet.Storage.PgVector;
 using CodeMemory.Storage;
 using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.VectorData;
 using Microsoft.SemanticKernel.Connectors.PgVector;
@@ -46,19 +48,25 @@ public static class ServiceCollectionExtensions
     static IStorageService createSqliteStorage(
         string repoRoot,
         string connectionString,
-        ILogger<StorageService> logger,
+        ILogger logger,
         IEmbeddingGenerator<string, Embedding<float>>? embeddingGenerator = null,
         int configuredDimension = 1536)
     {
         var store = new SqliteVectorStore(connectionString);
-        return new StorageService(repoRoot, logger, store, embeddingGenerator, configuredDimension);
+        return new HybridStorageService(
+            repoRoot,
+            logger,
+            store,
+            createSqliteDbContextFactory(connectionString, "main"),
+            embeddingGenerator,
+            configuredDimension);
     }
 
     static IStorageService createSqlServerStorage(
         string repoRoot,
         string connectionString,
         string schema,
-        ILogger<StorageService> logger,
+        ILogger logger,
         IEmbeddingGenerator<string, Embedding<float>>? embeddingGenerator = null,
         int configuredDimension = 1536)
     {
@@ -66,7 +74,13 @@ public static class ServiceCollectionExtensions
 
         var options = new SqlServerVectorStoreOptions { Schema = schema };
         var store = new SqlServerVectorStore(connectionString, options);
-        return new StorageService(repoRoot, logger, store, embeddingGenerator, configuredDimension);
+        return new HybridStorageService(
+            repoRoot,
+            logger,
+            store,
+            createSqlServerDbContextFactory(connectionString, schema),
+            embeddingGenerator,
+            configuredDimension);
     }
 
     // public because of tests
@@ -74,7 +88,7 @@ public static class ServiceCollectionExtensions
         string repoRoot,
         string connectionString,
         string schema,
-        ILogger<StorageService> logger,
+        ILogger logger,
         IEmbeddingGenerator<string, Embedding<float>>? embeddingGenerator = null,
         int configuredDimension = 1536)
     {
@@ -93,13 +107,49 @@ public static class ServiceCollectionExtensions
 
         var options = new PostgresVectorStoreOptions { Schema = schema };
         var store = new PostgresVectorStore(dataSource, ownsDataSource: true, options);
-        return new StorageService(repoRoot, logger, store, embeddingGenerator, configuredDimension);
+        return new HybridStorageService(
+            repoRoot,
+            logger,
+            store,
+            createNpgsqlDbContextFactory(connectionString, schema),
+            embeddingGenerator,
+            configuredDimension);
+    }
+
+    static Func<CodeMemoryDbContext> createNpgsqlDbContextFactory(string connectionString, string schema)
+    {
+        var options = new DbContextOptionsBuilder<CodeMemoryDbContext>()
+            .UseNpgsql(connectionString)
+            .ReplaceService<IModelCacheKeyFactory, SchemaModelCacheKeyFactory>()
+            .Options;
+
+        return () => new CodeMemoryDbContext(options, schema);
+    }
+
+    static Func<CodeMemoryDbContext> createSqlServerDbContextFactory(string connectionString, string schema)
+    {
+        var options = new DbContextOptionsBuilder<CodeMemoryDbContext>()
+            .UseSqlServer(connectionString)
+            .ReplaceService<IModelCacheKeyFactory, SchemaModelCacheKeyFactory>()
+            .Options;
+
+        return () => new CodeMemoryDbContext(options, schema);
+    }
+
+    static Func<CodeMemoryDbContext> createSqliteDbContextFactory(string connectionString, string schema)
+    {
+        var options = new DbContextOptionsBuilder<CodeMemoryDbContext>()
+            .UseSqlite(connectionString)
+            .ReplaceService<IModelCacheKeyFactory, SchemaModelCacheKeyFactory>()
+            .Options;
+
+        return () => new CodeMemoryDbContext(options, schema);
     }
 
     public static (string, string?, IStorageService?) CreateStorage(this WebApplicationBuilder builder,
         string provider,
         string name, string repoRoot,
-        ILogger<StorageService> logger,
+        ILoggerFactory loggerFactory,
         IEmbeddingGenerator<string, Embedding<float>>? embeddingGenerator = null)
     {
         var memoryPath = Path.Combine(repoRoot, ".memorycode");
@@ -112,7 +162,7 @@ public static class ServiceCollectionExtensions
         if (!useSqlite && !usePgVector && !useSqlServer)
             provider = "inmemory";
 
-        IStorageService storageService = null;
+        IStorageService? storageService = null;
         string? dbPath = null;
 
         if (usePgVector)
@@ -122,7 +172,7 @@ public static class ServiceCollectionExtensions
             var schema = sanitizeSchemaName(name);
             storageService = CreatePgVectorStorage(
                 repoRoot, pgConnectionString, schema,
-                logger, embeddingGenerator);
+                loggerFactory.CreateLogger<HybridStorageService>(), embeddingGenerator);
             dbPath = $"pgvector://{schema}";
 
             //var pgOptions = builder.Configuration.GetSection("PgVector").Get<PgVectorOptions>() ?? new();
@@ -138,7 +188,7 @@ public static class ServiceCollectionExtensions
             var schema = sanitizeSchemaName(name);
             storageService = createSqlServerStorage(
                 repoRoot, sqlServerConnectionString, schema,
-                logger, embeddingGenerator);
+                loggerFactory.CreateLogger<HybridStorageService>(), embeddingGenerator);
             dbPath = $"sqlserver://{schema}";
         }
         else if (useSqlite)
@@ -146,7 +196,7 @@ public static class ServiceCollectionExtensions
             var sqliteConnectionString = $"Data Source={Path.Combine(memoryPath, "sqlvec.db")}";
             storageService = createSqliteStorage(
                 repoRoot, sqliteConnectionString,
-                logger, embeddingGenerator);
+                loggerFactory.CreateLogger<HybridStorageService>(), embeddingGenerator);
             dbPath = Path.Combine(memoryPath, "sqlvec.db");
         }
 

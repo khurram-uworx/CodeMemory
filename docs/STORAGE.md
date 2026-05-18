@@ -364,11 +364,11 @@ Tasks follow the template in `docs/TASKS-TEMPLATE.md`. Implementation order refl
 
 ### Suggested Execution Order
 
-1. ~~Task 1: Decision gate (DECIDED, see Decisions section)~~
-2. Task 2: Add EF Core packages + create `CodeMemoryDbContext` and entity models
-3. Task 3: Implement `HybridStorageService : IStorageService`
-4. Task 4: Wire `HybridStorageService` into `Program.cs` + `StorageServiceRouter`
-5. Task 5: Implement AspNet `sql_query` tool
+1. ~~Task 1: Decision gate (DECIDED, see Decisions section)~~ ✅
+2. Task 2: Add EF Core packages + create `CodeMemoryDbContext` and entity models ✅
+3. Task 3: Implement `HybridStorageService : IStorageService` ✅
+4. Task 4: Wire `HybridStorageService` into `Program.cs` + `StorageServiceRouter` ✅
+5. Task 5: Implement AspNet `sql_query` tool ✅
 6. Task 6: Update `IndexingState` for per-repo completion across both stores
 
 ### Coordination Notes
@@ -380,7 +380,7 @@ Tasks follow the template in `docs/TASKS-TEMPLATE.md`. Implementation order refl
 
 ---
 
-## ~~Task 1: Decision gate — Choose EF Core provider strategy~~ *(DECIDED, see Decisions section)*
+## ~~Task 1: Decision gate — Choose EF Core provider strategy~~ *(DECIDED, see Decisions section)* ✅
 
 All Task 1 decisions are resolved. Captured in the Decisions section above. No further action needed.
 
@@ -393,7 +393,7 @@ All Task 1 decisions are resolved. Captured in the Decisions section above. No f
 
 ---
 
-## Task 2: Add EF Core packages + create `CodeMemoryDbContext` and entity models
+## Task 2: Add EF Core packages + create `CodeMemoryDbContext` and entity models ✅
 
 ### Priority
 
@@ -445,7 +445,7 @@ Add EF Core dependencies to `CodeMemory.AspNet` and create the `CodeMemoryDbCont
 
 ---
 
-## Task 3: Implement `HybridStorageService : IStorageService`
+## Task 3: Implement `HybridStorageService : IStorageService` ✅
 
 ### Priority
 
@@ -493,7 +493,7 @@ Implement `HybridStorageService` that routes `IStorageService` method calls betw
 
 ---
 
-## Task 4: Wire `HybridStorageService` into `Program.cs` + `StorageServiceRouter`
+## Task 4: Wire `HybridStorageService` into `Program.cs` + `StorageServiceRouter` ✅
 
 ### Priority
 
@@ -539,7 +539,7 @@ Register `HybridStorageService` in the AspNet DI container and update `StorageSe
 
 ---
 
-## Task 5: Implement AspNet `sql_query` tool
+## Task 5: Implement AspNet `sql_query` tool ✅
 
 ### Priority
 
