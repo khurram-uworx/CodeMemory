@@ -256,6 +256,247 @@ public sealed class DependencyGraphServiceTests : BaseServicesTests
     }
 
     [Test]
+    public async Task FindRelatedAsync_IncludesChildMethodRelationships()
+    {
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
+        await storage.InitializeAsync();
+
+        var serviceGuid = makeGuid("Service");
+        var loggerGuid = makeGuid("Logger");
+        var execMethodGuid = makeGuid("Service.Execute");
+
+        await storeSymbol(storage, "Service", serviceGuid);
+        await storeSymbol(storage, "Logger", loggerGuid);
+        await storeSymbol(storage, "Service.Execute", execMethodGuid);
+
+        // Service class has no direct relationships
+        // Service.Execute method calls Logger
+        await storage.StoreRelationshipsAsync([
+            new RelationshipRecord
+            {
+                Id = "r1", SourceSymbolId = execMethodGuid, TargetSymbolId = loggerGuid, RelationshipType = "Calls"
+            },
+        ]);
+
+        var graph = createGraphService(storage);
+        var result = await graph.FindRelatedAsync("Service", "all");
+
+        // Should find Logger through child method propagation
+        Assert.That(result, Has.Count.EqualTo(1));
+        Assert.That(result[0].SymbolName, Is.EqualTo("Logger"));
+        Assert.That(result[0].RelationType, Is.EqualTo("Calls"));
+    }
+
+    [Test]
+    public async Task FindRelatedAsync_IncludesChildFieldRelationships()
+    {
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
+        await storage.InitializeAsync();
+
+        var serviceGuid = makeGuid("Service");
+        var configGuid = makeGuid("Config");
+        var configFieldGuid = makeGuid("Service._config");
+
+        await storeSymbol(storage, "Service", serviceGuid);
+        await storeSymbol(storage, "Config", configGuid);
+        await storeSymbol(storage, "Service._config", configFieldGuid);
+
+        // Service class has no direct relationships
+        // Service._config field references Config
+        await storage.StoreRelationshipsAsync([
+            new RelationshipRecord
+            {
+                Id = "r1", SourceSymbolId = configFieldGuid, TargetSymbolId = configGuid, RelationshipType = "References"
+            },
+        ]);
+
+        var graph = createGraphService(storage);
+        var result = await graph.FindRelatedAsync("Service", "all");
+
+        // Should find Config through child field propagation
+        Assert.That(result, Has.Count.EqualTo(1));
+        Assert.That(result[0].SymbolName, Is.EqualTo("Config"));
+        Assert.That(result[0].RelationType, Is.EqualTo("References"));
+    }
+
+    [Test]
+    public async Task FindRelatedAsync_DeduplicatesAcrossParentAndChild()
+    {
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
+        await storage.InitializeAsync();
+
+        var serviceGuid = makeGuid("Service");
+        var loggerGuid = makeGuid("Logger");
+        var execMethodGuid = makeGuid("Service.Execute");
+
+        await storeSymbol(storage, "Service", serviceGuid);
+        await storeSymbol(storage, "Logger", loggerGuid);
+        await storeSymbol(storage, "Service.Execute", execMethodGuid);
+
+        // Service class directly references Logger
+        // Service.Execute method also calls Logger (different relationship, same target)
+        await storage.StoreRelationshipsAsync([
+            new RelationshipRecord
+            {
+                Id = "r1", SourceSymbolId = serviceGuid, TargetSymbolId = loggerGuid, RelationshipType = "References"
+            },
+            new RelationshipRecord
+            {
+                Id = "r2", SourceSymbolId = execMethodGuid, TargetSymbolId = loggerGuid, RelationshipType = "Calls"
+            },
+        ]);
+
+        var graph = createGraphService(storage);
+        var result = await graph.FindRelatedAsync("Service", "all");
+
+        // Both relationships have different IDs, so both should appear
+        Assert.That(result, Has.Count.EqualTo(2));
+        Assert.That(result.All(n => n.SymbolName == "Logger"), Is.True);
+    }
+
+    [Test]
+    public async Task FindRelatedAsync_DoesNotDuplicateWhenParentVisitsChildTarget()
+    {
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
+        await storage.InitializeAsync();
+
+        var parentGuid = makeGuid("Parent");
+        var childGuid = makeGuid("Parent.Child");
+        var targetGuid = makeGuid("Target");
+
+        await storeSymbol(storage, "Parent", parentGuid);
+        await storeSymbol(storage, "Parent.Child", childGuid);
+        await storeSymbol(storage, "Target", targetGuid);
+
+        // Parent references Target, and Parent.Child also references Target
+        // Same target, same relationship type, different source
+        await storage.StoreRelationshipsAsync([
+            new RelationshipRecord { Id = "r1", SourceSymbolId = parentGuid, TargetSymbolId = targetGuid, RelationshipType = "References" },
+            new RelationshipRecord { Id = "r2", SourceSymbolId = childGuid, TargetSymbolId = targetGuid, RelationshipType = "References" },
+        ]);
+
+        var graph = createGraphService(storage);
+        var result = await graph.FindRelatedAsync("Parent", "all");
+
+        // Two different relationship records to the same target — both should appear
+        Assert.That(result, Has.Count.EqualTo(2));
+    }
+
+    [Test]
+    public async Task FindRelatedAsync_ByNameFallback_ResolvesShortName()
+    {
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
+        await storage.InitializeAsync();
+
+        // Simulate a real scenario: FullName = "MyApp.Service" but Name = "Service"
+        var classGuid = makeGuid("MyApp.Service");
+        await storage.StoreSymbolsAsync([new SymbolRecord
+        {
+            Id = classGuid, Name = "Service", Kind = "Class",
+            FilePath = "/src/Service.cs", FullName = "MyApp.Service",
+            LineStart = 1, LineEnd = 10
+        }]);
+
+        var loggerGuid = makeGuid("MyApp.Logger");
+        await storage.StoreSymbolsAsync([new SymbolRecord
+        {
+            Id = loggerGuid, Name = "Logger", Kind = "Class",
+            FilePath = "/src/Logger.cs", FullName = "MyApp.Logger",
+            LineStart = 1, LineEnd = 10
+        }]);
+
+        await storage.StoreRelationshipsAsync([
+            new RelationshipRecord
+            {
+                Id = "r1", SourceSymbolId = classGuid, TargetSymbolId = loggerGuid, RelationshipType = "References"
+            },
+        ]);
+
+        var graph = createGraphService(storage);
+
+        // Short name "Service" should fail FullName match, fall back to Name match
+        var result = await graph.FindRelatedAsync("Service", "all");
+
+        Assert.That(result, Has.Count.EqualTo(1));
+        Assert.That(result[0].SymbolName, Is.EqualTo("Logger"));
+    }
+
+    [Test]
+    public async Task TraceAsync_ByNameFallback_ResolvesShortName()
+    {
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
+        await storage.InitializeAsync();
+
+        var classGuid = makeGuid("MyApp.Service");
+        await storage.StoreSymbolsAsync([new SymbolRecord
+        {
+            Id = classGuid, Name = "Service", Kind = "Class",
+            FilePath = "/src/Service.cs", FullName = "MyApp.Service",
+            LineStart = 1, LineEnd = 10
+        }]);
+
+        var loggerGuid = makeGuid("MyApp.Logger");
+        await storage.StoreSymbolsAsync([new SymbolRecord
+        {
+            Id = loggerGuid, Name = "Logger", Kind = "Class",
+            FilePath = "/src/Logger.cs", FullName = "MyApp.Logger",
+            LineStart = 1, LineEnd = 10
+        }]);
+
+        await storage.StoreRelationshipsAsync([
+            new RelationshipRecord
+            {
+                Id = "r1", SourceSymbolId = classGuid, TargetSymbolId = loggerGuid, RelationshipType = "References"
+            },
+        ]);
+
+        var graph = createGraphService(storage);
+
+        // Short name "Service" should fail FullName match, fall back to Name match
+        var result = await graph.TraceAsync("Service", "upstream", 1);
+
+        Assert.That(result, Has.Count.EqualTo(1));
+        Assert.That(result[0].SymbolName, Is.EqualTo("Logger"));
+    }
+
+    [Test]
+    public async Task TraceAsync_IncludesChildMethodRelationships()
+    {
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
+        await storage.InitializeAsync();
+
+        var serviceGuid = makeGuid("Service");
+        var loggerGuid = makeGuid("Logger");
+        var execMethodGuid = makeGuid("Service.Execute");
+
+        await storeSymbol(storage, "Service", serviceGuid);
+        await storeSymbol(storage, "Logger", loggerGuid);
+        await storeSymbol(storage, "Service.Execute", execMethodGuid);
+
+        // Service.Execute calls Logger (upstream from Execute's perspective)
+        await storage.StoreRelationshipsAsync([
+            new RelationshipRecord
+            {
+                Id = "r1", SourceSymbolId = execMethodGuid, TargetSymbolId = loggerGuid, RelationshipType = "Calls"
+            },
+        ]);
+
+        var graph = createGraphService(storage);
+        var result = await graph.TraceAsync("Service", "upstream", 1);
+
+        // Should find Logger through child method propagation
+        Assert.That(result, Has.Count.EqualTo(1));
+        Assert.That(result[0].SymbolName, Is.EqualTo("Logger"));
+    }
+
+    [Test]
     public async Task FindRelatedAsync_FiltersByType()
     {
         (var repoRoot, var dbPath) = GetTempDbPath();

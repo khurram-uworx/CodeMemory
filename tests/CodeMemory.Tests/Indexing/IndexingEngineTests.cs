@@ -83,19 +83,19 @@ public sealed class IndexingEngineTests
 
             var allSymbols = await storage.GetSymbolsByKindAsync("Class", 100);
             Assert.That(allSymbols, Is.Not.Empty);
-            Assert.That(allSymbols.Any(s => s.FullName == "MyBaseClass"), Is.True);
-            Assert.That(allSymbols.Any(s => s.FullName == "MyDerivedClass"), Is.True);
-            Assert.That(allSymbols.Any(s => s.FullName == "ReferenceHolder"), Is.True);
+            Assert.That(allSymbols.Any(s => s.FullName == "Test.MyBaseClass"), Is.True);
+            Assert.That(allSymbols.Any(s => s.FullName == "Test.MyDerivedClass"), Is.True);
+            Assert.That(allSymbols.Any(s => s.FullName == "Test.ReferenceHolder"), Is.True);
 
             // Verify relationships were stored
-            var myDerivedClass = allSymbols.First(s => s.FullName == "MyDerivedClass");
+            var myDerivedClass = allSymbols.First(s => s.FullName == "Test.MyDerivedClass");
             var deps = await storage.GetRelationshipsBySourceAsync(myDerivedClass.Id);
             Assert.That(deps, Is.Not.Empty, "MyDerivedClass should have outgoing relationships");
 
             var inherits = deps.Where(r => r.RelationshipType == "Inherits").ToList();
             Assert.That(inherits, Has.Count.EqualTo(1),
                 "MyDerivedClass should inherit from MyBaseClass");
-            var myBaseClass = allSymbols.First(s => s.FullName == "MyBaseClass");
+            var myBaseClass = allSymbols.First(s => s.FullName == "Test.MyBaseClass");
             Assert.That(inherits[0].TargetSymbolId, Is.EqualTo(myBaseClass.Id));
 
             var implements = deps.Where(r => r.RelationshipType == "Implements").ToList();
@@ -103,7 +103,7 @@ public sealed class IndexingEngineTests
                 "MyDerivedClass should implement IMyInterface");
 
             // IMyInterface is an Interface kind, look it up directly
-            var myInterface = await storage.GetSymbolByFullNameAsync("IMyInterface");
+            var myInterface = await storage.GetSymbolByFullNameAsync("Test.IMyInterface");
             Assert.That(myInterface, Is.Not.Null);
             Assert.That(implements[0].TargetSymbolId, Is.EqualTo(myInterface.Id));
         }

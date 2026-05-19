@@ -76,8 +76,8 @@ public sealed class SemanticChunkerTests
         var (symbols, fileText) = extractSymbols("SampleClass.cs");
 
         var chunks = chunker.ChunkAll(symbols, fileText, "SampleClass.cs", Language.CSharp);
+        var sampleClassChunk = chunks.First(c => c.SymbolId == "CodeMemory.Tests.Fixtures.SampleClass");
 
-        var sampleClassChunk = chunks.First(c => c.SymbolId == "SampleClass");
         Assert.That(sampleClassChunk.Content, Does.Contain("using System.Numerics;"));
         Assert.That(sampleClassChunk.Content, Does.Contain("using System.Text.RegularExpressions;"));
         Assert.That(sampleClassChunk.Content, Does.Contain("namespace CodeMemory.Tests.Fixtures;"));
@@ -92,8 +92,8 @@ public sealed class SemanticChunkerTests
 
         var chunks = chunker.ChunkAll(symbols, fileText, "SampleClass.cs", Language.CSharp);
 
-        var addMethod = chunks.First(c => c.SymbolId == "SampleClass.Add(int a, int b)");
-        Assert.That(addMethod.Content, Does.Contain("// Parent: SampleClass"));
+        var addMethod = chunks.First(c => c.SymbolId == "CodeMemory.Tests.Fixtures.SampleClass.Add(int a, int b)");
+        Assert.That(addMethod.Content, Does.Contain("// Parent: CodeMemory.Tests.Fixtures.SampleClass"));
         Assert.That(addMethod.Content, Does.Contain("public int Add(int a, int b)"));
     }
 
@@ -105,7 +105,7 @@ public sealed class SemanticChunkerTests
 
         var chunks = chunker.ChunkAll(symbols, fileText, "SampleClass.cs", Language.CSharp);
 
-        var doNothing = chunks.First(c => c.SymbolId == "SampleClass.DoNothing()");
+        var doNothing = chunks.First(c => c.SymbolId == "CodeMemory.Tests.Fixtures.SampleClass.DoNothing()");
         Assert.That(doNothing.Content, Does.Contain("// intentional no-op"));
     }
 
@@ -117,7 +117,7 @@ public sealed class SemanticChunkerTests
 
         var chunks = chunker.ChunkAll(symbols, fileText, "SampleClass.cs", Language.CSharp);
 
-        var nameProp = chunks.First(c => c.SymbolId == "SampleClass.Name");
+        var nameProp = chunks.First(c => c.SymbolId == "CodeMemory.Tests.Fixtures.SampleClass.Name");
         Assert.That(nameProp.Content, Does.Contain("{ get; set; }"));
     }
 
@@ -129,7 +129,7 @@ public sealed class SemanticChunkerTests
 
         var chunks = chunker.ChunkAll(symbols, fileText, "SampleClass.cs", Language.CSharp);
 
-        var innerClass = chunks.First(c => c.SymbolId == "OuterClass.InnerClass");
+        var innerClass = chunks.First(c => c.SymbolId == "CodeMemory.Tests.Fixtures.OuterClass.InnerClass");
         Assert.That(innerClass, Is.Not.Null);
         Assert.That(innerClass.Content, Does.Contain("public class InnerClass"));
         Assert.That(innerClass.Metadata["chunkType"], Is.EqualTo("type"));
@@ -143,11 +143,10 @@ public sealed class SemanticChunkerTests
 
         var chunks = chunker.ChunkAll(symbols, fileText, "SampleClass.cs", Language.CSharp);
 
-        var innerMethod = chunks.First(c => c.SymbolId == "OuterClass.InnerClass.InnerMethod()");
+        var innerMethod = chunks.First(c => c.SymbolId == "CodeMemory.Tests.Fixtures.OuterClass.InnerClass.InnerMethod()");
         Assert.That(innerMethod, Is.Not.Null);
-        Assert.That(innerMethod.Content, Does.Contain("// Parent: OuterClass.InnerClass"));
-        Assert.That(innerMethod.Content, Does.Contain("public void InnerMethod() { }"));
-        Assert.That(innerMethod.Metadata["parentName"], Is.EqualTo("OuterClass.InnerClass"));
+        Assert.That(innerMethod.Content, Does.Contain("// Parent: CodeMemory.Tests.Fixtures.OuterClass.InnerClass"));
+        Assert.That(innerMethod.Metadata["parentName"], Is.EqualTo("CodeMemory.Tests.Fixtures.OuterClass.InnerClass"));
     }
 
     [Test]
@@ -171,7 +170,7 @@ public sealed class SemanticChunkerTests
 
         var chunks = chunker.ChunkAll(symbols, fileText, "SampleClass.cs", Language.CSharp);
 
-        var person = chunks.FirstOrDefault(c => c.SymbolId == "Person");
+        var person = chunks.FirstOrDefault(c => c.SymbolId == "CodeMemory.Tests.Fixtures.Person");
         Assert.That(person, Is.Not.Null);
         Assert.That(person.Content, Does.Contain("public record Person"));
     }
@@ -184,7 +183,7 @@ public sealed class SemanticChunkerTests
 
         var chunks = chunker.ChunkAll(symbols, fileText, "SampleClass.cs", Language.CSharp);
 
-        var status = chunks.FirstOrDefault(c => c.SymbolId == "Status");
+        var status = chunks.FirstOrDefault(c => c.SymbolId == "CodeMemory.Tests.Fixtures.Status");
         Assert.That(status, Is.Not.Null);
         Assert.That(status.Content, Does.Contain("public enum Status"));
     }

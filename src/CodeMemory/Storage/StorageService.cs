@@ -129,7 +129,15 @@ public sealed class StorageService : IStorageService, IDisposable
         throwIfNotInitialized();
         Expression<Func<SymbolRecord, bool>> filter = s => s.FullName == fullName;
         var results = await symbols!.GetAsync(filter, top: 1, options: null, ct).ToListAsync(ct);
-        return results.FirstOrDefault();
+        var symbol = results.FirstOrDefault();
+        if (symbol != null)
+            return symbol;
+
+        // Fallback: try matching by short name for convenience
+        Expression<Func<SymbolRecord, bool>> nameFilter = s => s.Name == fullName;
+        var nameResults = await symbols!.GetAsync(nameFilter, top: 1, options: null, ct).ToListAsync(ct);
+
+        return nameResults.FirstOrDefault();
     }
 
     public async Task<ChunkRecord?> GetChunkAsync(string id, CancellationToken ct = default)
@@ -142,6 +150,19 @@ public sealed class StorageService : IStorageService, IDisposable
     {
         throwIfNotInitialized();
         return await relationships!.GetAsync(id, cancellationToken: ct);
+    }
+
+    public async Task<IReadOnlyList<SymbolRecord>> GetSymbolsByParentAsync(
+        string parentFullName, CancellationToken ct = default)
+    {
+        throwIfNotInitialized();
+
+        var prefix = parentFullName + ".";
+        Expression<Func<SymbolRecord, bool>> filter = s => s.FullName != null;
+
+        return (await symbols!.GetAsync(filter, top: 10000, options: null, ct).ToListAsync(ct))
+            .Where(s => s.FullName.StartsWith(prefix, StringComparison.Ordinal))
+            .ToList();
     }
 
     public async Task<IReadOnlyList<SymbolRecord>> GetSymbolsByFileAsync(

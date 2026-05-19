@@ -35,8 +35,8 @@ public sealed class RoslynRelationshipExtractorTests
         var relationships = extractor.ExtractRelationships(tree, symbols, filePath);
 
         Assert.That(relationships.Any(r =>
-            r.SourceSymbolId == "MyDerivedClass" &&
-            r.TargetSymbolId == "MyBaseClass" &&
+            r.SourceSymbolId == "CodeMemory.Tests.Fixtures.MyDerivedClass" &&
+            r.TargetSymbolId == "CodeMemory.Tests.Fixtures.MyBaseClass" &&
             r.RelationshipType == "Inherits"), Is.True);
     }
 
@@ -51,8 +51,8 @@ public sealed class RoslynRelationshipExtractorTests
         var relationships = extractor.ExtractRelationships(tree, symbols, filePath);
 
         Assert.That(relationships.Any(r =>
-            r.SourceSymbolId == "MyDerivedClass" &&
-            r.TargetSymbolId == "IMyInterface" &&
+            r.SourceSymbolId == "CodeMemory.Tests.Fixtures.MyDerivedClass" &&
+            r.TargetSymbolId == "CodeMemory.Tests.Fixtures.IMyInterface" &&
             r.RelationshipType == "Implements"), Is.True);
     }
 
@@ -67,8 +67,8 @@ public sealed class RoslynRelationshipExtractorTests
         var relationships = extractor.ExtractRelationships(tree, symbols, filePath);
 
         Assert.That(relationships.Any(r =>
-            r.SourceSymbolId == "MyDerivedClass.DoSomething()" &&
-            r.TargetSymbolId == "MyBaseClass" &&
+            r.SourceSymbolId == "CodeMemory.Tests.Fixtures.MyDerivedClass.DoSomething()" &&
+            r.TargetSymbolId == "CodeMemory.Tests.Fixtures.MyBaseClass" &&
             r.RelationshipType == "References"), Is.True);
     }
 
@@ -97,8 +97,8 @@ public sealed class RoslynRelationshipExtractorTests
         var relationships = extractor.ExtractRelationships(tree, symbols, filePath);
 
         Assert.That(relationships.Any(r =>
-            r.SourceSymbolId == "ReferenceHolder.Reference" &&
-            r.TargetSymbolId == "MyBaseClass" &&
+            r.SourceSymbolId == "CodeMemory.Tests.Fixtures.ReferenceHolder.Reference" &&
+            r.TargetSymbolId == "CodeMemory.Tests.Fixtures.MyBaseClass" &&
             r.RelationshipType == "References"), Is.True);
     }
 
@@ -114,7 +114,7 @@ public sealed class RoslynRelationshipExtractorTests
 
         Assert.That(relationships.Any(r =>
             r.SourceSymbolId.Contains("Process") &&
-            r.TargetSymbolId == "MyBaseClass" &&
+            r.TargetSymbolId == "CodeMemory.Tests.Fixtures.MyBaseClass" &&
             r.RelationshipType == "References"), Is.True);
     }
 

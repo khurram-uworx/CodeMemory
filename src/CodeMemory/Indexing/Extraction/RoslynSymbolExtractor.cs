@@ -210,7 +210,7 @@ public sealed class RoslynSymbolExtractor : ISymbolExtractor
         {
             case BaseNamespaceDeclarationSyntax nsDecl:
                 foreach (var nsMember in nsDecl.Members)
-                    extractFromMember(nsMember, filePath, parentFullName, symbols);
+                    extractFromMember(nsMember, filePath, $"{nsDecl.Name}", symbols);
                 break;
 
             case EnumDeclarationSyntax enumDecl:

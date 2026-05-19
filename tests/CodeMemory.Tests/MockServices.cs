@@ -64,6 +64,9 @@ sealed class MockStorageService : IStorageService
     public Task<RelationshipRecord?> GetRelationshipAsync(string id, CancellationToken ct = default)
         => Task.FromResult<RelationshipRecord?>(null);
 
+    public Task<IReadOnlyList<SymbolRecord>> GetSymbolsByParentAsync(string parentFullName, CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<SymbolRecord>>([]);
+
     public Task<IReadOnlyList<SymbolRecord>> GetSymbolsByFileAsync(string filePath, int top = 100, CancellationToken ct = default)
         => Task.FromResult<IReadOnlyList<SymbolRecord>>([]);
 
