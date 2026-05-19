@@ -17,22 +17,22 @@
     //  "type": "remote",
     //  "url": "http://localhost:4792/api/mcp/codememory"
     //}
-    //"code-memory": {
-    //  "type": "local",
-    //  "command": [
-    //    "npx",
-    //    "-y",
-    //    "@uworx/code-memory"
-    //  ]
-    //}
     "code-memory": {
       "type": "local",
       "command": [
-        "dotnet",
-        "run",
-        "--project",
-        ".\\src\\CodeMemory.Mcp\\CodeMemory.Mcp.csproj"
+        "npx",
+        "-y",
+        "@uworx/code-memory"
       ]
     }
+    //"code-memory": {
+    //  "type": "local",
+    //  "command": [
+    //    "dotnet",
+    //    "run",
+    //    "--project",
+    //    ".\\src\\CodeMemory.Mcp\\CodeMemory.Mcp.csproj"
+    //  ]
+    //}
   }
 }

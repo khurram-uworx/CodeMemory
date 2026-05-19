@@ -127,9 +127,13 @@ public sealed class GitHistoryService : IGitHistoryService, IDisposable
             if (process == null)
                 return (1, "");
 
-            var stdout = await process.StandardOutput.ReadToEndAsync(ct);
-            var stderr = await process.StandardError.ReadToEndAsync(ct);
-            await process.WaitForExitAsync(ct);
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(30));
+            var timeoutCt = cts.Token;
+
+            var stdout = await process.StandardOutput.ReadToEndAsync(timeoutCt);
+            var stderr = await process.StandardError.ReadToEndAsync(timeoutCt);
+            await process.WaitForExitAsync(timeoutCt);
 
             if (process.ExitCode != 0)
             {

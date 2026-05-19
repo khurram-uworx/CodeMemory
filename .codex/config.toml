@@ -3,7 +3,7 @@ url = "https://learn.microsoft.com/api/mcp"
 
 [mcp_servers.code-memory]
 command = "npx"
-args = ["@uworx/code-memory"]
+args = ["-y", "@uworx/code-memory"]
 
 [mcp_servers.code-memory.tools.ping]
 approval_mode = "approve"

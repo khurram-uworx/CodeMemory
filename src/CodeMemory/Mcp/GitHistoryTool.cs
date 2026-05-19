@@ -21,7 +21,8 @@ public sealed class GitHistoryTool
     [McpServerTool, Description("Returns git commit history for a given symbol. Shows total commits, unique authors, first/last commit dates, and recent commits.")]
     public async Task<object?> GetSymbolHistoryAsync(
         [Description("Full symbol path (e.g., MyClass.MyMethod)")] string symbolPath,
-        [Description("Maximum number of commits to return (default 20)")] int maxCommits = 20)
+        [Description("Maximum number of commits to return (default 5)")] int maxCommits = 5,
+        CancellationToken ct = default)
     {
         if (gitHistoryService == null)
         {
@@ -29,13 +30,14 @@ public sealed class GitHistoryTool
             return new { warning = "Git history service not available", symbolPath };
         }
 
-        return await gitHistoryService.GetSymbolHistoryAsync(symbolPath, maxCommits);
+        return await gitHistoryService.GetSymbolHistoryAsync(symbolPath, maxCommits, ct);
     }
 
     [McpServerTool, Description("Returns the most frequently changed files in the repository (hotspots). Files are ranked by commit count.")]
     public async Task<IReadOnlyList<HotspotInfo>> GetHotspotsAsync(
         [Description("Number of top hotspots to return (default 10)")] int top = 10,
-        [Description("Maximum commits to scan (default 100)")] int maxCommits = 100)
+        [Description("Maximum commits to scan (default 25)")] int maxCommits = 25,
+        CancellationToken ct = default)
     {
         if (gitHistoryService == null)
         {
@@ -43,6 +45,6 @@ public sealed class GitHistoryTool
             return [];
         }
 
-        return await gitHistoryService.GetHotspotsAsync(top, maxCommits);
+        return await gitHistoryService.GetHotspotsAsync(top, maxCommits, ct);
     }
 }

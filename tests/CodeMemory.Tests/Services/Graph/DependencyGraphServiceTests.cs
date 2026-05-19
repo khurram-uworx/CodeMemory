@@ -61,8 +61,8 @@ public sealed class DependencyGraphServiceTests : BaseServicesTests
         var result = await graph.TraceAsync("MyClass", "upstream", 1);
 
         Assert.That(result, Has.Count.EqualTo(2));
-        Assert.That(result.Any(n => n.SymbolName == myLoggerGuid), Is.True);
-        Assert.That(result.Any(n => n.SymbolName == myConfigGuid), Is.True);
+        Assert.That(result.Any(n => n.SymbolName == "MyLogger"), Is.True);
+        Assert.That(result.Any(n => n.SymbolName == "MyConfig"), Is.True);
     }
 
     [Test]
@@ -95,8 +95,8 @@ public sealed class DependencyGraphServiceTests : BaseServicesTests
         var result = await graph.TraceAsync("MyBaseClass", "downstream", 1);
 
         Assert.That(result, Has.Count.EqualTo(2));
-        Assert.That(result.Any(n => n.SymbolName == myServiceGuid), Is.True);
-        Assert.That(result.Any(n => n.SymbolName == anotherServiceGuid), Is.True);
+        Assert.That(result.Any(n => n.SymbolName == "MyService"), Is.True);
+        Assert.That(result.Any(n => n.SymbolName == "AnotherService"), Is.True);
     }
 
     [Test]
@@ -161,8 +161,8 @@ public sealed class DependencyGraphServiceTests : BaseServicesTests
         var result = await graph.TraceAsync("MyClass", "upstream", 2);
 
         Assert.That(result, Has.Count.EqualTo(2));
-        Assert.That(result.Any(n => n.SymbolName == myLoggerGuid), Is.True);
-        Assert.That(result.Any(n => n.SymbolName == myConfigGuid), Is.True);
+        Assert.That(result.Any(n => n.SymbolName == "MyLogger"), Is.True);
+        Assert.That(result.Any(n => n.SymbolName == "MyConfig"), Is.True);
     }
 
     [Test]
@@ -193,8 +193,8 @@ public sealed class DependencyGraphServiceTests : BaseServicesTests
         var result = await graph.TraceAsync("A", "upstream", 3);
 
         Assert.That(result, Has.Count.EqualTo(2));
-        Assert.That(result.Any(n => n.SymbolName == bGuid), Is.True);
-        Assert.That(result.Any(n => n.SymbolName == aGuid), Is.True);
+        Assert.That(result.Any(n => n.SymbolName == "B"), Is.True);
+        Assert.That(result.Any(n => n.SymbolName == "A"), Is.True);
     }
 
     [Test]
@@ -279,7 +279,7 @@ public sealed class DependencyGraphServiceTests : BaseServicesTests
         var result = await graph.FindRelatedAsync("MyClass", "Implements");
 
         Assert.That(result, Has.Count.EqualTo(1));
-        Assert.That(result[0].SymbolName, Is.EqualTo(iConfigGuid));
+        Assert.That(result[0].SymbolName, Is.EqualTo("IConfig"));
     }
 
     [Test]

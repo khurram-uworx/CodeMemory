@@ -126,7 +126,7 @@ public sealed class ComponentClusteringService : IComponentClusteringService
         foreach (var sym in symbolsPerKind)
         {
             var component = getTopLevelDirectory(sym.FilePath);
-            symbolToComponent[sym.FullName] = component;
+            symbolToComponent[sym.Id] = component;
             if (!componentFiles.ContainsKey(component))
                 componentFiles[component] = [];
             componentFiles[component].Add(sym.FilePath);
@@ -139,15 +139,14 @@ public sealed class ComponentClusteringService : IComponentClusteringService
 
         foreach (var sym in symbolsPerKind)
         {
-            var rels = await storage.GetRelationshipsBySourceAsync(sym.FullName, ct);
-            var sourceComponent = symbolToComponent.GetValueOrDefault(sym.FullName);
+            var rels = await storage.GetRelationshipsBySourceAsync(sym.Id, ct);
+            var sourceComponent = symbolToComponent.GetValueOrDefault(sym.Id);
             if (sourceComponent == null)
                 continue;
 
             foreach (var rel in rels)
             {
-                var targetName = rel.TargetSymbolId;
-                var targetComponent = symbolToComponent.GetValueOrDefault(targetName);
+                var targetComponent = symbolToComponent.GetValueOrDefault(rel.TargetSymbolId);
                 if (targetComponent == null)
                     continue;
 

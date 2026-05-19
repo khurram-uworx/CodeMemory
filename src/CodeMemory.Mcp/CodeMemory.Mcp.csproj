@@ -5,9 +5,9 @@
     <OutputType>Exe</OutputType>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Version>0.2.5</Version>
-    <FileVersion>0.2.5.0</FileVersion>
-    <InformationalVersion>0.2.5</InformationalVersion>
+    <Version>0.2.8</Version>
+    <FileVersion>0.2.8.0</FileVersion>
+    <InformationalVersion>0.2.8</InformationalVersion>
   </PropertyGroup>
 
   <ItemGroup>

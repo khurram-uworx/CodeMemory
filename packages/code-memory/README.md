@@ -5,27 +5,15 @@
 
 **code-memory** transforms repositories into queryable intelligence — extracting symbols, relationships, and semantic understanding — and exposing it through MCP tools designed for AI coding agents.
 
-## How It Works
+# Installation
 
-The `@uworx/code-memory` package is a lightweight CLI wrapper. On `npm install`, it downloads the platform-specific native binary from GitHub Releases. The binary is a self-contained .NET single-file publish with no runtime dependencies.
+From your terminal run:
 
-## MCP Tools
+```bash
+npx -y @uworx/code-memory --version
+```
 
-| Tool | What it gives you |
-|---|---|
-| `semantic_search` | Natural language code search |
-| `trace_dependency` | What depends on what (upstream/downstream) |
-| `get_architecture_overview` | Component structure, language breakdown |
-| `get_edit_context` | Source code + deps + tests for a symbol |
-| `find_related_code` | Related symbols by relationship type |
-| `impact_analysis` | Change impact: affected files, components, tests |
-| `get_component_clusters` | Logical groupings by inter-component coupling |
-| `get_symbol_history` | Git commit history for a symbol |
-| `get_hotspots` | Most frequently changed files |
-| `sql_query` | SQL queries over indexed data (SELECT/WHERE/ORDER BY/GROUP BY, vector search) |
-| `ping` | Health check + indexing status |
-
-All tools return structured JSON.
+It should print the installed version and exit. You can then proceed to configure your MCP client (VS Code, Cursor, Claude Desktop, etc.) to use the `code-memory` MCP server as described below.
 
 ## Configuration
 
@@ -54,6 +42,28 @@ This indexes the current working directory. To index a different folder, pass `-
   }
 }
 ```
+
+## How It Works
+
+The `@uworx/code-memory` package is a lightweight CLI wrapper. On `npm install`, it downloads the platform-specific native binary from GitHub Releases. The binary is a self-contained .NET single-file publish with no runtime dependencies.
+
+## MCP Tools
+
+| Tool | What it gives you |
+|---|---|
+| `semantic_search` | Natural language code search |
+| `trace_dependency` | What depends on what (upstream/downstream) |
+| `get_architecture_overview` | Component structure, language breakdown |
+| `get_edit_context` | Source code + deps + tests for a symbol |
+| `find_related_code` | Related symbols by relationship type |
+| `impact_analysis` | Change impact: affected files, components, tests |
+| `get_component_clusters` | Logical groupings by inter-component coupling |
+| `get_symbol_history` | Git commit history for a symbol |
+| `get_hotspots` | Most frequently changed files |
+| `sql_query` | SQL queries over indexed data (SELECT/WHERE/ORDER BY/GROUP BY, vector search) |
+| `ping` | Health check + indexing status |
+
+All tools return structured JSON.
 
 ## Requirements
 

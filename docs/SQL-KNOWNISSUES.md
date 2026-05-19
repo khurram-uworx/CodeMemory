@@ -14,9 +14,6 @@
 
 ## Parse / Syntax Gaps
 
-### 3a CTEs (Common Table Expressions)
-
-
 ### 3 JOINs, UNION, WHERE subqueries
 
 JOINs, UNION, and subqueries in WHERE clauses are structurally rejected (`SetExpression` check) or silently mishandled (joins would return cross-product data with no error). JOINs require deep architectural changes: multi-table FROM clause, qualified column names, cross-collection row merging, and the `TableSchemaProvider` (item 11) must be wired first.

@@ -1,5 +1,6 @@
 using CodeMemory.Indexing.Search;
 using CodeMemory.Mcp.Models;
+using CodeMemory.Storage;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
 using System.ComponentModel;
@@ -10,6 +11,7 @@ namespace CodeMemory.Mcp;
 public sealed class SemanticSearchTool
 {
     readonly ISemanticSearchService? searchService;
+    readonly IStorageService? storage;
     readonly ILogger<SemanticSearchTool> logger;
 
     public SemanticSearchTool(ILogger<SemanticSearchTool> logger,
@@ -17,6 +19,7 @@ public sealed class SemanticSearchTool
     {
         this.logger = logger;
         searchService = serviceProvider.GetService<ISemanticSearchService>();
+        storage = serviceProvider.GetService<IStorageService>();
     }
 
     [McpServerTool, Description("Searches the indexed repository for code semantically related to the given natural language query. Returns ranked code chunks with file paths and scores.")]
@@ -33,14 +36,29 @@ public sealed class SemanticSearchTool
 
         var capped = Math.Min(maxResults, 50);
         var results = await searchService.SearchAsync(query, capped, minimumSimilarity);
-        return results.Select(r => new SearchResult
+
+        var output = new List<SearchResult>(results.Count);
+        foreach (var r in results)
         {
-            ChunkId = r.Chunk.Id,
-            FilePath = r.Chunk.FilePath,
-            Score = r.Score,
-            Content = r.Chunk.Content,
-            SymbolName = r.Chunk.SymbolId,
-            LineRange = $"{r.Chunk.LineStart}-{r.Chunk.LineEnd}"
-        }).ToList();
+            var symbolName = r.Chunk.SymbolId;
+            if (storage != null && r.Chunk.SymbolId != null)
+            {
+                var symbol = await storage.GetSymbolAsync(r.Chunk.SymbolId);
+                if (symbol != null)
+                    symbolName = symbol.Name;
+            }
+
+            output.Add(new SearchResult
+            {
+                ChunkId = r.Chunk.Id,
+                FilePath = r.Chunk.FilePath,
+                Score = r.Score,
+                Content = r.Chunk.Content,
+                SymbolName = symbolName,
+                LineRange = $"{r.Chunk.LineStart}-{r.Chunk.LineEnd}"
+            });
+        }
+
+        return output;
     }
 }

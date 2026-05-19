@@ -3,6 +3,14 @@
     "microsoft-learn": {
       "url": "https://learn.microsoft.com/api/mcp",
       "type": "http"
+    },
+    "code-memory": {
+      "type": "local",
+      "command": "npx -y @uworx/code-memory",
+      "args": [],
+      "tools": [
+        "*"
+      ]
     }
   }
 }

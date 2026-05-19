@@ -16,17 +16,25 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using System.Reflection;
 
-var repoRoot = args switch
-{
-    ["--repo", var path] => Path.GetFullPath(path),
-    _ => Environment.CurrentDirectory
-};
-
 var version = Assembly.GetExecutingAssembly()
     .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
     ?.InformationalVersion
     ?? Assembly.GetExecutingAssembly().GetName().Version?.ToString()
     ?? "unknown";
+
+if (args is ["--help"] or ["-h"] or ["--version"] or ["-v"])
+{
+    Console.WriteLine($"CodeMemory MCP v{version}");
+    Console.WriteLine();
+    Console.WriteLine("Configure your Coding Agent / IDE with command \"npx -y @uworx/code-memory\"");
+    return;
+}
+
+var repoRoot = args switch
+{
+    ["--repo", var path] => Path.GetFullPath(path),
+    _ => Environment.CurrentDirectory
+};
 
 Console.Error.WriteLine($"CodeMemory MCP v{version} (stdio) — repo: {repoRoot}");
 

@@ -56,9 +56,9 @@ public sealed class ComponentClusteringServiceTests : BaseServicesTests
         ]);
 
         await storage.StoreRelationshipsAsync([
-            new() { Id = "r1", SourceSymbolId = "App.Service", TargetSymbolId = "Lib.Config", RelationshipType = "References" },
-            new() { Id = "r2", SourceSymbolId = "App.Service", TargetSymbolId = "Lib.Util", RelationshipType = "References" },
-            new() { Id = "r3", SourceSymbolId = "Lib.Config", TargetSymbolId = "App.Service", RelationshipType = "References" },
+            new() { Id = "r1", SourceSymbolId = "s1", TargetSymbolId = "s2", RelationshipType = "References" },
+            new() { Id = "r2", SourceSymbolId = "s1", TargetSymbolId = "s3", RelationshipType = "References" },
+            new() { Id = "r3", SourceSymbolId = "s2", TargetSymbolId = "s1", RelationshipType = "References" },
         ]);
 
         var service = createService(storage);
@@ -83,7 +83,7 @@ public sealed class ComponentClusteringServiceTests : BaseServicesTests
         ]);
 
         await storage.StoreRelationshipsAsync([
-            new() { Id = "r1", SourceSymbolId = "Other.App", TargetSymbolId = "Other.Util", RelationshipType = "References" },
+            new() { Id = "r1", SourceSymbolId = "s2", TargetSymbolId = "s3", RelationshipType = "References" },
         ]);
 
         var service = createService(storage);
@@ -105,7 +105,7 @@ public sealed class ComponentClusteringServiceTests : BaseServicesTests
         ]);
 
         await storage.StoreRelationshipsAsync([
-            new() { Id = "r1", SourceSymbolId = "App.Service", TargetSymbolId = "Lib.Config", RelationshipType = "References" },
+            new() { Id = "r1", SourceSymbolId = "s1", TargetSymbolId = "s2", RelationshipType = "References" },
         ]);
 
         var service = createService(storage);

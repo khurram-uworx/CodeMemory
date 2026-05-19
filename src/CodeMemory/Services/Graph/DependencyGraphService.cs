@@ -22,26 +22,34 @@ public sealed class DependencyGraphService : IDependencyGraphService
         if (currentDepth >= maxDepth || !visited.Add(symbolId))
             return;
 
-        IReadOnlyList<RelationshipRecord> rels;
-
         if (direction is "downstream" or "both")
         {
-            rels = await storage.GetRelationshipsByTargetAsync(symbolId, ct);
+            var rels = await storage.GetRelationshipsByTargetAsync(symbolId, ct);
             foreach (var rel in rels)
             {
+                var srcSymbol = await storage.GetSymbolAsync(rel.SourceSymbolId, ct);
                 result.Add(new DependencyNode(
-                    rel.SourceSymbolId, "", rel.RelationshipType, "", rel.RelationshipType));
+                    srcSymbol?.Name ?? rel.SourceSymbolId,
+                    srcSymbol?.FilePath ?? "",
+                    srcSymbol?.Kind ?? rel.RelationshipType,
+                    srcSymbol != null ? $"{srcSymbol.LineStart}-{srcSymbol.LineEnd}" : "",
+                    rel.RelationshipType));
                 await bfsAsync(rel.SourceSymbolId, direction, maxDepth, visited, result, currentDepth + 1, ct);
             }
         }
 
         if (direction is "upstream" or "both")
         {
-            rels = await storage.GetRelationshipsBySourceAsync(symbolId, ct);
+            var rels = await storage.GetRelationshipsBySourceAsync(symbolId, ct);
             foreach (var rel in rels)
             {
+                var tgtSymbol = await storage.GetSymbolAsync(rel.TargetSymbolId, ct);
                 result.Add(new DependencyNode(
-                    rel.TargetSymbolId, "", rel.RelationshipType, "", rel.RelationshipType));
+                    tgtSymbol?.Name ?? rel.TargetSymbolId,
+                    tgtSymbol?.FilePath ?? "",
+                    tgtSymbol?.Kind ?? rel.RelationshipType,
+                    tgtSymbol != null ? $"{tgtSymbol.LineStart}-{tgtSymbol.LineEnd}" : "",
+                    rel.RelationshipType));
                 await bfsAsync(rel.TargetSymbolId, direction, maxDepth, visited, result, currentDepth + 1, ct);
             }
         }
@@ -86,8 +94,13 @@ public sealed class DependencyGraphService : IDependencyGraphService
             {
                 if (relationType is "all" || rel.RelationshipType.Equals(relationType, StringComparison.OrdinalIgnoreCase))
                 {
+                    var tgtSymbol = await storage.GetSymbolAsync(rel.TargetSymbolId, ct);
                     result.Add(new DependencyNode(
-                        rel.TargetSymbolId, "", rel.RelationshipType, "", rel.RelationshipType));
+                        tgtSymbol?.Name ?? rel.TargetSymbolId,
+                        tgtSymbol?.FilePath ?? "",
+                        tgtSymbol?.Kind ?? rel.RelationshipType,
+                        tgtSymbol != null ? $"{tgtSymbol.LineStart}-{tgtSymbol.LineEnd}" : "",
+                        rel.RelationshipType));
                 }
             }
         }
@@ -114,14 +127,20 @@ public sealed class DependencyGraphService : IDependencyGraphService
         }
 
         var related = await storage.GetRelationshipsByTargetAsync(symbol.Id, ct);
-        var testSources = related
+        var testSourceIds = related
             .Where(r => r.RelationshipType == "TestCoverage")
             .Select(r => r.SourceSymbolId)
             .Distinct()
             .ToList();
 
-        if (testSources.Count > 0)
+        if (testSourceIds.Count > 0)
         {
+            var testSources = new List<string>(testSourceIds.Count);
+            foreach (var id in testSourceIds)
+            {
+                var sym = await storage.GetSymbolAsync(id, ct);
+                testSources.Add(sym?.Name ?? id);
+            }
             logger.LogDebug("FindTestCoverageAsync({Symbol}): {Count} test sources (from stored relationships)",
                 symbolPath, testSources.Count);
             return testSources;
