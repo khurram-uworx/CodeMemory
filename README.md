@@ -38,7 +38,7 @@ CodeMemory indexes a repository and exposes MCP tools:
 | `get_component_clusters` | Logical groupings by inter-component coupling |
 | `get_symbol_history` | Git commit history for a symbol |
 | `get_hotspots` | Most frequently changed files |
-| `sql_query` | SQL queries over indexed data (SELECT/WHERE/ORDER BY/GROUP BY, vector search via `ORDER BY Similarity DESC`) |
+| `sql_query` | SQL queries over indexed data (SELECT/WHERE/ORDER BY/GROUP BY/HAVING, CTEs, derived tables, aggregates, vector search via `ORDER BY Similarity DESC`) |
 | `ping` | Health check + indexing status (`indexingCompleted: true/false`) |
 
 All tools return structured JSON. No freeform prompts, no chat — pure deterministic repository intelligence.

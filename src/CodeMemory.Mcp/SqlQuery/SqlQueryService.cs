@@ -249,57 +249,6 @@ public sealed class SqlQueryService
         return r => r.GetValueOrDefault(sortColumn);
     }
 
-    List<Dictionary<string, object?>> applyOrderBy(
-        List<Dictionary<string, object?>> rows,
-        OrderBy? orderBy,
-        List<SelectColumnInfo> parsedColumns,
-        bool hasExplicitProjection)
-    {
-        if (orderBy?.Expressions is not { Count: > 0 } || rows.Count == 0)
-            return rows;
-
-        IOrderedEnumerable<Dictionary<string, object?>>? ordered = null;
-
-        for (int i = 0; i < orderBy.Expressions.Count; i++)
-        {
-            var orderExpr = orderBy.Expressions[i];
-            var orderCol = extractOrderByColumn(orderExpr.Expression, orderExpr.Asc ?? true);
-            if (orderCol is null) continue;
-
-            string? sortColumn = null;
-
-            // numeric position (1-based)
-            if (int.TryParse(orderCol.Name, out int pos) && pos >= 1 && hasExplicitProjection)
-            {
-                int index = pos - 1;
-                if (index < parsedColumns.Count)
-                {
-                    var col = parsedColumns[index];
-                    sortColumn = col.Alias ?? col.Name ?? (col.IsAggregate ? col.AggregateFunction + "(*)" : null);
-                }
-            }
-            else
-                sortColumn = resolveSortColumn(orderCol.Name, parsedColumns) ?? orderCol.Name;
-
-            if (sortColumn is null) continue;
-
-            var selector = makeSortSelector(sortColumn, parsedColumns);
-
-            if (i == 0)
-            {
-                ordered = orderCol.Ascending
-                    ? rows.OrderBy(selector)
-                    : rows.OrderByDescending(selector);
-            }
-            else
-                ordered = orderCol.Ascending
-                    ? ordered!.ThenBy(selector)
-                    : ordered!.ThenByDescending(selector);
-        }
-
-        return ordered?.ToList() ?? rows;
-    }
-
     // HAVING evaluator
     static List<Dictionary<string, object?>> applyHaving(
         List<Dictionary<string, object?>> rows, AstExpr havingExpr,
@@ -579,9 +528,66 @@ public sealed class SqlQueryService
                     };
                 }
 
+            case AstExpr.Like like:
+                {
+                    var lhs = evaluateExpression(like.Expression, row)?.ToString();
+                    var pattern = evaluateExpression(like.Pattern, row)?.ToString();
+                    if (lhs is null || pattern is null) return null;
+                    var result = matchLike(lhs, pattern);
+                    return like.Negated ? !result : result;
+                }
+
+            case AstExpr.ILike iLike:
+                {
+                    var lhs = evaluateExpression(iLike.Expression, row)?.ToString();
+                    var pattern = evaluateExpression(iLike.Pattern, row)?.ToString();
+                    if (lhs is null || pattern is null) return null;
+                    var result = matchLike(lhs.ToUpperInvariant(), pattern.ToUpperInvariant());
+                    return iLike.Negated ? !result : result;
+                }
+
+            case AstExpr.InList inList:
+                {
+                    var lhs = evaluateExpression(inList.Expression, row);
+                    var listValues = inList.List.Select(e => evaluateExpression(e, row)).ToList();
+                    var result = listValues.Any(v => Equals(lhs, v));
+                    return inList.Negated ? !result : result;
+                }
+
+            case AstExpr.IsNull isNull:
+                return evaluateExpression(isNull.Expression, row) is null;
+
+            case AstExpr.IsNotNull isNotNull:
+                return evaluateExpression(isNotNull.Expression, row) is not null;
+
+            case AstExpr.Between between:
+                {
+                    var exprVal = evaluateExpression(between.Expression, row);
+                    var lowVal = evaluateExpression(between.Low, row);
+                    var highVal = evaluateExpression(between.High, row);
+                    if (exprVal is null || lowVal is null || highVal is null) return null;
+                    var ld = safeToDouble(exprVal);
+                    var lv = safeToDouble(lowVal);
+                    var hv = safeToDouble(highVal);
+                    if (ld is null || lv is null || hv is null) return null;
+                    var result = ld >= lv && ld <= hv;
+                    return between.Negated ? !result : result;
+                }
+
             default:
                 return null;
         }
+    }
+
+    static bool matchLike(string input, string pattern)
+    {
+        if (pattern.StartsWith('%') && pattern.EndsWith('%') && pattern.Length > 2)
+            return input.Contains(pattern[1..^1], StringComparison.Ordinal);
+        if (pattern.StartsWith('%') && pattern.Length > 1)
+            return input.EndsWith(pattern[1..], StringComparison.Ordinal);
+        if (pattern.EndsWith('%') && pattern.Length > 1)
+            return input.StartsWith(pattern[..^1], StringComparison.Ordinal);
+        return input == pattern;
     }
 
     static object? coalesceArgs(Sequence<FunctionArg> args, Dictionary<string, object?> row)
@@ -664,6 +670,13 @@ public sealed class SqlQueryService
             default:
                 return expr.ToString() ?? "?";
         }
+    }
+
+    static List<Dictionary<string, object?>> filterCteRows(
+        List<Dictionary<string, object?>> rows, AstExpr? whereExpr)
+    {
+        if (whereExpr is null || rows.Count == 0) return rows;
+        return [.. rows.Where(r => isTruthy(evaluateExpression(whereExpr, r)))];
     }
 
     static List<Dictionary<string, object?>> projectRows(
@@ -767,6 +780,31 @@ public sealed class SqlQueryService
             return table.Name.Values.Last().Value;
 
         return null;
+    }
+
+    async Task<(string? tableName, bool isCte)> resolveFromSourceAsync(
+        VectorStore store, TableFactor relation,
+        Dictionary<string, List<Dictionary<string, object?>>> cteResults,
+        int defaultMaxResults, CancellationToken ct)
+    {
+        if (relation is TableFactor.Table table)
+        {
+            var name = table.Name.Values.Last().Value;
+            return (name, cteResults.ContainsKey(name));
+        }
+
+        if (relation is TableFactor.Derived derived)
+        {
+            var alias = derived.Alias?.Name?.Value;
+            if (string.IsNullOrEmpty(alias))
+                throw new InvalidOperationException("Derived table (subquery in FROM clause) must have an alias");
+
+            var subqueryResult = await executeCteSubqueryAsync(store, derived.SubQuery, cteResults, defaultMaxResults, ct);
+            cteResults[alias] = subqueryResult;
+            return (alias, true);
+        }
+
+        return (null, false);
     }
 
     static async Task<List<Dictionary<string, object?>>> materializeAsyncCore<T>(IAsyncEnumerable<T> source, Type recordType, CancellationToken ct)
@@ -884,6 +922,57 @@ public sealed class SqlQueryService
 
         => (this.registry, this.embeddingGenerator, this.logger) = (registry, embeddingGenerator, logger);
 
+    List<Dictionary<string, object?>> applyOrderBy(
+        List<Dictionary<string, object?>> rows,
+        OrderBy? orderBy,
+        List<SelectColumnInfo> parsedColumns,
+        bool hasExplicitProjection)
+    {
+        if (orderBy?.Expressions is not { Count: > 0 } || rows.Count == 0)
+            return rows;
+
+        IOrderedEnumerable<Dictionary<string, object?>>? ordered = null;
+
+        for (int i = 0; i < orderBy.Expressions.Count; i++)
+        {
+            var orderExpr = orderBy.Expressions[i];
+            var orderCol = extractOrderByColumn(orderExpr.Expression, orderExpr.Asc ?? true);
+            if (orderCol is null) continue;
+
+            string? sortColumn = null;
+
+            // numeric position (1-based)
+            if (int.TryParse(orderCol.Name, out int pos) && pos >= 1 && hasExplicitProjection)
+            {
+                int index = pos - 1;
+                if (index < parsedColumns.Count)
+                {
+                    var col = parsedColumns[index];
+                    sortColumn = col.Alias ?? col.Name ?? (col.IsAggregate ? col.AggregateFunction + "(*)" : null);
+                }
+            }
+            else
+                sortColumn = resolveSortColumn(orderCol.Name, parsedColumns) ?? orderCol.Name;
+
+            if (sortColumn is null) continue;
+
+            var selector = makeSortSelector(sortColumn, parsedColumns);
+
+            if (i == 0)
+            {
+                ordered = orderCol.Ascending
+                    ? rows.OrderBy(selector)
+                    : rows.OrderByDescending(selector);
+            }
+            else
+                ordered = orderCol.Ascending
+                    ? ordered!.ThenBy(selector)
+                    : ordered!.ThenByDescending(selector);
+        }
+
+        return ordered?.ToList() ?? rows;
+    }
+
     LambdaExpression buildFilterExpression(Type recordType, AstExpr? whereExpr)
     {
         var genericMethod = BuildFilterMethodCache.GetOrAdd(recordType, t =>
@@ -982,6 +1071,167 @@ public sealed class SqlQueryService
         return results;
     }
 
+    async Task<Dictionary<string, List<Dictionary<string, object?>>>> materializeCtesAsync(
+        VectorStore store, With withClause, int defaultMaxResults, CancellationToken ct)
+    {
+        var results = new Dictionary<string, List<Dictionary<string, object?>>>(StringComparer.OrdinalIgnoreCase);
+
+        if (withClause.Recursive)
+            throw new NotSupportedException("Recursive CTEs are not yet supported");
+
+        foreach (var cte in withClause.CteTables)
+        {
+            var cteName = cte.Alias.Name.Value;
+
+            if (results.ContainsKey(cteName))
+                throw new InvalidOperationException($"Duplicate CTE name '{cteName}'");
+
+            var cteData = await executeCteSubqueryAsync(store, cte.Query, results, defaultMaxResults, ct);
+            results[cteName] = cteData;
+        }
+
+        return results;
+    }
+
+    async Task<List<Dictionary<string, object?>>> executeCteSubqueryAsync(
+        VectorStore store, Query query,
+        Dictionary<string, List<Dictionary<string, object?>>> cteResults,
+        int defaultMaxResults, CancellationToken ct)
+    {
+        var setExpr = query.Body;
+        if (setExpr is not SetExpression.SelectExpression selectExpr)
+            throw new NotSupportedException("CTE subquery must be a simple SELECT (no UNION, VALUES, etc.)");
+
+        var selectBody = selectExpr.Select;
+        if (selectBody.From is null || selectBody.From.Count == 0)
+            throw new InvalidOperationException("CTE subquery SELECT must have a FROM clause");
+
+        var (tableName, isCteSource) = await resolveFromSourceAsync(store, selectBody.From[0].Relation, cteResults, defaultMaxResults, ct);
+        if (tableName is null)
+            throw new InvalidOperationException("Could not determine table name from CTE subquery FROM clause");
+
+        var entry = isCteSource ? null : registry.GetEntry(tableName);
+        if (!isCteSource && entry is null)
+            throw new InvalidOperationException($"Unknown table '{tableName}' referenced in CTE subquery");
+
+        // Parse CTE's own SELECT projection
+        bool hasExplicitProjection = selectBody.Projection is { Count: > 0 }
+            && selectBody.Projection[0] is not SelectItem.Wildcard;
+
+        List<SelectColumnInfo> parsedColumns = [];
+        if (hasExplicitProjection)
+            parsedColumns = parseSelectColumns(selectBody.Projection);
+
+        // Check for GROUP BY
+        bool hasGroupBy = selectBody.GroupBy is GroupByExpression.Expressions;
+        List<string> groupByColumnNames = [];
+        if (selectBody.GroupBy is GroupByExpression.Expressions gbExpr && hasGroupBy)
+        {
+            groupByColumnNames = extractGroupByColumns(gbExpr);
+            if (groupByColumnNames.Count == 0)
+                throw new InvalidOperationException("CTE subquery GROUP BY requires at least one column");
+        }
+
+        // Check for DISTINCT
+        bool hasDistinct = selectBody.Distinct is DistinctFilter.Distinct;
+
+        var havingExpr = selectBody.Having;
+        var whereExpr = selectBody.Selection;
+        var orderBy = query.OrderBy;
+        var limitExpr = query.Limit;
+
+        bool isVectorSearch = SqlQueryService.isVectorSearch(orderBy);
+
+        bool hasAggregates = parsedColumns.Any(c => c.IsAggregate);
+        bool needsFullFetch = hasGroupBy || hasAggregates || hasDistinct;
+
+        int cteLimit = defaultMaxResults;
+        if (limitExpr is AstExpr.LiteralValue lv && lv.Value is Value.Number num)
+            cteLimit = int.Parse(num.Value);
+
+        int fetchTop = needsFullFetch ? int.MaxValue : cteLimit;
+
+        // Fetch data
+        List<Dictionary<string, object?>> result;
+        if (isCteSource)
+        {
+            if (isVectorSearch)
+                throw new NotSupportedException("ORDER BY Similarity DESC is not supported when querying a CTE");
+
+            result = filterCteRows(cteResults[tableName], whereExpr);
+        }
+        else
+        {
+            if (isVectorSearch)
+            {
+                if (hasGroupBy || hasAggregates || hasDistinct)
+                    throw new NotSupportedException("GROUP BY, DISTINCT, and aggregates are not supported with vector search in CTE subquery");
+
+                if (entry!.RecordType != typeof(ChunkRecord))
+                    throw new NotSupportedException("ORDER BY Similarity DESC is only supported for ChunkRecord in CTE subquery");
+
+                result = await queryVectorAsync(store, entry, whereExpr, cteLimit, ct);
+            }
+            else
+                result = await queryFilteredAsync(store, entry, whereExpr, fetchTop, ct);
+        }
+
+        // Apply DISTINCT — same logic as main query
+        if (hasDistinct && !hasGroupBy && !hasAggregates)
+        {
+            var seen = new HashSet<string>();
+            if (hasExplicitProjection)
+            {
+                result = [.. result.Where(r =>
+                {
+                    var key = string.Join('\0',
+                        parsedColumns.Select(c =>
+                        {
+                            if (c.Expression is not null)
+                                return evaluateExpression(c.Expression, r)?.ToString() ?? "NULL";
+                            if (c.Name is not null)
+                                return r.GetValueOrDefault(c.Name)?.ToString() ?? "NULL";
+                            return "NULL";
+                        }));
+                    return seen.Add(key);
+                })];
+            }
+            else
+            {
+                var keys = result.Count > 0
+                    ? result[0].Keys.Where(k => !k.StartsWith("__")).ToList()
+                    : [];
+                result = [.. result.Where(r =>
+                {
+                    var key = string.Join('\0',
+                        keys.Select(n => r.GetValueOrDefault(n)?.ToString() ?? "NULL"));
+                    return seen.Add(key);
+                })];
+            }
+        }
+
+        // Apply GROUP BY or global aggregates
+        if (hasGroupBy || hasAggregates)
+            result = applyGroupBy(result, parsedColumns, groupByColumnNames);
+
+        // Apply HAVING
+        if (havingExpr is not null)
+            result = applyHaving(result, havingExpr, parsedColumns);
+
+        // Apply ORDER BY
+        result = applyOrderBy(result, orderBy, parsedColumns, hasExplicitProjection);
+
+        // Apply LIMIT
+        if (cteLimit < result.Count)
+            result = result.Take(cteLimit).ToList();
+
+        // Project columns
+        if (hasExplicitProjection && !hasGroupBy && !hasAggregates)
+            result = projectRows(result, parsedColumns);
+
+        return result;
+    }
+
     public async Task<SqlQueryResult> ExecuteAsync(VectorStore store, string sql, int maxResults = 100, CancellationToken ct = default)
     {
         var sw = Stopwatch.StartNew();
@@ -1016,12 +1266,30 @@ public sealed class SqlQueryService
             if (selectBody.From is null || selectBody.From.Count == 0)
                 return fail("SELECT must have a FROM clause with a table name", sw);
 
-            var tableName = extractTableName(selectBody.From[0].Relation);
+            // Materialize CTEs before main query
+            Dictionary<string, List<Dictionary<string, object?>>> cteResults;
+            if (query.With is not null)
+            {
+                try
+                {
+                    cteResults = await materializeCtesAsync(store, query.With, maxResults, ct);
+                }
+                catch (Exception ex)
+                {
+                    return fail(ex.Message, sw);
+                }
+            }
+            else
+            {
+                cteResults = new Dictionary<string, List<Dictionary<string, object?>>>(StringComparer.OrdinalIgnoreCase);
+            }
+
+            var (tableName, isCte) = await resolveFromSourceAsync(store, selectBody.From[0].Relation, cteResults, maxResults, ct);
             if (tableName is null)
                 return fail("Could not determine table name from FROM clause", sw);
 
-            var entry = registry.GetEntry(tableName);
-            if (entry is null)
+            var entry = isCte ? null : registry.GetEntry(tableName);
+            if (!isCte && entry is null)
                 return fail($"Unknown table '{tableName}'. Available: {string.Join(", ", registry.AllEntries.Keys)}", sw);
 
             // Parse SELECT projection for column/aggregate info
@@ -1061,18 +1329,25 @@ public sealed class SqlQueryService
             int fetchTop = needsFullFetch ? int.MaxValue : top;
 
             List<Dictionary<string, object?>> result;
-            if (isVectorSearch)
+            if (isCte)
+            {
+                if (isVectorSearch)
+                    return fail("ORDER BY Similarity DESC is not supported when querying a CTE table. The CTE subquery can use vector search, but the main query cannot re-rank CTE results by similarity.", sw);
+
+                result = filterCteRows(cteResults![tableName], whereExpr);
+            }
+            else if (isVectorSearch)
             {
                 if (hasGroupBy || hasAggregates || hasDistinct)
                     return fail("GROUP BY, DISTINCT, and aggregates are not supported with vector search", sw);
 
-                if (entry.RecordType != typeof(ChunkRecord))
+                if (entry!.RecordType != typeof(ChunkRecord))
                     return fail("ORDER BY Similarity DESC is only supported for ChunkRecord", sw);
 
                 result = await queryVectorAsync(store, entry, whereExpr, top, ct);
             }
             else
-                result = await queryFilteredAsync(store, entry, whereExpr, fetchTop, ct);
+                result = await queryFilteredAsync(store, entry!, whereExpr, fetchTop, ct);
 
             // Apply DISTINCT — evaluates computed expressions inline so aliased/math columns work
             if (hasDistinct && !hasGroupBy && !hasAggregates)
@@ -1096,7 +1371,9 @@ public sealed class SqlQueryService
                 }
                 else
                 {
-                    var keys = entry.RecordType.GetProperties().Select(p => p.Name).ToList();
+                    var keys = isCte && result.Count > 0
+                        ? result[0].Keys.Where(k => !k.StartsWith("__")).ToList()
+                        : entry!.RecordType.GetProperties().Select(p => p.Name).ToList();
                     result = [.. result.Where(r =>
                     {
                         var key = string.Join('\0',
@@ -1143,9 +1420,15 @@ public sealed class SqlQueryService
                         columns.Add("*");
                 }
             }
+            else if (isCte)
+            {
+                columns = result.Count > 0
+                    ? result[0].Keys.Where(k => !k.StartsWith("__")).ToList()
+                    : [];
+            }
             else
             {
-                columns = entry.RecordType.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+                columns = entry!.RecordType.GetProperties(BindingFlags.Public | BindingFlags.Instance)
                     .Where(p => p.CanRead)
                     .Select(p => p.Name)
                     .ToList();

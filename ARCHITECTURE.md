@@ -152,21 +152,22 @@ SemanticSearchService.SearchByTextAsync(query)
 SqlQueryTool.SqlQueryAsync("SELECT Name FROM SymbolRecord WHERE Kind = 'Class' LIMIT 10")
   └─ SqlQueryService.ExecuteAsync(store, sql)
        ├─ SqlParserCS.Parse(sql) → AST
-       ├─ validate: single SELECT, known table, no subqueries/JOINs
-       ├─ extract: FROM → table, WHERE → filter, ORDER BY → sort, LIMIT → top
-       │
-       ├─ Standard query path:
-       │    ├─ SqlExpressionBuilder.BuildFilter<TRecord>(where)
-       │    │    └─ SQL WHERE AST → System.Linq.Expressions.Expression<Func<TRecord, bool>>
-       │    ├─ CollectionRegistry → resolve table name → VectorStore collection
-       │    ├─ collection.GetAsync(filter, top) → IAsyncEnumerable<TRecord>
-       │    └─ materializeAsync → List<Dictionary<string, object?>>
-       │
-       ├─ Vector search path (ORDER BY Similarity DESC):
-       │    ├─ extract search text from Content LIKE '%pattern%' in WHERE
-       │    ├─ NgramEmbeddingGenerator.GenerateAsync([text]) → embedding vector
-       │    ├─ collection.SearchAsync(vector, top, options with remaining Filter)
-       │    └─ return results with __score (0-1) per row
+       ├─ validate: single SELECT, known table, no JOINs/UNION
+       ├─ Materialize CTEs (if present):
+       │    └─ executeCteSubqueryAsync per CTE → store in cteResults dict
+       ├─ Resolve table source:
+       │    ├─ TableFactor.Table → collection via CollectionRegistry
+       │    ├─ TableFactor.Derived → executeCteSubqueryAsync → add to cteResults
+       │    └─ CTE name shadows collection (checked before registry lookup)
+       ├─ Fetch data:
+       │    ├─ CTE/derived path: filterCteRows(cteResults[name], whereExpr)
+       │    ├─ Standard path: collection.GetAsync(filter, top) → IAsyncEnumerable<TRecord>
+       │    │    └─ SqlExpressionBuilder.BuildFilter<TRecord>(where) → Expression<Func<TRecord, bool>>
+       │    └─ Vector search path (ORDER BY Similarity DESC):
+       │         ├─ extract search text from Content LIKE '%pattern%' in WHERE
+       │         ├─ NgramEmbeddingGenerator.GenerateAsync([text]) → embedding vector
+       │         ├─ collection.SearchAsync(vector, top, options with remaining Filter)
+       │         └─ return results with __score (0-1) per row
        │
        ├─ Client-side post-processing:
        │    ├─ GROUP BY / aggregates (COUNT/SUM/AVG/MIN/MAX)
@@ -303,7 +304,7 @@ Tools auto-discovered via `AddMcpServer()` from `CodeMemory.AspNet.Program.cs` (
 | `get_component_clusters` | Logical component groupings based on inter-component coupling |
 | `get_symbol_history` | Git commit history for a symbol (commits, authors, dates, recent commits) |
 | `get_hotspots` | Most frequently changed files ranked by commit count |
-| `sql_query` | SQL queries over indexed repo data — symbols/relationships via relational SQL on AspNet, or via SqlParserCS → LINQ over InMemoryVectorStore on Mcp (SELECT/WHERE/ORDER BY/GROUP BY/HAVING, aggregates, vector search via `ORDER BY Similarity DESC`) |
+| `sql_query` | SQL queries over indexed repo data — symbols/relationships via relational SQL on AspNet, or via SqlParserCS → LINQ over InMemoryVectorStore on Mcp (SELECT/WHERE/ORDER BY/GROUP BY/HAVING, CTEs, derived tables, aggregates, vector search via `ORDER BY Similarity DESC`) |
 
 All tools return structured JSON. Tools with external service dependencies use `GetService<T>` fallback — gracefully degrade when backing services are unavailable.
 

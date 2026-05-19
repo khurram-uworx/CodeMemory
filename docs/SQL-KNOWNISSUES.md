@@ -2,8 +2,7 @@
 
 | # | Issue | Effort | Impact | Status |
 |---|-------|--------|--------|--------|
-| 3a | CTEs (Common Table Expressions) | Medium | High | See [`SQL-CTE.md`](SQL-CTE.md) |
-| 3b | JOINs (multi-table), UNION, subqueries | Large | High | |
+| 3 | JOINs, UNION, WHERE subqueries | Large | High | |
 | 6 | `materializeAsync` / `toAsyncEnumerable` deep reflection (~80 lines) | Medium | Medium | Won't Do — generic bridge applied |
 | 9 | ORDER BY boxes via `GetValueOrDefault` | Small | Low | Won't Do — see note |
 | 10 | `getConstantString` compiles throwaway expression | Small | Low | Won't Do — interpreted fallback applied |
@@ -15,13 +14,15 @@
 
 ## Parse / Syntax Gaps
 
-### 3a CTEs (Common Table Expressions) — see [`SQL-CTE.md`](SQL-CTE.md)
+### 3a CTEs (Common Table Expressions)
 
-CTEs were split from the broader JOINs/UNION/subqueries task. The parser already parses `WITH` clauses into `query.With.CteTables`. Requires implementing CTE materialization and CTE-aware table resolution. Low risk — pre-processing step with no changes to the core execution engine.
 
-### 3b JOINs (multi-table), UNION, subqueries
+### 3 JOINs, UNION, WHERE subqueries
 
-These are structurally rejected (`SetExpression` check) or silently mishandled (joins would return cross-product data with no error). JOINs require deep architectural changes: multi-table FROM clause, qualified column names, cross-collection row merging, and the `TableSchemaProvider` (item 11) must be wired first.
+JOINs, UNION, and subqueries in WHERE clauses are structurally rejected (`SetExpression` check) or silently mishandled (joins would return cross-product data with no error). JOINs require deep architectural changes: multi-table FROM clause, qualified column names, cross-collection row merging, and the `TableSchemaProvider` (item 11) must be wired first.
+
+- CTEs are now implemented. Non-recursive CTEs, chained CTEs, and CTE-collection shadowing all work. The `evaluateExpression` method was extended to handle LIKE/ILIKE/IN/IS NULL/BETWEEN for in-memory CTE row filtering. `ORDER BY Similarity DESC` on a CTE table returns a clear error (vector search requires store-level embeddings).
+- Derived tables are now implemented. Reuses the same `executeCteSubqueryAsync` infrastructure as CTEs — CTEs and derived tables compose together (chained CTEs → derived table → main query). Nested derived tables, WHERE filters on outer/subquery, GROUP BY/HAVING, ORDER BY, aggregates, and DISTINCT all work. Missing alias returns a clear error. Vector search (`ORDER BY Similarity DESC`) not supported on derived table queries (same limitation as CTEs).
 
 ---
 
