@@ -27,12 +27,11 @@ public sealed class IndexingEngine
             Documentation = s.Documentation,
         };
 
-    static ChunkRecord mapToChunkRecord(DocumentChunk c, ReadOnlyMemory<float>? embedding,
-        IReadOnlyDictionary<string, string> fullNameToGuid)
+    static ChunkRecord mapToChunkRecord(DocumentChunk c, ReadOnlyMemory<float>? embedding, IReadOnlyDictionary<string, string> fullNameToGuid)
         => new ChunkRecord
         {
             Id = c.Id,
-            SymbolId = fullNameToGuid[c.SymbolId],
+            SymbolId = fullNameToGuid.TryGetValue(c.SymbolId, out var guid) ? guid : null,
             FilePath = c.FilePath,
             Content = c.Content,
             Language = c.Language,
