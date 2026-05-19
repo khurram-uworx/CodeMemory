@@ -769,6 +769,15 @@ public sealed class SqlQueryService
         return null;
     }
 
+    static List<Dictionary<string, object?>> filterInMemoryRows(
+        List<Dictionary<string, object?>> rows,
+        AstExpr? whereExpr)
+    {
+        if (whereExpr is null) return rows;
+
+        return [.. rows.Where(r => evaluateExpression(whereExpr, r) is true)];
+    }
+
     static async Task<List<Dictionary<string, object?>>> materializeAsyncCore<T>(IAsyncEnumerable<T> source, Type recordType, CancellationToken ct)
     {
         var results = new List<Dictionary<string, object?>>();
@@ -982,6 +991,49 @@ public sealed class SqlQueryService
         return results;
     }
 
+    async Task<Dictionary<string, List<Dictionary<string, object?>>>> materializeCtesAsync(
+        VectorStore store,
+        With withClause,
+        CancellationToken ct)
+    {
+        if (withClause.Recursive)
+            throw new NotSupportedException("Recursive CTEs not yet supported");
+
+        var cteResults = new Dictionary<string, List<Dictionary<string, object?>>>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var cte in withClause.CteTables)
+        {
+            var cteName = cte.Alias.Name.Value;
+            if (cteResults.ContainsKey(cteName))
+                throw new InvalidOperationException($"Duplicate CTE name '{cteName}'");
+
+            if (cte.Query.Body is not SetExpression.SelectExpression cteSelectExpr)
+                throw new NotSupportedException("Only simple SELECT queries are supported inside CTEs");
+
+            var cteSelectBody = cteSelectExpr.Select;
+            if (cteSelectBody.From is null || cteSelectBody.From.Count == 0)
+                throw new InvalidOperationException($"CTE '{cteName}' must have a FROM clause");
+
+            var cteTableName = extractTableName(cteSelectBody.From[0].Relation)
+                ?? throw new InvalidOperationException($"Could not determine table name for CTE '{cteName}'");
+
+            List<Dictionary<string, object?>> cteRows;
+
+            if (cteResults.TryGetValue(cteTableName, out var priorCteRows))
+                cteRows = filterInMemoryRows(priorCteRows, cteSelectBody.Selection);
+            else
+            {
+                var cteEntry = registry.GetEntry(cteTableName)
+                    ?? throw new InvalidOperationException($"Unknown table '{cteTableName}'");
+                cteRows = await queryFilteredAsync(store, cteEntry, cteSelectBody.Selection, int.MaxValue, ct);
+            }
+
+            cteResults[cteName] = cteRows;
+        }
+
+        return cteResults;
+    }
+
     public async Task<SqlQueryResult> ExecuteAsync(VectorStore store, string sql, int maxResults = 100, CancellationToken ct = default)
     {
         var sw = Stopwatch.StartNew();
@@ -1008,6 +1060,10 @@ public sealed class SqlQueryService
                 return fail("Only SELECT statements are supported", sw);
 
             var query = select.Query;
+            Dictionary<string, List<Dictionary<string, object?>>>? cteResults = null;
+            if (query.With is not null)
+                cteResults = await materializeCtesAsync(store, query.With, ct);
+
             var setExpr = query.Body;
             if (setExpr is not SetExpression.SelectExpression selectExpr)
                 return fail("Only simple SELECT queries are supported (no UNION, VALUES, etc.)", sw);
@@ -1020,8 +1076,9 @@ public sealed class SqlQueryService
             if (tableName is null)
                 return fail("Could not determine table name from FROM clause", sw);
 
-            var entry = registry.GetEntry(tableName);
-            if (entry is null)
+            bool isCte = cteResults?.ContainsKey(tableName) == true;
+            var entry = isCte ? null : registry.GetEntry(tableName);
+            if (!isCte && entry is null)
                 return fail($"Unknown table '{tableName}'. Available: {string.Join(", ", registry.AllEntries.Keys)}", sw);
 
             // Parse SELECT projection for column/aggregate info
@@ -1066,13 +1123,18 @@ public sealed class SqlQueryService
                 if (hasGroupBy || hasAggregates || hasDistinct)
                     return fail("GROUP BY, DISTINCT, and aggregates are not supported with vector search", sw);
 
-                if (entry.RecordType != typeof(ChunkRecord))
+                if (isCte)
+                    return fail("Vector search is not supported when selecting from a CTE", sw);
+
+                if (entry!.RecordType != typeof(ChunkRecord))
                     return fail("ORDER BY Similarity DESC is only supported for ChunkRecord", sw);
 
-                result = await queryVectorAsync(store, entry, whereExpr, top, ct);
+                result = await queryVectorAsync(store, entry!, whereExpr, top, ct);
             }
+            else if (isCte)
+                result = filterInMemoryRows(cteResults![tableName], whereExpr);
             else
-                result = await queryFilteredAsync(store, entry, whereExpr, fetchTop, ct);
+                result = await queryFilteredAsync(store, entry!, whereExpr, fetchTop, ct);
 
             // Apply DISTINCT — evaluates computed expressions inline so aliased/math columns work
             if (hasDistinct && !hasGroupBy && !hasAggregates)
@@ -1096,7 +1158,9 @@ public sealed class SqlQueryService
                 }
                 else
                 {
-                    var keys = entry.RecordType.GetProperties().Select(p => p.Name).ToList();
+                    var keys = isCte
+                        ? result.SelectMany(r => r.Keys).Distinct(StringComparer.OrdinalIgnoreCase).ToList()
+                        : entry!.RecordType.GetProperties().Select(p => p.Name).ToList();
                     result = [.. result.Where(r =>
                     {
                         var key = string.Join('\0',
@@ -1145,10 +1209,12 @@ public sealed class SqlQueryService
             }
             else
             {
-                columns = entry.RecordType.GetProperties(BindingFlags.Public | BindingFlags.Instance)
-                    .Where(p => p.CanRead)
-                    .Select(p => p.Name)
-                    .ToList();
+                columns = isCte
+                    ? (result.Count > 0 ? result[0].Keys.ToList() : [])
+                    : entry!.RecordType.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+                        .Where(p => p.CanRead)
+                        .Select(p => p.Name)
+                        .ToList();
             }
 
             // Append runtime meta-columns if present (e.g. __score from vector search)
