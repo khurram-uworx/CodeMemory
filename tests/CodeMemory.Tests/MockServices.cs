@@ -24,12 +24,30 @@ sealed class MockStorageService : IStorageService
     public Task StoreRelationshipsAsync(IReadOnlyList<RelationshipRecord> relationships, CancellationToken ct = default)
         => Task.CompletedTask;
 
+    static readonly string myClassGuid = Guid.NewGuid().ToString("N");
+
     public Task<SymbolRecord?> GetSymbolAsync(string id, CancellationToken ct = default)
     {
-        if (id == "MyClass")
+        if (id == myClassGuid)
             return Task.FromResult<SymbolRecord?>(new SymbolRecord
             {
-                Id = "MyClass",
+                Id = myClassGuid,
+                Name = "MyClass",
+                Kind = "Class",
+                FilePath = "/src/MyClass.cs",
+                FullName = "MyClass",
+                LineStart = 1,
+                LineEnd = 50
+            });
+        return Task.FromResult<SymbolRecord?>(null);
+    }
+
+    public Task<SymbolRecord?> GetSymbolByFullNameAsync(string fullName, CancellationToken ct = default)
+    {
+        if (fullName == "MyClass")
+            return Task.FromResult<SymbolRecord?>(new SymbolRecord
+            {
+                Id = myClassGuid,
                 Name = "MyClass",
                 Kind = "Class",
                 FilePath = "/src/MyClass.cs",
@@ -57,7 +75,7 @@ sealed class MockStorageService : IStorageService
         return Task.FromResult<IReadOnlyList<ChunkRecord>>([
             new ChunkRecord
                 {
-                    Id = "c1", SymbolId = "MyClass", FilePath = "/src/MyClass.cs",
+                    Id = "c1", SymbolId = myClassGuid, FilePath = "/src/MyClass.cs",
                     Content = "public class MyClass { }", Language = "CSharp",
                     LineStart = 1, LineEnd = 10
                 }

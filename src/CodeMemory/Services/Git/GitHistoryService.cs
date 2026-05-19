@@ -163,7 +163,7 @@ public sealed class GitHistoryService : IGitHistoryService, IDisposable
     public async Task<SymbolHistoryResult?> GetSymbolHistoryAsync(
         string symbolPath, int maxCommits = 20, CancellationToken ct = default)
     {
-        var symbol = await storage.GetSymbolAsync(symbolPath, ct);
+        var symbol = await storage.GetSymbolByFullNameAsync(symbolPath, ct);
         if (symbol == null || string.IsNullOrEmpty(symbol.FilePath))
         {
             logger.LogDebug("GetSymbolHistoryAsync({Symbol}): symbol not found", symbolPath);

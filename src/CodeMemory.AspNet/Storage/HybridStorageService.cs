@@ -7,7 +7,186 @@ namespace CodeMemory.AspNet.Storage;
 
 public sealed class HybridStorageService : IStorageService, IDisposable
 {
+    static void apply(SymbolRecord record, Models.SymbolEntity entity)
+    {
+        entity.Name = record.Name;
+        entity.Kind = record.Kind;
+        entity.FilePath = record.FilePath;
+        entity.LineStart = record.LineStart;
+        entity.LineEnd = record.LineEnd;
+        entity.FullName = record.FullName;
+        entity.Modifiers = record.Modifiers;
+        entity.Documentation = record.Documentation;
+    }
+
+    static void apply(RelationshipRecord record, Models.RelationshipEntity entity)
+    {
+        entity.SourceSymbolId = record.SourceSymbolId;
+        entity.TargetSymbolId = record.TargetSymbolId;
+        entity.RelationshipType = record.RelationshipType;
+    }
+
+    static Task executeRawAsync(CodeMemoryDbContext db, string sql, CancellationToken ct)
+        => db.Database.ExecuteSqlRawAsync(sql, ct);
+
+    static string quoteSqlServerIdentifier(string identifier)
+        => $"[{identifier.Replace("]", "]]")}]";
+
+    static string quoteDoubleQuotedIdentifier(string identifier)
+        => $"\"{identifier.Replace("\"", "\"\"")}\"";
+
+    static string EscapeSqlLiteral(string value)
+        => value.Replace("'", "''");
+
+    static async Task dropTableIfExistsAsync(CodeMemoryDbContext db, string tableName, CancellationToken ct)
+    {
+        var providerName = db.Database.ProviderName ?? string.Empty;
+        var sql = providerName.Contains("SqlServer", StringComparison.OrdinalIgnoreCase)
+            ? $"DROP TABLE IF EXISTS {quoteSqlServerIdentifier(db.Schema)}.{quoteSqlServerIdentifier(tableName)}"
+            : providerName.Contains("Sqlite", StringComparison.OrdinalIgnoreCase)
+                ? $"DROP TABLE IF EXISTS {quoteDoubleQuotedIdentifier(tableName)}"
+                : $"DROP TABLE IF EXISTS {quoteDoubleQuotedIdentifier(db.Schema)}.{quoteDoubleQuotedIdentifier(tableName)}";
+
+        await db.Database.ExecuteSqlRawAsync(sql, ct);
+    }
+
+    static async Task ensureSqliteTablesAsync(CodeMemoryDbContext db, CancellationToken ct)
+    {
+        await executeRawAsync(db,
+            """
+            CREATE TABLE IF NOT EXISTS "symbols" (
+                "id" TEXT NOT NULL CONSTRAINT "PK_symbols" PRIMARY KEY,
+                "name" TEXT NOT NULL,
+                "kind" TEXT NOT NULL,
+                "file_path" TEXT NOT NULL,
+                "line_start" INTEGER NOT NULL,
+                "line_end" INTEGER NOT NULL,
+                "full_name" TEXT NOT NULL,
+                "modifiers" TEXT NULL,
+                "documentation" TEXT NULL
+            );
+            """,
+            ct);
+        await executeRawAsync(db,
+            """
+            CREATE TABLE IF NOT EXISTS "relationships" (
+                "id" TEXT NOT NULL CONSTRAINT "PK_relationships" PRIMARY KEY,
+                "source_symbol_id" TEXT NOT NULL,
+                "target_symbol_id" TEXT NOT NULL,
+                "relationship_type" TEXT NOT NULL
+            );
+            """,
+            ct);
+        await executeRawAsync(db, """CREATE INDEX IF NOT EXISTS "IX_Symbols_FilePath" ON "symbols" ("file_path");""", ct);
+        await executeRawAsync(db, """CREATE INDEX IF NOT EXISTS "IX_Symbols_Kind" ON "symbols" ("kind");""", ct);
+        await executeRawAsync(db, """CREATE INDEX IF NOT EXISTS "IX_Relationships_Source" ON "relationships" ("source_symbol_id");""", ct);
+        await executeRawAsync(db, """CREATE INDEX IF NOT EXISTS "IX_Relationships_Target" ON "relationships" ("target_symbol_id");""", ct);
+        await executeRawAsync(db, """CREATE INDEX IF NOT EXISTS "IX_Relationships_Type" ON "relationships" ("relationship_type");""", ct);
+    }
+
+    static async Task ensurePostgresTablesAsync(CodeMemoryDbContext db, CancellationToken ct)
+    {
+        var schema = quoteDoubleQuotedIdentifier(db.Schema);
+        await executeRawAsync(db, $"CREATE SCHEMA IF NOT EXISTS {schema};", ct);
+        await executeRawAsync(db,
+            $"""
+            CREATE TABLE IF NOT EXISTS {schema}."symbols" (
+                "id" text NOT NULL CONSTRAINT "PK_symbols" PRIMARY KEY,
+                "name" text NOT NULL,
+                "kind" text NOT NULL,
+                "file_path" text NOT NULL,
+                "line_start" integer NOT NULL,
+                "line_end" integer NOT NULL,
+                "full_name" text NOT NULL,
+                "modifiers" text NULL,
+                "documentation" text NULL
+            );
+            """,
+            ct);
+        await executeRawAsync(db,
+            $"""
+            CREATE TABLE IF NOT EXISTS {schema}."relationships" (
+                "id" text NOT NULL CONSTRAINT "PK_relationships" PRIMARY KEY,
+                "source_symbol_id" text NOT NULL,
+                "target_symbol_id" text NOT NULL,
+                "relationship_type" text NOT NULL
+            );
+            """,
+            ct);
+        await executeRawAsync(db, $"""CREATE INDEX IF NOT EXISTS "IX_Symbols_FilePath" ON {schema}."symbols" ("file_path");""", ct);
+        await executeRawAsync(db, $"""CREATE INDEX IF NOT EXISTS "IX_Symbols_Kind" ON {schema}."symbols" ("kind");""", ct);
+        await executeRawAsync(db, $"""CREATE INDEX IF NOT EXISTS "IX_Relationships_Source" ON {schema}."relationships" ("source_symbol_id");""", ct);
+        await executeRawAsync(db, $"""CREATE INDEX IF NOT EXISTS "IX_Relationships_Target" ON {schema}."relationships" ("target_symbol_id");""", ct);
+        await executeRawAsync(db, $"""CREATE INDEX IF NOT EXISTS "IX_Relationships_Type" ON {schema}."relationships" ("relationship_type");""", ct);
+    }
+
+    static async Task ensureSqlServerTablesAsync(CodeMemoryDbContext db, CancellationToken ct)
+    {
+        var schema = quoteSqlServerIdentifier(db.Schema);
+        await executeRawAsync(db,
+            $"""
+            IF SCHEMA_ID(N'{EscapeSqlLiteral(db.Schema)}') IS NULL
+                EXEC(N'CREATE SCHEMA {schema}');
+            """,
+            ct);
+        await executeRawAsync(db,
+            $"""
+            IF OBJECT_ID(N'{EscapeSqlLiteral(db.Schema)}.symbols', N'U') IS NULL
+            BEGIN
+                CREATE TABLE {schema}.[symbols] (
+                    [id] nvarchar(450) NOT NULL CONSTRAINT [PK_symbols] PRIMARY KEY,
+                    [name] nvarchar(max) NOT NULL,
+                    [kind] nvarchar(450) NOT NULL,
+                    [file_path] nvarchar(450) NOT NULL,
+                    [line_start] int NOT NULL,
+                    [line_end] int NOT NULL,
+                    [full_name] nvarchar(max) NOT NULL,
+                    [modifiers] nvarchar(max) NULL,
+                    [documentation] nvarchar(max) NULL
+                );
+            END;
+            """,
+            ct);
+        await executeRawAsync(db,
+            $"""
+            IF OBJECT_ID(N'{EscapeSqlLiteral(db.Schema)}.relationships', N'U') IS NULL
+            BEGIN
+                CREATE TABLE {schema}.[relationships] (
+                    [id] nvarchar(450) NOT NULL CONSTRAINT [PK_relationships] PRIMARY KEY,
+                    [source_symbol_id] nvarchar(450) NOT NULL,
+                    [target_symbol_id] nvarchar(450) NOT NULL,
+                    [relationship_type] nvarchar(450) NOT NULL
+                );
+            END;
+            """,
+            ct);
+        await executeRawAsync(db, $"""IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_Symbols_FilePath' AND object_id = OBJECT_ID(N'{EscapeSqlLiteral(db.Schema)}.symbols')) CREATE INDEX [IX_Symbols_FilePath] ON {schema}.[symbols] ([file_path]);""", ct);
+        await executeRawAsync(db, $"""IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_Symbols_Kind' AND object_id = OBJECT_ID(N'{EscapeSqlLiteral(db.Schema)}.symbols')) CREATE INDEX [IX_Symbols_Kind] ON {schema}.[symbols] ([kind]);""", ct);
+        await executeRawAsync(db, $"""IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_Relationships_Source' AND object_id = OBJECT_ID(N'{EscapeSqlLiteral(db.Schema)}.relationships')) CREATE INDEX [IX_Relationships_Source] ON {schema}.[relationships] ([source_symbol_id]);""", ct);
+        await executeRawAsync(db, $"""IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_Relationships_Target' AND object_id = OBJECT_ID(N'{EscapeSqlLiteral(db.Schema)}.relationships')) CREATE INDEX [IX_Relationships_Target] ON {schema}.[relationships] ([target_symbol_id]);""", ct);
+        await executeRawAsync(db, $"""IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_Relationships_Type' AND object_id = OBJECT_ID(N'{EscapeSqlLiteral(db.Schema)}.relationships')) CREATE INDEX [IX_Relationships_Type] ON {schema}.[relationships] ([relationship_type]);""", ct);
+    }
+
+    static async Task ensureRelationalTablesAsync(CodeMemoryDbContext db, CancellationToken ct)
+    {
+        var providerName = db.Database.ProviderName ?? string.Empty;
+        if (providerName.Contains("SqlServer", StringComparison.OrdinalIgnoreCase))
+        {
+            await ensureSqlServerTablesAsync(db, ct);
+            return;
+        }
+
+        if (providerName.Contains("Sqlite", StringComparison.OrdinalIgnoreCase))
+        {
+            await ensureSqliteTablesAsync(db, ct);
+            return;
+        }
+
+        await ensurePostgresTablesAsync(db, ct);
+    }
+
     const int BatchSize = 200;
+
     readonly ILogger logger;
     readonly string repoRoot;
     readonly VectorStore vectorStore;
@@ -38,6 +217,12 @@ public sealed class HybridStorageService : IStorageService, IDisposable
 
     public VectorStore? Store => vectorStore;
 
+    void throwIfNotInitialized()
+    {
+        if (!initialized)
+            throw new InvalidOperationException("Storage service not initialized. Call InitializeAsync first.");
+    }
+
     public CodeMemoryDbContext CreateDbContext()
         => createDbContext();
 
@@ -56,7 +241,7 @@ public sealed class HybridStorageService : IStorageService, IDisposable
 
         await using var db = createDbContext();
         await db.Database.EnsureCreatedAsync(ct);
-        await EnsureRelationalTablesAsync(db, ct);
+        await ensureRelationalTablesAsync(db, ct);
 
         initialized = true;
     }
@@ -87,7 +272,7 @@ public sealed class HybridStorageService : IStorageService, IDisposable
             foreach (var symbol in batch)
             {
                 if (existingById.TryGetValue(symbol.Id, out var entity))
-                    Apply(symbol, entity);
+                    apply(symbol, entity);
                 else
                     await db.Symbols.AddAsync(symbol.ToEntity(), ct);
             }
@@ -137,7 +322,7 @@ public sealed class HybridStorageService : IStorageService, IDisposable
             foreach (var relationship in batch)
             {
                 if (existingById.TryGetValue(relationship.Id, out var entity))
-                    Apply(relationship, entity);
+                    apply(relationship, entity);
                 else
                     await db.Relationships.AddAsync(relationship.ToEntity(), ct);
             }
@@ -153,6 +338,16 @@ public sealed class HybridStorageService : IStorageService, IDisposable
         var entity = await db.Symbols
             .AsNoTracking()
             .FirstOrDefaultAsync(symbol => symbol.Id == id, ct);
+        return entity?.ToRecord();
+    }
+
+    public async Task<SymbolRecord?> GetSymbolByFullNameAsync(string fullName, CancellationToken ct = default)
+    {
+        throwIfNotInitialized();
+        await using var db = createDbContext();
+        var entity = await db.Symbols
+            .AsNoTracking()
+            .FirstOrDefaultAsync(s => s.FullName == fullName, ct);
         return entity?.ToRecord();
     }
 
@@ -172,8 +367,8 @@ public sealed class HybridStorageService : IStorageService, IDisposable
         return entity?.ToRecord();
     }
 
-    public async Task<IReadOnlyList<SymbolRecord>> GetSymbolsByFileAsync(
-        string filePath, int top = 100, CancellationToken ct = default)
+    public async Task<IReadOnlyList<SymbolRecord>> GetSymbolsByFileAsync(string filePath,
+        int top = 100, CancellationToken ct = default)
     {
         throwIfNotInitialized();
         await using var db = createDbContext();
@@ -185,8 +380,8 @@ public sealed class HybridStorageService : IStorageService, IDisposable
             .ToListAsync(ct);
     }
 
-    public async Task<IReadOnlyList<SymbolRecord>> GetSymbolsByKindAsync(
-        string kind, int top = 100, CancellationToken ct = default)
+    public async Task<IReadOnlyList<SymbolRecord>> GetSymbolsByKindAsync(string kind,
+        int top = 100, CancellationToken ct = default)
     {
         throwIfNotInitialized();
         await using var db = createDbContext();
@@ -198,8 +393,7 @@ public sealed class HybridStorageService : IStorageService, IDisposable
             .ToListAsync(ct);
     }
 
-    public async Task<IReadOnlyList<ChunkRecord>> GetChunksBySymbolAsync(
-        string symbolId, CancellationToken ct = default)
+    public async Task<IReadOnlyList<ChunkRecord>> GetChunksBySymbolAsync(string symbolId, CancellationToken ct = default)
     {
         throwIfNotInitialized();
         return await chunks!.GetAsync(
@@ -210,8 +404,7 @@ public sealed class HybridStorageService : IStorageService, IDisposable
             .ToListAsync(ct);
     }
 
-    public async Task<IReadOnlyList<RelationshipRecord>> GetRelationshipsBySourceAsync(
-        string sourceSymbolId, CancellationToken ct = default)
+    public async Task<IReadOnlyList<RelationshipRecord>> GetRelationshipsBySourceAsync(string sourceSymbolId, CancellationToken ct = default)
     {
         throwIfNotInitialized();
         await using var db = createDbContext();
@@ -223,8 +416,7 @@ public sealed class HybridStorageService : IStorageService, IDisposable
             .ToListAsync(ct);
     }
 
-    public async Task<IReadOnlyList<RelationshipRecord>> GetRelationshipsByTargetAsync(
-        string targetSymbolId, CancellationToken ct = default)
+    public async Task<IReadOnlyList<RelationshipRecord>> GetRelationshipsByTargetAsync(string targetSymbolId, CancellationToken ct = default)
     {
         throwIfNotInitialized();
         await using var db = createDbContext();
@@ -267,8 +459,8 @@ public sealed class HybridStorageService : IStorageService, IDisposable
             await chunks.EnsureCollectionDeletedAsync(ct);
 
         await using var db = createDbContext();
-        await DropTableIfExistsAsync(db, "relationships", ct);
-        await DropTableIfExistsAsync(db, "symbols", ct);
+        await dropTableIfExistsAsync(db, "relationships", ct);
+        await dropTableIfExistsAsync(db, "symbols", ct);
 
         chunks = null;
         initialized = false;
@@ -279,188 +471,4 @@ public sealed class HybridStorageService : IStorageService, IDisposable
         (vectorStore as IDisposable)?.Dispose();
         (chunks as IDisposable)?.Dispose();
     }
-
-    void throwIfNotInitialized()
-    {
-        if (!initialized)
-            throw new InvalidOperationException("Storage service not initialized. Call InitializeAsync first.");
-    }
-
-    static void Apply(SymbolRecord record, Models.SymbolEntity entity)
-    {
-        entity.Name = record.Name;
-        entity.Kind = record.Kind;
-        entity.FilePath = record.FilePath;
-        entity.LineStart = record.LineStart;
-        entity.LineEnd = record.LineEnd;
-        entity.FullName = record.FullName;
-        entity.Modifiers = record.Modifiers;
-        entity.Documentation = record.Documentation;
-    }
-
-    static void Apply(RelationshipRecord record, Models.RelationshipEntity entity)
-    {
-        entity.SourceSymbolId = record.SourceSymbolId;
-        entity.TargetSymbolId = record.TargetSymbolId;
-        entity.RelationshipType = record.RelationshipType;
-    }
-
-    static async Task DropTableIfExistsAsync(CodeMemoryDbContext db, string tableName, CancellationToken ct)
-    {
-        var providerName = db.Database.ProviderName ?? string.Empty;
-        var sql = providerName.Contains("SqlServer", StringComparison.OrdinalIgnoreCase)
-            ? $"DROP TABLE IF EXISTS {QuoteSqlServerIdentifier(db.Schema)}.{QuoteSqlServerIdentifier(tableName)}"
-            : providerName.Contains("Sqlite", StringComparison.OrdinalIgnoreCase)
-                ? $"DROP TABLE IF EXISTS {QuoteDoubleQuotedIdentifier(tableName)}"
-                : $"DROP TABLE IF EXISTS {QuoteDoubleQuotedIdentifier(db.Schema)}.{QuoteDoubleQuotedIdentifier(tableName)}";
-
-        await db.Database.ExecuteSqlRawAsync(sql, ct);
-    }
-
-    static async Task EnsureRelationalTablesAsync(CodeMemoryDbContext db, CancellationToken ct)
-    {
-        var providerName = db.Database.ProviderName ?? string.Empty;
-        if (providerName.Contains("SqlServer", StringComparison.OrdinalIgnoreCase))
-        {
-            await EnsureSqlServerTablesAsync(db, ct);
-            return;
-        }
-
-        if (providerName.Contains("Sqlite", StringComparison.OrdinalIgnoreCase))
-        {
-            await EnsureSqliteTablesAsync(db, ct);
-            return;
-        }
-
-        await EnsurePostgresTablesAsync(db, ct);
-    }
-
-    static async Task EnsureSqliteTablesAsync(CodeMemoryDbContext db, CancellationToken ct)
-    {
-        await ExecuteRawAsync(db,
-            """
-            CREATE TABLE IF NOT EXISTS "symbols" (
-                "id" TEXT NOT NULL CONSTRAINT "PK_symbols" PRIMARY KEY,
-                "name" TEXT NOT NULL,
-                "kind" TEXT NOT NULL,
-                "file_path" TEXT NOT NULL,
-                "line_start" INTEGER NOT NULL,
-                "line_end" INTEGER NOT NULL,
-                "full_name" TEXT NOT NULL,
-                "modifiers" TEXT NULL,
-                "documentation" TEXT NULL
-            );
-            """,
-            ct);
-        await ExecuteRawAsync(db,
-            """
-            CREATE TABLE IF NOT EXISTS "relationships" (
-                "id" TEXT NOT NULL CONSTRAINT "PK_relationships" PRIMARY KEY,
-                "source_symbol_id" TEXT NOT NULL,
-                "target_symbol_id" TEXT NOT NULL,
-                "relationship_type" TEXT NOT NULL
-            );
-            """,
-            ct);
-        await ExecuteRawAsync(db, """CREATE INDEX IF NOT EXISTS "IX_Symbols_FilePath" ON "symbols" ("file_path");""", ct);
-        await ExecuteRawAsync(db, """CREATE INDEX IF NOT EXISTS "IX_Symbols_Kind" ON "symbols" ("kind");""", ct);
-        await ExecuteRawAsync(db, """CREATE INDEX IF NOT EXISTS "IX_Relationships_Source" ON "relationships" ("source_symbol_id");""", ct);
-        await ExecuteRawAsync(db, """CREATE INDEX IF NOT EXISTS "IX_Relationships_Target" ON "relationships" ("target_symbol_id");""", ct);
-        await ExecuteRawAsync(db, """CREATE INDEX IF NOT EXISTS "IX_Relationships_Type" ON "relationships" ("relationship_type");""", ct);
-    }
-
-    static async Task EnsurePostgresTablesAsync(CodeMemoryDbContext db, CancellationToken ct)
-    {
-        var schema = QuoteDoubleQuotedIdentifier(db.Schema);
-        await ExecuteRawAsync(db, $"CREATE SCHEMA IF NOT EXISTS {schema};", ct);
-        await ExecuteRawAsync(db,
-            $"""
-            CREATE TABLE IF NOT EXISTS {schema}."symbols" (
-                "id" text NOT NULL CONSTRAINT "PK_symbols" PRIMARY KEY,
-                "name" text NOT NULL,
-                "kind" text NOT NULL,
-                "file_path" text NOT NULL,
-                "line_start" integer NOT NULL,
-                "line_end" integer NOT NULL,
-                "full_name" text NOT NULL,
-                "modifiers" text NULL,
-                "documentation" text NULL
-            );
-            """,
-            ct);
-        await ExecuteRawAsync(db,
-            $"""
-            CREATE TABLE IF NOT EXISTS {schema}."relationships" (
-                "id" text NOT NULL CONSTRAINT "PK_relationships" PRIMARY KEY,
-                "source_symbol_id" text NOT NULL,
-                "target_symbol_id" text NOT NULL,
-                "relationship_type" text NOT NULL
-            );
-            """,
-            ct);
-        await ExecuteRawAsync(db, $"""CREATE INDEX IF NOT EXISTS "IX_Symbols_FilePath" ON {schema}."symbols" ("file_path");""", ct);
-        await ExecuteRawAsync(db, $"""CREATE INDEX IF NOT EXISTS "IX_Symbols_Kind" ON {schema}."symbols" ("kind");""", ct);
-        await ExecuteRawAsync(db, $"""CREATE INDEX IF NOT EXISTS "IX_Relationships_Source" ON {schema}."relationships" ("source_symbol_id");""", ct);
-        await ExecuteRawAsync(db, $"""CREATE INDEX IF NOT EXISTS "IX_Relationships_Target" ON {schema}."relationships" ("target_symbol_id");""", ct);
-        await ExecuteRawAsync(db, $"""CREATE INDEX IF NOT EXISTS "IX_Relationships_Type" ON {schema}."relationships" ("relationship_type");""", ct);
-    }
-
-    static async Task EnsureSqlServerTablesAsync(CodeMemoryDbContext db, CancellationToken ct)
-    {
-        var schema = QuoteSqlServerIdentifier(db.Schema);
-        await ExecuteRawAsync(db,
-            $"""
-            IF SCHEMA_ID(N'{EscapeSqlLiteral(db.Schema)}') IS NULL
-                EXEC(N'CREATE SCHEMA {schema}');
-            """,
-            ct);
-        await ExecuteRawAsync(db,
-            $"""
-            IF OBJECT_ID(N'{EscapeSqlLiteral(db.Schema)}.symbols', N'U') IS NULL
-            BEGIN
-                CREATE TABLE {schema}.[symbols] (
-                    [id] nvarchar(450) NOT NULL CONSTRAINT [PK_symbols] PRIMARY KEY,
-                    [name] nvarchar(max) NOT NULL,
-                    [kind] nvarchar(450) NOT NULL,
-                    [file_path] nvarchar(450) NOT NULL,
-                    [line_start] int NOT NULL,
-                    [line_end] int NOT NULL,
-                    [full_name] nvarchar(max) NOT NULL,
-                    [modifiers] nvarchar(max) NULL,
-                    [documentation] nvarchar(max) NULL
-                );
-            END;
-            """,
-            ct);
-        await ExecuteRawAsync(db,
-            $"""
-            IF OBJECT_ID(N'{EscapeSqlLiteral(db.Schema)}.relationships', N'U') IS NULL
-            BEGIN
-                CREATE TABLE {schema}.[relationships] (
-                    [id] nvarchar(450) NOT NULL CONSTRAINT [PK_relationships] PRIMARY KEY,
-                    [source_symbol_id] nvarchar(450) NOT NULL,
-                    [target_symbol_id] nvarchar(450) NOT NULL,
-                    [relationship_type] nvarchar(450) NOT NULL
-                );
-            END;
-            """,
-            ct);
-        await ExecuteRawAsync(db, $"""IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_Symbols_FilePath' AND object_id = OBJECT_ID(N'{EscapeSqlLiteral(db.Schema)}.symbols')) CREATE INDEX [IX_Symbols_FilePath] ON {schema}.[symbols] ([file_path]);""", ct);
-        await ExecuteRawAsync(db, $"""IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_Symbols_Kind' AND object_id = OBJECT_ID(N'{EscapeSqlLiteral(db.Schema)}.symbols')) CREATE INDEX [IX_Symbols_Kind] ON {schema}.[symbols] ([kind]);""", ct);
-        await ExecuteRawAsync(db, $"""IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_Relationships_Source' AND object_id = OBJECT_ID(N'{EscapeSqlLiteral(db.Schema)}.relationships')) CREATE INDEX [IX_Relationships_Source] ON {schema}.[relationships] ([source_symbol_id]);""", ct);
-        await ExecuteRawAsync(db, $"""IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_Relationships_Target' AND object_id = OBJECT_ID(N'{EscapeSqlLiteral(db.Schema)}.relationships')) CREATE INDEX [IX_Relationships_Target] ON {schema}.[relationships] ([target_symbol_id]);""", ct);
-        await ExecuteRawAsync(db, $"""IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_Relationships_Type' AND object_id = OBJECT_ID(N'{EscapeSqlLiteral(db.Schema)}.relationships')) CREATE INDEX [IX_Relationships_Type] ON {schema}.[relationships] ([relationship_type]);""", ct);
-    }
-
-    static Task ExecuteRawAsync(CodeMemoryDbContext db, string sql, CancellationToken ct)
-        => db.Database.ExecuteSqlRawAsync(sql, ct);
-
-    static string QuoteSqlServerIdentifier(string identifier)
-        => $"[{identifier.Replace("]", "]]")}]";
-
-    static string QuoteDoubleQuotedIdentifier(string identifier)
-        => $"\"{identifier.Replace("\"", "\"\"")}\"";
-
-    static string EscapeSqlLiteral(string value)
-        => value.Replace("'", "''");
 }

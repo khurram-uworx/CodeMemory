@@ -36,6 +36,9 @@ public sealed class StorageServiceRouter : IStorageService
     public Task<SymbolRecord?> GetSymbolAsync(string id, CancellationToken ct = default)
         => GetStorage().GetSymbolAsync(id, ct);
 
+    public Task<SymbolRecord?> GetSymbolByFullNameAsync(string fullName, CancellationToken ct = default)
+        => GetStorage().GetSymbolByFullNameAsync(fullName, ct);
+
     public Task<ChunkRecord?> GetChunkAsync(string id, CancellationToken ct = default)
         => GetStorage().GetChunkAsync(id, ct);
 
