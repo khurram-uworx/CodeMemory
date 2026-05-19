@@ -1161,4 +1161,75 @@ public sealed class SqlQueryServiceTests
         Assert.That(result.RowCount, Is.EqualTo(5));
         Assert.That(result.Rows![0]["Kind"], Is.Not.EqualTo(result.Rows![4]["Kind"]));
     }
+
+    [Test]
+    public async Task Cte_BasicSelect_ReturnsRows()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "WITH classes AS (SELECT * FROM SymbolRecord WHERE Kind = 'Class') SELECT Name FROM classes ORDER BY Name");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(2));
+        Assert.That(result.Rows!.Select(r => r["Name"]), Is.EqualTo(["Helper", "MyClass"]));
+    }
+
+    [Test]
+    public async Task Cte_ChainedReference_ReturnsRows()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "WITH classes AS (SELECT * FROM SymbolRecord WHERE Kind = 'Class'), public_classes AS (SELECT * FROM classes WHERE Modifiers = 'public') SELECT Name FROM public_classes");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(1));
+        Assert.That(result.Rows![0]["Name"], Is.EqualTo("MyClass"));
+    }
+
+
+    [Test]
+    public async Task Cte_WithProjectionAliasAndLimit_HonorsCteShape()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "WITH s AS (SELECT Name AS n FROM SymbolRecord ORDER BY Name LIMIT 2) SELECT * FROM s ORDER BY n");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(2));
+        Assert.That(result.Columns, Is.EquivalentTo(["n"]));
+        Assert.That(result.Rows!.Select(r => r["n"]), Is.EqualTo(["Helper", "IOld"]));
+    }
+
+    [Test]
+    public async Task Cte_WhereLike_FilterBehavesLikeBaseTable()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "WITH s AS (SELECT * FROM SymbolRecord) SELECT Name FROM s WHERE FilePath LIKE '%MyClass%' ORDER BY Name");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(3));
+        Assert.That(result.Rows!.Select(r => r["Name"]), Is.EqualTo(["MyClass", "MyMethod", "_private"]));
+    }
+
+    [Test]
+    public async Task Cte_Recursive_ReturnsError()
+    {
+        var (store, registry, service) = createServices();
+
+        var result = await service.ExecuteAsync(store,
+            "WITH RECURSIVE nums AS (SELECT 1 AS n) SELECT * FROM nums");
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Error, Does.Contain("Recursive CTEs not yet supported"));
+    }
+
 }
