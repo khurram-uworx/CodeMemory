@@ -775,7 +775,68 @@ public sealed class SqlQueryService
     {
         if (whereExpr is null) return rows;
 
-        return [.. rows.Where(r => evaluateExpression(whereExpr, r) is true)];
+        return [.. rows.Where(r => isTruthy(evaluateExpression(whereExpr, r)))];
+    }
+
+    static List<Dictionary<string, object?>> applySelectOperations(
+        List<Dictionary<string, object?>> rows,
+        Select selectBody,
+        Query query,
+        int maxResults)
+    {
+        bool hasExplicitProjection = selectBody.Projection is { Count: > 0 }
+            && selectBody.Projection[0] is not SelectItem.Wildcard;
+
+        List<SelectColumnInfo> parsedColumns = [];
+        if (hasExplicitProjection)
+            parsedColumns = parseSelectColumns(selectBody.Projection);
+
+        bool hasGroupBy = selectBody.GroupBy is GroupByExpression.Expressions;
+        List<string> groupByColumnNames = [];
+        if (selectBody.GroupBy is GroupByExpression.Expressions gbExpr && hasGroupBy)
+            groupByColumnNames = extractGroupByColumns(gbExpr);
+
+        bool hasDistinct = selectBody.Distinct is DistinctFilter.Distinct;
+        bool hasAggregates = parsedColumns.Any(c => c.IsAggregate);
+        int top = maxResults;
+        if (query.Limit is AstExpr.LiteralValue lv && lv.Value is Value.Number num)
+            top = int.Parse(num.Value);
+
+        if (hasDistinct && !hasGroupBy && !hasAggregates)
+        {
+            var seen = new HashSet<string>();
+            if (hasExplicitProjection)
+            {
+                rows = [.. rows.Where(r =>
+                {
+                    var key = string.Join(' ', parsedColumns.Select(c => c.Expression is not null
+                        ? evaluateExpression(c.Expression, r)?.ToString() ?? "NULL"
+                        : c.Name is not null ? r.GetValueOrDefault(c.Name)?.ToString() ?? "NULL" : "NULL"));
+                    return seen.Add(key);
+                })];
+            }
+            else
+            {
+                var keys = rows.SelectMany(r => r.Keys).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                rows = [.. rows.Where(r => seen.Add(string.Join(' ', keys.Select(n => r.GetValueOrDefault(n)?.ToString() ?? "NULL"))))];
+            }
+        }
+
+        if (hasGroupBy || hasAggregates)
+            rows = applyGroupBy(rows, parsedColumns, groupByColumnNames);
+
+        if (selectBody.Having is not null)
+            rows = applyHaving(rows, selectBody.Having, parsedColumns);
+
+        rows = applyOrderBy(rows, query.OrderBy, parsedColumns, hasExplicitProjection);
+
+        if (top < rows.Count)
+            rows = rows.Take(top).ToList();
+
+        if (hasExplicitProjection && !hasGroupBy && !hasAggregates)
+            rows = projectRows(rows, parsedColumns);
+
+        return rows;
     }
 
     static async Task<List<Dictionary<string, object?>>> materializeAsyncCore<T>(IAsyncEnumerable<T> source, Type recordType, CancellationToken ct)
@@ -1028,7 +1089,7 @@ public sealed class SqlQueryService
                 cteRows = await queryFilteredAsync(store, cteEntry, cteSelectBody.Selection, int.MaxValue, ct);
             }
 
-            cteResults[cteName] = cteRows;
+            cteResults[cteName] = applySelectOperations(cteRows, cteSelectBody, cte.Query, int.MaxValue);
         }
 
         return cteResults;

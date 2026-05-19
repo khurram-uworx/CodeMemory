@@ -1190,6 +1190,36 @@ public sealed class SqlQueryServiceTests
         Assert.That(result.Rows![0]["Name"], Is.EqualTo("MyClass"));
     }
 
+
+    [Test]
+    public async Task Cte_WithProjectionAliasAndLimit_HonorsCteShape()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "WITH s AS (SELECT Name AS n FROM SymbolRecord ORDER BY Name LIMIT 2) SELECT * FROM s ORDER BY n");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(2));
+        Assert.That(result.Columns, Is.EquivalentTo(["n"]));
+        Assert.That(result.Rows!.Select(r => r["n"]), Is.EqualTo(["Helper", "IOld"]));
+    }
+
+    [Test]
+    public async Task Cte_WhereLike_FilterBehavesLikeBaseTable()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "WITH s AS (SELECT * FROM SymbolRecord) SELECT Name FROM s WHERE FilePath LIKE '%MyClass%' ORDER BY Name");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(3));
+        Assert.That(result.Rows!.Select(r => r["Name"]), Is.EqualTo(["MyClass", "MyMethod", "_private"]));
+    }
+
     [Test]
     public async Task Cte_Recursive_ReturnsError()
     {
