@@ -3,7 +3,7 @@
 > Local-first repository intelligence engine exposed via the Model Context Protocol (MCP).
 > Build a persistent semantic memory layer over any codebase.
 
-**CodeMemory** transforms repositories into queryable intelligence — extracting symbols, relationships, and semantic understanding — and exposing it through MCP tools designed for AI coding agents.
+**code-memory** transforms repositories into queryable intelligence — extracting symbols, relationships, and semantic understanding — and exposing it through MCP tools designed for AI coding agents.
 
 ## How It Works
 
