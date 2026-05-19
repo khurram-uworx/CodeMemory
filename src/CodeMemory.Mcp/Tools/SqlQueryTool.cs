@@ -37,12 +37,14 @@ TABLES:
   - RelationshipRecord: Id(key), SourceSymbolId(string), TargetSymbolId(string), RelationshipType(string)
 
 SYNTAX:
-  SELECT [DISTINCT] columns|*|aggregates FROM table
+  [WITH cte_name AS (SELECT ...) [, ...]]
+  SELECT [DISTINCT] columns|*|aggregates FROM table|(subquery) AS alias
     [WHERE condition [AND|OR ...]]
     [GROUP BY col] [HAVING condition]
     [ORDER BY col|position [ASC|DESC]]
     [LIMIT n]
   Strings MUST use single quotes: 'text' (not double quotes)
+  Derived tables (subqueries in FROM clause) use the same syntax as CTE bodies
 
 OPERATORS: =, <>, <, >, <=, >=, LIKE, ILIKE (case-insensitive), IN(...), IS NULL, IS NOT NULL, BETWEEN
 
@@ -63,6 +65,9 @@ BEHAVIOR:
    - SELECT supports arithmetic expressions: +, -, *, / (e.g. SELECT LineEnd - LineStart AS Length FROM SymbolRecord)
    - String concatenation with || operator supported (e.g. SELECT Name || ':' || Kind AS combined)
    - Parenthesized WHERE conditions supported: WHERE (Kind = 'Class' OR Kind = 'Interface') AND Name LIKE '%Helper%'
+   - CTEs (WITH ... AS ...) supported: non-recursive, chained CTEs work; CTE name shadows collection names
+   - Derived tables (FROM (subquery) AS alias) supported: can reference CTEs, support nesting
+   - ORDER BY Similarity DESC not supported on CTE or derived tables (only on direct ChunkRecord queries)
    - Only InMemoryVectorStore backend supported; other backends return an error
 
 EXAMPLES:
@@ -76,6 +81,10 @@ EXAMPLES:
   SELECT Kind, Name FROM SymbolRecord ORDER BY Kind, Name
   SELECT * FROM ChunkRecord WHERE Content ILIKE '%auth%' ORDER BY Similarity DESC LIMIT 5
   SELECT * FROM RelationshipRecord WHERE RelationshipType = 'Calls'
+  WITH public_classes AS (SELECT * FROM SymbolRecord WHERE Modifiers LIKE '%public%') SELECT Name FROM public_classes ORDER BY Name
+  WITH counts AS (SELECT FilePath, COUNT(*) AS cnt FROM SymbolRecord GROUP BY FilePath) SELECT * FROM counts ORDER BY cnt DESC LIMIT 10
+  SELECT Name, Kind FROM (SELECT * FROM SymbolRecord) AS sub WHERE sub.Kind = 'Method' ORDER BY Name
+  SELECT d.Kind, COUNT(*) AS cnt FROM (SELECT Kind FROM SymbolRecord) AS d GROUP BY d.Kind HAVING cnt > 1
 
 RETURNS JSON: success, rowCount, executionTimeMs, columns, rows, error
 ")]

@@ -903,15 +903,20 @@ public sealed class SqlQueryServiceTests
     }
 
     [Test]
-    public async Task Subquery_ReturnsError()
+    public async Task Subquery_BasicSelect()
     {
         var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
 
         var result = await service.ExecuteAsync(store,
-            "SELECT * FROM (SELECT * FROM SymbolRecord) AS sub");
+            "SELECT * FROM (SELECT Name, Kind FROM SymbolRecord WHERE Kind = 'Class') AS sub ORDER BY Name");
 
-        Assert.That(result.Success, Is.False);
-        Assert.That(result.Error, Does.Contain("table name"));
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.Rows!.Count, Is.GreaterThan(0));
+        Assert.That(result.Columns, Does.Contain("Name"));
+        Assert.That(result.Columns, Does.Contain("Kind"));
+        Assert.That(result.Rows, Has.All.Matches<Dictionary<string, object?>>(
+            r => r["Kind"]?.ToString() == "Class"));
     }
 
     [Test]
@@ -1160,5 +1165,438 @@ public sealed class SqlQueryServiceTests
         Assert.That(result.Success, Is.True);
         Assert.That(result.RowCount, Is.EqualTo(5));
         Assert.That(result.Rows![0]["Kind"], Is.Not.EqualTo(result.Rows![4]["Kind"]));
+    }
+
+    // ===== CTE Tests =====
+
+    [Test]
+    public async Task Cte_BasicSelectAll_ReturnsCteRows()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "WITH cte AS (SELECT * FROM SymbolRecord WHERE Kind = 'Class') SELECT Name FROM cte");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(2));
+        Assert.That(result.Rows!.Select(r => r["Name"]), Is.EquivalentTo(["MyClass", "Helper"]));
+    }
+
+    [Test]
+    public async Task Cte_WithMainQueryWhere_FiltersCteResults()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "WITH cte AS (SELECT Name, FilePath FROM SymbolRecord) SELECT * FROM cte WHERE Name LIKE '%Helper%'");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(1));
+        Assert.That(result.Rows![0]["Name"], Is.EqualTo("Helper"));
+    }
+
+    [Test]
+    public async Task Cte_WithSubqueryWhere_FiltersInsideCte()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "WITH cte AS (SELECT Name, FilePath FROM SymbolRecord WHERE Modifiers LIKE '%public%') SELECT Name FROM cte ORDER BY Name");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(3));
+        Assert.That(result.Rows!.Select(r => r["Name"]), Is.EqualTo(["IOld", "MyClass", "MyMethod"]));
+    }
+
+    [Test]
+    public async Task Cte_WithOrderByOnMainQuery_ReturnsOrdered()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "WITH cte AS (SELECT Name, Kind FROM SymbolRecord) SELECT Name FROM cte WHERE Kind = 'Class' ORDER BY Name DESC");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(2));
+        Assert.That(result.Rows!.Select(r => r["Name"]), Is.EqualTo(["MyClass", "Helper"]));
+    }
+
+    [Test]
+    public async Task Cte_WithLimitOnMainQuery_ReturnsLimited()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "WITH cte AS (SELECT * FROM SymbolRecord) SELECT Name FROM cte LIMIT 2");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(2));
+    }
+
+    [Test]
+    public async Task Cte_WithGroupByHaving_ComposesCorrectly()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "WITH cte AS (SELECT FilePath, Kind FROM SymbolRecord WHERE Modifiers LIKE '%public%') " +
+            "SELECT Kind, COUNT(*) AS cnt FROM cte GROUP BY Kind HAVING cnt > 1 ORDER BY cnt DESC");
+
+        Assert.That(result.Success, Is.True);
+        // Only one Kind should have >1 public members
+        Assert.That(result.RowCount, Is.EqualTo(0)); // No single Kind has >1 public member
+    }
+
+    [Test]
+    public async Task Cte_WithAggregate_ReturnsCorrectCount()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "WITH cte AS (SELECT FilePath FROM SymbolRecord WHERE Kind IN ('Class', 'Interface')) " +
+            "SELECT FilePath, COUNT(*) AS cnt FROM cte GROUP BY FilePath ORDER BY cnt DESC");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(3));
+        var byPath = result.Rows!.ToDictionary(r => (string)r["FilePath"]!);
+        Assert.That((long)byPath["/src/MyClass.cs"]["cnt"], Is.EqualTo(1));
+        Assert.That((long)byPath["/src/Helper.cs"]["cnt"], Is.EqualTo(1));
+        Assert.That((long)byPath["/src/IOld.cs"]["cnt"], Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task Cte_Chained_ReferencesPriorCte()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "WITH step1 AS (SELECT Name, FilePath, Kind FROM SymbolRecord WHERE Kind = 'Class'), " +
+            "step2 AS (SELECT Name, FilePath FROM step1 WHERE FilePath LIKE '%MyClass%') " +
+            "SELECT Name FROM step2 ORDER BY Name");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(1));
+        Assert.That(result.Rows![0]["Name"], Is.EqualTo("MyClass"));
+    }
+
+    [Test]
+    public async Task Cte_AliasShadowsCollectionName_CteWins()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "WITH SymbolRecord AS (SELECT Name, Kind FROM SymbolRecord WHERE Kind = 'Interface') " +
+            "SELECT * FROM SymbolRecord");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(1));
+        Assert.That(result.Rows![0]["Kind"], Is.EqualTo("Interface"));
+    }
+
+    [Test]
+    public async Task Cte_Recursive_ReturnsError()
+    {
+        var (store, registry, service) = createServices();
+
+        var result = await service.ExecuteAsync(store,
+            "WITH RECURSIVE nums AS (SELECT 1 AS n UNION ALL SELECT n + 1 FROM nums WHERE n < 10) SELECT * FROM nums");
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Error, Does.Contain("Recursive"));
+    }
+
+    [Test]
+    public async Task Cte_DuplicateName_ReturnsError()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "WITH a AS (SELECT * FROM SymbolRecord LIMIT 1), a AS (SELECT * FROM SymbolRecord LIMIT 2) SELECT * FROM a");
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Error, Does.Contain("Duplicate"));
+    }
+
+    [Test]
+    public async Task Cte_ReferencingUndefinedTable_ReturnsError()
+    {
+        var (store, registry, service) = createServices();
+
+        var result = await service.ExecuteAsync(store,
+            "WITH a AS (SELECT * FROM nonexistent) SELECT * FROM a");
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Error, Does.Contain("Unknown table").Or.Contains("referenced"));
+    }
+
+    [Test]
+    public async Task Cte_EmptyCte_ReturnsZeroRows()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "WITH empty_cte AS (SELECT * FROM SymbolRecord WHERE Kind = 'NonExistent') SELECT COUNT(*) FROM empty_cte");
+
+        Assert.That(result.Success, Is.True);
+    }
+
+    [Test]
+    public async Task Cte_WithAllPostProcessingSteps_ComposesCorrectly()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "WITH filtered AS (SELECT FilePath, Kind, Name FROM SymbolRecord WHERE Modifiers LIKE '%public%') " +
+            "SELECT Kind, COUNT(*) AS cnt FROM filtered GROUP BY Kind HAVING cnt > 0 ORDER BY cnt DESC");
+
+        Assert.That(result.Success, Is.True);
+        // Public members: MyClass (Class), MyMethod (Method), IOld (Interface) → 3 groups
+        Assert.That(result.RowCount, Is.EqualTo(3));
+    }
+
+    [Test]
+    public async Task Cte_WithDistinctOnMainQuery_ReturnsUnique()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "WITH cte AS (SELECT Kind FROM SymbolRecord) SELECT DISTINCT Kind FROM cte ORDER BY Kind");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(4));
+        Assert.That(result.Rows!.Select(r => r["Kind"]), Is.EqualTo(["Class", "Field", "Interface", "Method"]));
+    }
+
+    [Test]
+    public async Task Cte_VectorSearchSubquery_PreservesScore()
+    {
+        var (store, registry, service) = createServices();
+        await seedChunksAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "WITH top_chunks AS (SELECT FilePath, Content FROM ChunkRecord WHERE Content LIKE '%auth%' ORDER BY Similarity DESC LIMIT 5) " +
+            "SELECT * FROM top_chunks");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.GreaterThanOrEqualTo(1));
+        Assert.That(result.Rows![0]["FilePath"], Is.EqualTo("/src/Auth.cs"));
+        Assert.That(result.Rows[0], Contains.Key("__score"));
+    }
+
+    [Test]
+    public async Task Cte_MainQueryVectorSearchOnCte_ReturnsError()
+    {
+        var (store, registry, service) = createServices();
+        await seedChunksAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "WITH csharp_chunks AS (SELECT Id, SymbolId, FilePath, Content FROM ChunkRecord WHERE Language = 'CSharp') " +
+            "SELECT FilePath, Content FROM csharp_chunks WHERE Content LIKE '%async%' ORDER BY Similarity DESC LIMIT 5");
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Error, Does.Contain("ORDER BY Similarity DESC"));
+    }
+
+    [Test]
+    public async Task Cte_WithLimitInsideCteSubquery_RespectsLimit()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        // The store's internal ORDER BY may not match the CTE's ORDER BY (fetchTop applies first),
+        // but the LIMIT count should still be respected
+        var result = await service.ExecuteAsync(store,
+            "WITH limited AS (SELECT Name FROM SymbolRecord LIMIT 2) " +
+            "SELECT Name FROM limited ORDER BY Name");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(2));
+    }
+
+    [Test]
+    public async Task Cte_ChainedWithDependencyOnStore_Works()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        // Chained CTEs where second references first and adds additional filter
+        var result = await service.ExecuteAsync(store,
+            "WITH classes AS (SELECT Name, FilePath FROM SymbolRecord WHERE Kind = 'Class'), " +
+            "internal_classes AS (SELECT Name, FilePath FROM classes WHERE FilePath LIKE '%Helper%') " +
+            "SELECT Name FROM internal_classes");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(1));
+        Assert.That(result.Rows![0]["Name"], Is.EqualTo("Helper"));
+    }
+
+    [Test]
+    public async Task Cte_WithArithmeticExpression_ComputesCorrectly()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "WITH cte AS (SELECT Name, LineEnd - LineStart AS Length FROM SymbolRecord WHERE Kind = 'Class') " +
+            "SELECT Name, Length FROM cte ORDER BY Length DESC");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(2));
+        var byName = result.Rows!.ToDictionary(r => (string)r["Name"]!);
+        Assert.That(Convert.ToDouble(byName["MyClass"]["Length"]), Is.EqualTo(49.0));
+        Assert.That(Convert.ToDouble(byName["Helper"]["Length"]), Is.EqualTo(29.0));
+    }
+
+    [Test]
+    public async Task Subquery_WithWhereOnOuter()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT Name, Kind FROM (SELECT * FROM SymbolRecord) AS sub WHERE sub.Kind = 'Method' ORDER BY Name");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(1));
+        Assert.That(result.Rows![0]["Name"]?.ToString(), Is.EqualTo("MyMethod"));
+    }
+
+    [Test]
+    public async Task Subquery_WithWhereInside()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT Name FROM (SELECT Name, Kind FROM SymbolRecord WHERE Kind = 'Class') AS sub ORDER BY Name");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(2));
+        Assert.That(result.Rows!.Select(r => r["Name"]), Is.EqualTo(["Helper", "MyClass"]));
+    }
+
+    [Test]
+    public async Task Subquery_WithOrderBy()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT Name FROM (SELECT Name FROM SymbolRecord) AS sub ORDER BY Name DESC");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.GreaterThan(0));
+        var names = result.Rows!.Select(r => r["Name"]?.ToString()).ToList();
+        Assert.That(names, Is.Ordered.Descending);
+    }
+
+    [Test]
+    public async Task Subquery_Nested()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT Name FROM (SELECT Name FROM (SELECT Name, Kind FROM SymbolRecord) AS inner1 WHERE Kind = 'Class') AS outer ORDER BY Name");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(2));
+        Assert.That(result.Rows!.Select(r => r["Name"]), Is.EqualTo(["Helper", "MyClass"]));
+    }
+
+    [Test]
+    public async Task Subquery_WithCte()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "WITH cte AS (SELECT Name, Kind FROM SymbolRecord WHERE Kind = 'Class') " +
+            "SELECT Name FROM (SELECT * FROM cte) AS sub ORDER BY Name");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(2));
+        Assert.That(result.Rows!.Select(r => r["Name"]), Is.EqualTo(["Helper", "MyClass"]));
+    }
+
+    [Test]
+    public async Task Subquery_MissingAlias()
+    {
+        var (store, registry, service) = createServices();
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT * FROM (SELECT * FROM SymbolRecord)");
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Error, Does.Contain("alias"));
+    }
+
+    [Test]
+    public async Task Subquery_WithGroupByHaving()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT Kind, COUNT(*) AS cnt FROM (SELECT * FROM SymbolRecord) AS sub GROUP BY Kind HAVING cnt > 1 ORDER BY Kind");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(1));
+        Assert.That(result.Rows![0]["Kind"]?.ToString(), Is.EqualTo("Class"));
+        Assert.That(Convert.ToInt64(result.Rows[0]["cnt"]), Is.EqualTo(2));
+    }
+
+    [Test]
+    public async Task Subquery_WithAggregates()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT SUM(LineEnd) AS total FROM (SELECT LineEnd FROM SymbolRecord) AS sub");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(1));
+        Assert.That(Convert.ToDouble(result.Rows![0]["total"]), Is.EqualTo(50 + 20 + 30 + 10 + 5));
+    }
+
+    [Test]
+    public async Task Subquery_EmptyDerivedTable()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT * FROM (SELECT * FROM SymbolRecord WHERE Kind = 'Nonexistent') AS sub");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(0));
+    }
+
+    [Test]
+    public async Task Subquery_NonCteQuery_StillWorks_Regression()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT Name FROM SymbolRecord WHERE Kind = 'Class' ORDER BY Name");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(2));
+        Assert.That(result.Rows!.Select(r => r["Name"]), Is.EqualTo(["Helper", "MyClass"]));
     }
 }
