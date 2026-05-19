@@ -78,7 +78,7 @@ Configure repos in `src/CodeMemory.AspNet/appsettings.json`:
 }
 ```
 
-Storage provider: `"inmemory"` (default, no dependencies) or `"sqlite"` (persistent SQLite with vector extension via `Microsoft.SemanticKernel.Connectors.SqliteVec`). In-memory mode uses `InMemoryVectorStore` from the Memori package — data is lost on restart. SQLite stores vectors in `.memorycode/sqlvec.db` per repo.
+Storage provider: `"inmemory"` (default, no dependencies), `"sqlite"` (persistent SQLite), `"pgvector"` (PostgreSQL with pgvector), or `"sqlserver"` (SQL Server). In-memory mode uses `InMemoryVectorStore` from the Memori package — data is lost on restart. SQLite stores vectors in `.memorycode/sqlvec.db` per repo. `pgvector` and `sqlserver` providers use `HybridStorageService` — symbols/relationships in EF Core relational tables, chunks in the vector store.
 
 Each repo gets its own URL:
 
@@ -98,7 +98,7 @@ The root route (`GET /`) returns storage provider, per-repo indexing status, and
 ## Architecture
 
 - **Host**: ASP.NET Core with MCP over Streamable HTTP
-- **Storage**: In-memory (`InMemoryVectorStore`, default) or SQLite with vector extensions (`Microsoft.SemanticKernel.Connectors.SqliteVec`) — configurable per deployment
+- **Storage**: Pluggable — in-memory (`InMemoryVectorStore`, default, zero-dependency), SQLite (`Microsoft.SemanticKernel.Connectors.SqliteVec`), PostgreSQL with pgvector, or SQL Server. Relational providers use `HybridStorageService` — symbols/relationships in EF Core tables, chunks in the vector store.
 - **Parsing**: Roslyn (C#), with language detection for other file types
 - **Embeddings**: Memori n-gram embedding generator (offline, no API key) or pluggable via `IEmbeddingGenerator<string, Embedding<float>>`
 - **Relationship extraction**: Syntax-based (Inherits, Implements, Calls, References)
@@ -109,15 +109,20 @@ The root route (`GET /`) returns storage provider, per-repo indexing status, and
 
 Key external packages and version constraints:
 
-- Memori (dual role: `NgramEmbeddingGenerator` for offline embeddings + `InMemoryVectorStore` — chosen for smooth out-of-box experience: no API keys, no model downloads, no database native binaries required for the default configuration)
-- Microsoft.CodeAnalaysis.CSharp
-- Microsoft.Extensions.AI.Abstractions
-- Microsoft.Extensions.VectorData.Abstractions
+- **Memori** — dual role: `NgramEmbeddingGenerator` for offline embeddings + `InMemoryVectorStore`. No API keys, no model downloads, no database native binaries required for the default configuration.
+- **Microsoft.EntityFrameworkCore** — relational storage for symbols/relationships in the AspNet hybrid storage path.
+- **SqlParserCS** — SQL parsing for both Mcp (LINQ over InMemoryVectorStore) and AspNet (validation + table translation) query paths.
+- **Microsoft.Extensions.AI.Abstractions** — `IEmbeddingGenerator`, `IChatClient` abstractions.
+- **Microsoft.Extensions.VectorData.Abstractions** — vector store abstractions.
     - Pinned — `10.1.0` is the highest version compatible with `Microsoft.SemanticKernel.Connectors.SqliteVec 1.74.0-preview` at runtime. Newer `10.x` minors add members to `VectorSearchOptions<T>` (e.g. `OldFilter`) that cause `MissingMethodException` in the SK connector. Bump only when the SK connector's minimum dependency moves past `10.1.0`
-- Microsoft.SemanticKernel.Connectors.SqliteVec (optional — only for SQLite storage)
-- ModelContextProtocol
-- System.Numerics.Tensors
-- TreeSitter.DotNet
+- **Microsoft.CodeAnalysis.CSharp** — Roslyn-based C# parsing.
+- **ModelContextProtocol** — MCP server types and tool attributes.
+- **ModelContextProtocol.AspNetCore** — MCP Streamable HTTP transport (AspNet host only).
+- **TreeSitter.DotNet** — multi-language parsing (TS, JS, Java).
+- **System.Numerics.Tensors** — `TensorPrimitives.Norm` for embedding normalization.
+- **Microsoft.SemanticKernel.Connectors.SqliteVec** (optional — SQLite vector storage).
+- **Microsoft.SemanticKernel.Connectors.PgVector** (optional — PostgreSQL vector storage).
+- **Microsoft.SemanticKernel.Connectors.SqlServer** (optional — SQL Server vector storage).
 
 ## Learn More
 

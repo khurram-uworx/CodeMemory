@@ -10,3 +10,9 @@ approval_mode = "approve"
 
 [mcp_servers.code-memory.tools.semantic_search]
 approval_mode = "approve"
+
+[mcp_servers.code-memory.tools.get_architecture_overview]
+approval_mode = "approve"
+
+[mcp_servers.code-memory.tools.get_edit_context]
+approval_mode = "approve"

@@ -13,10 +13,10 @@ namespace CodeMemory.Services;
 
 public sealed class IndexingEngine
 {
-    static SymbolRecord mapToSymbolRecord(Symbol s)
+    static SymbolRecord mapToSymbolRecord(Symbol s, string guid)
         => new SymbolRecord
         {
-            Id = s.FullName,
+            Id = guid,
             Name = s.Name,
             Kind = s.Kind.ToString(),
             FilePath = s.FilePath,
@@ -27,11 +27,12 @@ public sealed class IndexingEngine
             Documentation = s.Documentation,
         };
 
-    static ChunkRecord mapToChunkRecord(DocumentChunk c, ReadOnlyMemory<float>? embedding)
+    static ChunkRecord mapToChunkRecord(DocumentChunk c, ReadOnlyMemory<float>? embedding,
+        IReadOnlyDictionary<string, string> fullNameToGuid)
         => new ChunkRecord
         {
             Id = c.Id,
-            SymbolId = c.SymbolId,
+            SymbolId = fullNameToGuid[c.SymbolId],
             FilePath = c.FilePath,
             Content = c.Content,
             Language = c.Language,
@@ -41,14 +42,19 @@ public sealed class IndexingEngine
             Embedding = embedding,
         };
 
-    static RelationshipRecord mapToRelationshipRecord(Relationship r)
-        => new RelationshipRecord
+    static RelationshipRecord mapToRelationshipRecord(Relationship r,
+        IReadOnlyDictionary<string, string> fullNameToGuid)
+    {
+        var sourceId = fullNameToGuid[r.SourceSymbolId];
+        var targetId = fullNameToGuid[r.TargetSymbolId];
+        return new RelationshipRecord
         {
-            Id = $"{r.SourceSymbolId}->{r.TargetSymbolId}:{r.RelationshipType}",
-            SourceSymbolId = r.SourceSymbolId,
-            TargetSymbolId = r.TargetSymbolId,
+            SourceSymbolId = sourceId,
+            TargetSymbolId = targetId,
+            Id = $"{sourceId}->{targetId}:{r.RelationshipType}",
             RelationshipType = r.RelationshipType,
         };
+    }
 
     readonly ILogger<IndexingEngine> logger;
     readonly FileCrawler crawler;
@@ -106,6 +112,7 @@ public sealed class IndexingEngine
         var allSymbols = new List<Symbol>();
         var allChunks = new List<DocumentChunk>();
         var parseResults = new List<(ParseResult Result, string FilePath)>();
+        var fullNameToGuid = new Dictionary<string, string>();
 
         await foreach (var entry in crawler.WalkAsync(repoRoot, cancellationToken: ct))
         {
@@ -124,9 +131,16 @@ public sealed class IndexingEngine
                     var symbols = symbolExtractor.Extract(result, entry.RelativePath);
                     symbolCount += symbols.Count;
 
-                    allSymbolRecords.AddRange(symbols.Select(mapToSymbolRecord));
+                    foreach (var s in symbols)
+                    {
+                        if (!fullNameToGuid.ContainsKey(s.FullName))
+                            fullNameToGuid[s.FullName] = Guid.NewGuid().ToString("N");
+
+                        allSymbolRecords.Add(mapToSymbolRecord(s, fullNameToGuid[s.FullName]));
+                    }
+
                     allSymbols.AddRange(symbols);
-                    parseResults.Add((result, entry.Path));
+                    parseResults.Add((result, entry.RelativePath));
 
                     var fileText = result.FileText;
                     var chunks = chunker.ChunkAll(symbols, fileText, entry.Path, lang);
@@ -164,7 +178,7 @@ public sealed class IndexingEngine
             {
                 var stopWatch = new Stopwatch();
                 await storage.StoreRelationshipsAsync(
-                    allRelationships.Select(mapToRelationshipRecord).ToList(), ct);
+                    allRelationships.Select(r => mapToRelationshipRecord(r, fullNameToGuid)).ToList(), ct);
                 logger.LogInformation("Stored {Count} relationship records, took {Elapsed}",
                     allRelationships.Count, stopWatch.Elapsed);
             }
@@ -187,7 +201,7 @@ public sealed class IndexingEngine
                     for (int j = 0; j < vector.Length; j++)
                         normalized[j] = vector.Span[j] / norm;
 
-                chunkRecords.Add(mapToChunkRecord(allChunks[i], normalized));
+                chunkRecords.Add(mapToChunkRecord(allChunks[i], normalized, fullNameToGuid));
             }
 
             await storage.StoreChunksAsync(chunkRecords, ct);

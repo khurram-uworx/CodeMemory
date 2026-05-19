@@ -67,10 +67,11 @@ public sealed class GitHistoryServiceTests : BaseServicesTests
         var storage = CreateStorage(repoRoot, dbPath);
         await storage.InitializeAsync();
 
+        var testClassGuid = Guid.NewGuid().ToString("N");
         await storage.StoreSymbolsAsync([
             new SymbolRecord
             {
-                Id = "TestClass",
+                Id = testClassGuid,
                 Name = "TestClass",
                 Kind = "Class",
                 FilePath = "test.cs",
@@ -112,10 +113,11 @@ public sealed class GitHistoryServiceTests : BaseServicesTests
         var storage = CreateStorage(repoRoot, dbPath);
         await storage.InitializeAsync();
 
+        var testClassGuid = Guid.NewGuid().ToString("N");
         await storage.StoreSymbolsAsync([
             new SymbolRecord
             {
-                Id = "TestClass",
+                Id = testClassGuid,
                 Name = "TestClass",
                 Kind = "Class",
                 FilePath = "test.cs",

@@ -50,11 +50,18 @@ public sealed class DependencyGraphService : IDependencyGraphService
     public async Task<IReadOnlyList<DependencyNode>> TraceAsync(
         string symbolPath, string direction, int depth, CancellationToken ct = default)
     {
+        var symbol = await storage.GetSymbolByFullNameAsync(symbolPath, ct);
+        if (symbol == null)
+        {
+            logger.LogDebug("TraceAsync({Symbol}): symbol not found", symbolPath);
+            return [];
+        }
+
         var cappedDepth = Math.Clamp(depth, 1, 3);
         var visited = new HashSet<string>();
         var result = new List<DependencyNode>();
 
-        await bfsAsync(symbolPath, direction, cappedDepth, visited, result, 0, ct);
+        await bfsAsync(symbol.Id, direction, cappedDepth, visited, result, 0, ct);
 
         logger.LogDebug("TraceAsync({Symbol}, {Direction}, {Depth}): {Count} nodes",
             symbolPath, direction, depth, result.Count);
@@ -64,6 +71,13 @@ public sealed class DependencyGraphService : IDependencyGraphService
     public async Task<IReadOnlyList<DependencyNode>> FindRelatedAsync(
         string symbolPath, string relationType, CancellationToken ct = default)
     {
+        var symbol = await storage.GetSymbolByFullNameAsync(symbolPath, ct);
+        if (symbol == null)
+        {
+            logger.LogDebug("FindRelatedAsync({Symbol}): symbol not found", symbolPath);
+            return [];
+        }
+
         var result = new List<DependencyNode>();
 
         async Task addRelationships(IReadOnlyList<RelationshipRecord> rels)
@@ -78,10 +92,10 @@ public sealed class DependencyGraphService : IDependencyGraphService
             }
         }
 
-        var downstream = await storage.GetRelationshipsByTargetAsync(symbolPath, ct);
+        var downstream = await storage.GetRelationshipsByTargetAsync(symbol.Id, ct);
         await addRelationships(downstream);
 
-        var upstream = await storage.GetRelationshipsBySourceAsync(symbolPath, ct);
+        var upstream = await storage.GetRelationshipsBySourceAsync(symbol.Id, ct);
         await addRelationships(upstream);
 
         logger.LogDebug("FindRelatedAsync({Symbol}, {Type}): {Count} nodes",
@@ -92,7 +106,14 @@ public sealed class DependencyGraphService : IDependencyGraphService
     public async Task<IReadOnlyList<string>> FindTestCoverageAsync(
         string symbolPath, CancellationToken ct = default)
     {
-        var related = await storage.GetRelationshipsByTargetAsync(symbolPath, ct);
+        var symbol = await storage.GetSymbolByFullNameAsync(symbolPath, ct);
+        if (symbol == null)
+        {
+            logger.LogDebug("FindTestCoverageAsync({Symbol}): symbol not found", symbolPath);
+            return [];
+        }
+
+        var related = await storage.GetRelationshipsByTargetAsync(symbol.Id, ct);
         var testSources = related
             .Where(r => r.RelationshipType == "TestCoverage")
             .Select(r => r.SourceSymbolId)
@@ -106,21 +127,21 @@ public sealed class DependencyGraphService : IDependencyGraphService
             return testSources;
         }
 
-        var downstream = await storage.GetRelationshipsBySourceAsync(symbolPath, ct);
+        var downstream = await storage.GetRelationshipsBySourceAsync(symbol.Id, ct);
         var relatedFiles = new HashSet<string>();
 
         foreach (var rel in downstream)
         {
-            var symbol = await storage.GetSymbolAsync(rel.TargetSymbolId, ct);
-            if (symbol != null && symbol.FilePath.Length > 0)
-                relatedFiles.Add(symbol.FilePath);
+            var relSymbol = await storage.GetSymbolAsync(rel.TargetSymbolId, ct);
+            if (relSymbol != null && relSymbol.FilePath.Length > 0)
+                relatedFiles.Add(relSymbol.FilePath);
         }
 
         foreach (var rel in related)
         {
-            var symbol = await storage.GetSymbolAsync(rel.SourceSymbolId, ct);
-            if (symbol != null && symbol.FilePath.Length > 0)
-                relatedFiles.Add(symbol.FilePath);
+            var relSymbol = await storage.GetSymbolAsync(rel.SourceSymbolId, ct);
+            if (relSymbol != null && relSymbol.FilePath.Length > 0)
+                relatedFiles.Add(relSymbol.FilePath);
         }
 
         var conventionTests = relatedFiles

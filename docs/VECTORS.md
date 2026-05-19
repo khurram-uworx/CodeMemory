@@ -160,5 +160,5 @@ Microsoft's guidance: **Use InMemory for prototyping, swap for production.** How
 
 1. **Auto-embedding is the future** — the VectorStore should handle embedding generation, not the IndexingEngine. Ready for AspNet; Mcp depends on Memori's InMemoryVectorStore support.
 2. **DataIngestion is aspirational** — the pipeline pattern aligns with our architecture, but the library is too early to adopt. Revisit in H2 2026.
-3. **VectorStore is for vectors** — structured data (symbols, relationships) belongs in a relational database. This is the core insight driving `docs/STORAGE.md`.
+3. **VectorStore is for vectors** — structured data (symbols, relationships) belongs in a relational database. This is the core insight driving the `HybridStorageService` design: symbols/relationships in EF Core relational tables, chunks in VectorStore.
 4. **Mcp stays manual** — the InMemoryVectorStore doesn't support auto-embedding. The current manual approach (generate + L2-normalize + store) is correct for that path.

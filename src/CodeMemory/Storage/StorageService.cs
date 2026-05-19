@@ -124,6 +124,14 @@ public sealed class StorageService : IStorageService, IDisposable
         return await symbols!.GetAsync(id, cancellationToken: ct);
     }
 
+    public async Task<SymbolRecord?> GetSymbolByFullNameAsync(string fullName, CancellationToken ct = default)
+    {
+        throwIfNotInitialized();
+        Expression<Func<SymbolRecord, bool>> filter = s => s.FullName == fullName;
+        var results = await symbols!.GetAsync(filter, top: 1, options: null, ct).ToListAsync(ct);
+        return results.FirstOrDefault();
+    }
+
     public async Task<ChunkRecord?> GetChunkAsync(string id, CancellationToken ct = default)
     {
         throwIfNotInitialized();

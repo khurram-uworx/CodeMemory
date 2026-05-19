@@ -26,7 +26,7 @@ public sealed class EditContextService : IEditContextService
         {
             try
             {
-                var symbol = await storage.GetSymbolAsync(symbolPath, ct);
+                var symbol = await storage.GetSymbolByFullNameAsync(symbolPath, ct);
                 if (symbol != null)
                 {
                     target = new DependencyNode(
@@ -57,9 +57,13 @@ public sealed class EditContextService : IEditContextService
         {
             try
             {
-                var chunks = await storage.GetChunksBySymbolAsync(symbolPath, ct);
-                if (chunks.Count > 0)
-                    sourceCode = string.Join("\n", chunks.Select(c => c.Content));
+                var sym = await storage.GetSymbolByFullNameAsync(symbolPath, ct);
+                if (sym != null)
+                {
+                    var chunks = await storage.GetChunksBySymbolAsync(sym.Id, ct);
+                    if (chunks.Count > 0)
+                        sourceCode = string.Join("\n", chunks.Select(c => c.Content));
+                }
             }
             catch (Exception ex)
             {

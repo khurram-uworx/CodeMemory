@@ -37,6 +37,7 @@ public sealed class IndexingHostedService : BackgroundService
 
         // Initialize all storage services upfront so MCP tools can query any repo immediately
         var registry = serviceProvider.GetRequiredService<IServiceRegistry>();
+        var initializationFailures = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var (name, _) in repositories)
         {
             try
@@ -46,6 +47,7 @@ public sealed class IndexingHostedService : BackgroundService
             }
             catch (Exception ex)
             {
+                initializationFailures.Add(name);
                 logger.LogError(ex, "Failed to initialize storage for repository '{Name}'", name);
             }
         }
@@ -54,6 +56,14 @@ public sealed class IndexingHostedService : BackgroundService
         {
             foreach (var (name, path) in repositories)
             {
+                if (initializationFailures.Contains(name))
+                {
+                    logger.LogWarning(
+                        "Skipping indexing for repository '{Name}' because storage initialization failed",
+                        name);
+                    continue;
+                }
+
                 var repoPath = Path.IsPathRooted(path) ? path : Path.GetFullPath(Path.Combine(appBasePath, path));
                 logger.LogInformation("Indexing repository '{Name}' at path '{Path}'", name, repoPath);
 
