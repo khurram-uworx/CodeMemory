@@ -5,19 +5,6 @@
 
 **CodeMemory** transforms repositories into queryable intelligence — extracting symbols, relationships, and semantic understanding — and exposing it through MCP tools designed for AI coding agents.
 
-## Usage
-
-```bash
-# Point at any local repo:
-npx @uworx/code-memory --repo /path/to/your/project
-
-# Or run in the current directory:
-cd /path/to/your/project
-npx @uworx/code-memory
-```
-
-This starts an MCP stdio server that reads JSON-RPC from stdin and writes to stdout — compatible with any MCP client (AI coding agents, IDEs, etc.).
-
 ## How It Works
 
 The `@uworx/code-memory` package is a lightweight CLI wrapper. On `npm install`, it downloads the platform-specific native binary from GitHub Releases. The binary is a self-contained .NET single-file publish with no runtime dependencies.
@@ -42,15 +29,27 @@ All tools return structured JSON.
 
 ## Configuration
 
-Configure the MCP tool in your agent's config:
+Configure the MCP server in your client (VS Code, Cursor, Claude Desktop, etc.) by adding the following to your MCP settings:
 
 ```json
 {
   "mcpServers": {
-    "CodeMemory": {
-      "type": "stdio",
+    "code-memory": {
       "command": "npx",
-      "args": ["@uworx/code-memory", "--repo", "/path/to/your/project"]
+      "args": ["-y", "@uworx/code-memory"]
+    }
+  }
+}
+```
+
+This indexes the current working directory. To index a different folder, pass `--repo` (each argument as a separate array element):
+
+```json
+{
+  "mcpServers": {
+    "code-memory": {
+      "command": "npx",
+      "args": ["-y", "@uworx/code-memory", "--repo", "/path/to/your/project"]
     }
   }
 }
@@ -69,6 +68,10 @@ Configure the MCP tool in your agent's config:
 ## Indexing Note
 
 Indexing is non-blocking. Poll the `ping` tool until `indexingCompleted` is `true` before calling other tools, or results may be empty/partial.
+
+## `.codememory` Folder
+
+CodeMemory creates a `.codememory` folder in the target repository root to store index data, logs (`Log.*.txt`), and — in future versions — additional cached artifacts. This folder is managed entirely by CodeMemory and is kept clean. You can safely add `.codememory/` to your project's `.gitignore`; the MCP server handles cleanup internally.
 
 ## Learn More
 

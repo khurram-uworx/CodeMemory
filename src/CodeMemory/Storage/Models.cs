@@ -59,7 +59,7 @@ public sealed class ChunkRecord
     public string Id { get; set; } = string.Empty;
 
     [VectorStoreData]
-    public string SymbolId { get; set; } = string.Empty;
+    public string? SymbolId { get; set; }
 
     [VectorStoreData]
     public string FilePath { get; set; } = string.Empty;
