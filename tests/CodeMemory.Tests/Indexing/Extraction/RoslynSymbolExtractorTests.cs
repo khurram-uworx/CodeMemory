@@ -96,9 +96,9 @@ public sealed class RoslynSymbolExtractorTests
 
         var innerClass = symbols.FirstOrDefault(s => s.Name == "InnerClass");
         Assert.That(innerClass, Is.Not.Null);
-        Assert.That(innerClass!.FullName, Is.EqualTo("OuterClass.InnerClass"));
+        Assert.That(innerClass!.FullName, Is.EqualTo("CodeMemory.Tests.Fixtures.OuterClass.InnerClass"));
 
-        var innerMethod = symbols.FirstOrDefault(s => s.FullName == "OuterClass.InnerClass.InnerMethod()");
+        var innerMethod = symbols.FirstOrDefault(s => s.FullName == "CodeMemory.Tests.Fixtures.OuterClass.InnerClass.InnerMethod()");
         Assert.That(innerMethod, Is.Not.Null);
         Assert.That(innerMethod!.Kind, Is.EqualTo(CodeSymbolKind.Method));
     }

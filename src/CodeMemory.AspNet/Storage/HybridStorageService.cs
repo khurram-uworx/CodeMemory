@@ -348,6 +348,14 @@ public sealed class HybridStorageService : IStorageService, IDisposable
         var entity = await db.Symbols
             .AsNoTracking()
             .FirstOrDefaultAsync(s => s.FullName == fullName, ct);
+        if (entity != null)
+            return entity.ToRecord();
+
+        // Fallback: try matching by short name for convenience
+        entity = await db.Symbols
+            .AsNoTracking()
+            .FirstOrDefaultAsync(s => s.Name == fullName, ct);
+
         return entity?.ToRecord();
     }
 
@@ -365,6 +373,21 @@ public sealed class HybridStorageService : IStorageService, IDisposable
             .AsNoTracking()
             .FirstOrDefaultAsync(relationship => relationship.Id == id, ct);
         return entity?.ToRecord();
+    }
+
+    public async Task<IReadOnlyList<SymbolRecord>> GetSymbolsByParentAsync(
+        string parentFullName, CancellationToken ct = default)
+    {
+        throwIfNotInitialized();
+
+        await using var db = createDbContext();
+        var prefix = parentFullName + ".";
+
+        return await db.Symbols
+            .AsNoTracking()
+            .Where(symbol => symbol.FullName.StartsWith(prefix))
+            .Select(symbol => symbol.ToRecord())
+            .ToListAsync(ct);
     }
 
     public async Task<IReadOnlyList<SymbolRecord>> GetSymbolsByFileAsync(string filePath,

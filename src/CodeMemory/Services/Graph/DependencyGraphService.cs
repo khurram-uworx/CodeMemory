@@ -71,8 +71,14 @@ public sealed class DependencyGraphService : IDependencyGraphService
 
         await bfsAsync(symbol.Id, direction, cappedDepth, visited, result, 0, ct);
 
+        // Include relationships from child symbols (methods, properties, fields, etc.)
+        var childSymbols = await storage.GetSymbolsByParentAsync(symbol.FullName, ct);
+        foreach (var child in childSymbols)
+            await bfsAsync(child.Id, direction, cappedDepth, visited, result, 0, ct);
+
         logger.LogDebug("TraceAsync({Symbol}, {Direction}, {Depth}): {Count} nodes",
             symbolPath, direction, depth, result.Count);
+
         return result;
     }
 
@@ -87,11 +93,15 @@ public sealed class DependencyGraphService : IDependencyGraphService
         }
 
         var result = new List<DependencyNode>();
+        var seenRelIds = new HashSet<string>();
 
         async Task addRelationships(IReadOnlyList<RelationshipRecord> rels)
         {
             foreach (var rel in rels)
             {
+                if (!seenRelIds.Add(rel.Id))
+                    continue;
+
                 if (relationType is "all" || rel.RelationshipType.Equals(relationType, StringComparison.OrdinalIgnoreCase))
                 {
                     var tgtSymbol = await storage.GetSymbolAsync(rel.TargetSymbolId, ct);
@@ -105,14 +115,27 @@ public sealed class DependencyGraphService : IDependencyGraphService
             }
         }
 
+        // Direct relationships on the queried symbol
         var downstream = await storage.GetRelationshipsByTargetAsync(symbol.Id, ct);
         await addRelationships(downstream);
 
         var upstream = await storage.GetRelationshipsBySourceAsync(symbol.Id, ct);
         await addRelationships(upstream);
 
+        // Include relationships from child symbols (methods, properties, fields, etc.)
+        var childSymbols = await storage.GetSymbolsByParentAsync(symbol.FullName, ct);
+        foreach (var child in childSymbols)
+        {
+            downstream = await storage.GetRelationshipsByTargetAsync(child.Id, ct);
+            await addRelationships(downstream);
+
+            upstream = await storage.GetRelationshipsBySourceAsync(child.Id, ct);
+            await addRelationships(upstream);
+        }
+
         logger.LogDebug("FindRelatedAsync({Symbol}, {Type}): {Count} nodes",
             symbolPath, relationType, result.Count);
+
         return result;
     }
 
@@ -143,6 +166,7 @@ public sealed class DependencyGraphService : IDependencyGraphService
             }
             logger.LogDebug("FindTestCoverageAsync({Symbol}): {Count} test sources (from stored relationships)",
                 symbolPath, testSources.Count);
+
             return testSources;
         }
 
@@ -171,6 +195,7 @@ public sealed class DependencyGraphService : IDependencyGraphService
 
         logger.LogDebug("FindTestCoverageAsync({Symbol}): {Count} test files (by convention)",
             symbolPath, conventionTests.Count);
+
         return conventionTests;
     }
 }
