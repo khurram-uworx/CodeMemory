@@ -28,15 +28,16 @@ CodeMemory/
 │   │   │   ├── Git/              # GitHistoryService
 │   │   │   ├── Graph/            # DependencyGraphService
 │   │   │   └── Query/            # SymbolQueryService, RelationshipQueryService, SemanticSearchService
-│   │   ├── SqlQuery/             # SQL query engine (SqlParserCS → LINQ over InMemoryVectorStore)
-│   │   │   ├── SqlQueryService.cs
-│   │   │   ├── SqlExpressionBuilder.cs
-│   │   │   ├── CollectionRegistry.cs
-│   │   │   └── TableSchemaProvider.cs
 │   │   └── Storage/              # IStorageService interface + storage model types
 │   │       ├── Models/           # SymbolRecord, ChunkRecord, RelationshipRecord, ScoredChunk
 │   │       └── Services/         # IStorageService interface
 │   ├── CodeMemory.Storage/       # SQLite + In-memory vector store providers
+│   ├── CodeMemory.Mcp/           # Standalone stdio MCP server
+│   │   └── SqlQuery/             # SQL query: SqlParserCS → LINQ over InMemoryVectorStore
+│   │       ├── SqlQueryService.cs
+│   │       ├── SqlExpressionBuilder.cs
+│   │       ├── CollectionRegistry.cs
+│   │       └── TableSchemaProvider.cs
 │   ├── CodeMemory.AspNet/        # ASP.NET Core host + BackgroundService
 │   │   ├── Configuration/        # ServiceRegistry, StorageServiceRouter, RepoContextAccessor
 │   │   ├── Services/             # IndexingHostedService (BackgroundService wrapper)
@@ -76,7 +77,7 @@ Rules:
 - `CodeMemory.Storage` holds both SQLite (`SqliteVectorStore`) and in-memory (`InMemoryVectorStore`) providers; swappable via `Storage:Provider` config key
 - `IEmbeddingGenerator<string, Embedding<float>>` is provided by the `Memori` NuGet package via DI — optional in `StorageService` constructor (accepts null, no chunk storage), but always registered in the default DI wiring
 - `IndexingEngine` (logic) lives in `CodeMemory.Services`; `IndexingHostedService` (BackgroundService wrapper) lives in `CodeMemory.AspNet.Services`
-- MCP tools live in `CodeMemory.Mcp`; registration uses `WithToolsFromAssembly(typeof(McpTools).Assembly)` from `CodeMemory.AspNet.Program.cs`
+- MCP tool types live in two places: `CodeMemory.Mcp` namespace (core tools) and `CodeMemory.AspNet.Tools` (AspNet-specific). Registration in `CodeMemory.AspNet.Program.cs` uses both `WithToolsFromAssembly(typeof(McpTools).Assembly)` and `WithToolsFromAssembly(typeof(AspNetSqlQueryTool).Assembly)`
 - `CodeMemory.Tests` references all three projects for integration testing
 
 ---
@@ -124,15 +125,15 @@ Startup
        └─ MCP server loop starts immediately; ping reports indexing status
 
 Storage provider selection:
-  "Storage:Provider": "inmemory" (default) or "sqlite"
-  Selected in Program.cs before repo loop — constructs SqliteVectorStore or InMemoryVectorStore accordingly
+  "Storage:Provider": "inmemory" (default), "sqlite", "pgvector", or "sqlserver"
+  Selected in Program.cs before repo loop — constructs the appropriate VectorStore + EF Core provider combination
 ```
 
 Notes:
 - Relationship extraction is syntax-only (no SemanticModel) — sufficient for MVP cross-file references
 - External/BCL type references are omitted; only intra-repo relationships recorded
 - Full re-index on each startup (incremental planned); non-blocking in both hosts
-- SQL queries are only supported on the InMemoryVectorStore backend (`Storage:Provider: "inmemory"`); Sqlite backend returns an error since it already speaks SQL natively
+- SQL queries: InMemoryVectorStore backend (`Storage:Provider: "inmemory"`) uses SqlParserCS via `SqlQueryService`; relational backends (`sqlite`/`pgvector`/`sqlserver`) use `AspNetSqlQueryTool` forwarding to EF Core for symbols+relationships only (chunks via `semantic_search`)
 
 ### Search Pipeline
 
@@ -217,7 +218,9 @@ get_symbol_history / get_hotspots
 
 Configurable via `Storage:Provider` in appsettings.json:
 - **`"inmemory"`** (default) — `InMemoryVectorStore` from Memori. No persistence, data lost on restart. No external dependencies. Best for CI/testing/agent sessions.
-- **`"sqlite"`** — `SqliteVectorStore` via `Microsoft.SemanticKernel.Connectors.SqliteVec`. Persistent storage at `.memorycode/sqlvec.db` per repo. Requires SQLite native binaries at runtime.
+- **`"sqlite"`** — `SqliteVectorStore` via `Microsoft.SemanticKernel.Connectors.SqliteVec`. Persistent storage at `.memorycode/sqlvec.db` per repo. Uses `HybridStorageService` — symbols/relationships in EF Core SQLite tables, chunks in vector store.
+- **`"pgvector"`** — `PostgresVectorStore` + EF Core PostgreSQL (Npgsql). Per-repo schema isolation. Requires PostgreSQL + pgvector extension.
+- **`"sqlserver"`** — `SqlServerVectorStore` + EF Core SQL Server. Per-repo schema isolation. Requires SQL Server.
 
 ### Why Memori for Both Embeddings and In-Memory Storage
 
@@ -230,28 +233,35 @@ Together, a single `Memori` NuGet dependency provides both the embedding pipelin
 
 ## Storage Schema
 
+### Mcp (STDIO) path — InMemoryVectorStore
+
 Three collections in the vector store:
 
 | Collection | Record Type | Has Vector? | Key |
 |---|---|---|---|
-| `symbols` | `SymbolRecord` | No | Symbol full name |
-| `chunks` | `ChunkRecord` | Yes (float32[1536], Cosine) | Chunk hash ID |
-| `relationships` | `RelationshipRecord` | No | Relationship ID |
+| `symbols` | `SymbolRecord` | No | GUID |
+| `chunks` | `ChunkRecord` | Yes (float32[1536], Cosine) | SHA256 hash |
+| `relationships` | `RelationshipRecord` | No | `sourceId->targetId:type` composite |
+
+### AspNet (HTTP) path — HybridStorageService
+
+Symbols and relationships stored in relational tables via EF Core (`symbols` / `relationships` tables). Chunks stored in the VectorStore (same schema as Mcp path).
 
 ### SymbolRecord
-- Id, Name, Kind (Class/Method/Property/etc.), FilePath, LineStart/End, FullName, Modifiers, Documentation
+- Id (GUID), Name, Kind (Class/Method/Property/etc.), FilePath, LineStart/End, FullName, Modifiers, Documentation
 
 ### ChunkRecord
-- Id, SymbolId, FilePath, Content, Language, LineStart/End, MetadataJson, Embedding
+- Id (SHA256 hash), SymbolId, FilePath, Content, Language, LineStart/End, MetadataJson, Embedding
 
 ### RelationshipRecord
-- Id, SourceSymbolId, TargetSymbolId, RelationshipType (Inherits/Implements/Calls/References/TestCoverage)
+- Id (`sourceId->targetId:type`), SourceSymbolId, TargetSymbolId, RelationshipType (Inherits/Implements/Calls/References/TestCoverage)
 
 Query methods on `IStorageService`:
 - `GetRelationshipsBySourceAsync(sourceId)` — what this symbol references
 - `GetRelationshipsByTargetAsync(targetId)` — what references this symbol
 - `GetSymbolsByKindAsync(kind)` — all symbols of a kind (for architecture overview)
-- `GetSymbolAsync(id)` — resolve a single symbol by full name
+- `GetSymbolByFullNameAsync(fullName)` — resolve a single symbol by its FullName (returns GUID Id)
+- `GetSymbolAsync(id)` — resolve a single symbol by GUID Id
 
 ---
 
@@ -270,16 +280,16 @@ Query methods on `IStorageService`:
 | `IArchitectureService` | `CodeMemory.Indexing.Architecture` | Component grouping, language breakdown, file/symbol counts |
 | `IComponentClusteringService` | `CodeMemory.Indexing.Architecture` | Threshold-based component coupling clustering |
 | `IGitHistoryService` | `CodeMemory.Indexing.Git` | Symbol git history, hotspot analysis |
-| `SqlQueryService` | `CodeMemory.SqlQuery` | SQL parsing + execution: SqlParserCS → LINQ → InMemoryVectorStore |
-| `CollectionRegistry` | `CodeMemory.SqlQuery` | Table name → VectorStore collection mapping (SymbolRecord, ChunkRecord, RelationshipRecord) |
-| `SqlExpressionBuilder` | `CodeMemory.SqlQuery` | SQL WHERE AST → `Expression<Func<TRecord, bool>>` via `System.Linq.Expressions` |
-| `TableSchemaProvider` | `CodeMemory.SqlQuery` | Reflective column metadata for MCP tool descriptions |
+| `SqlQueryService` | `CodeMemory.Mcp.SqlQuery` | SQL parsing + execution: SqlParserCS → LINQ → InMemoryVectorStore |
+| `CollectionRegistry` | `CodeMemory.Mcp.SqlQuery` | Table name → VectorStore collection mapping (SymbolRecord, ChunkRecord, RelationshipRecord) |
+| `SqlExpressionBuilder` | `CodeMemory.Mcp.SqlQuery` | SQL WHERE AST → `Expression<Func<TRecord, bool>>` via `System.Linq.Expressions` |
+| `TableSchemaProvider` | `CodeMemory.Mcp.SqlQuery` | Reflective column metadata for MCP tool descriptions |
 
 ---
 
 ## MCP Tool Surface
 
-Eleven tools auto-discovered via `AddMcpServer().WithToolsFromAssembly(typeof(McpTools).Assembly)` from `CodeMemory.AspNet.Program.cs`:
+Tools auto-discovered via `AddMcpServer()` from `CodeMemory.AspNet.Program.cs` (registration from both `typeof(McpTools).Assembly` and `typeof(AspNetSqlQueryTool).Assembly`):
 
 | Tool | Description |
 |---|---|
@@ -293,7 +303,7 @@ Eleven tools auto-discovered via `AddMcpServer().WithToolsFromAssembly(typeof(Mc
 | `get_component_clusters` | Logical component groupings based on inter-component coupling |
 | `get_symbol_history` | Git commit history for a symbol (commits, authors, dates, recent commits) |
 | `get_hotspots` | Most frequently changed files ranked by commit count |
-| `sql_query` | SQL queries over indexed repo data (SELECT/WHERE/ORDER BY/GROUP BY/HAVING, aggregates, vector search, arithmetic expressions) |
+| `sql_query` | SQL queries over indexed repo data — symbols/relationships via relational SQL on AspNet, or via SqlParserCS → LINQ over InMemoryVectorStore on Mcp (SELECT/WHERE/ORDER BY/GROUP BY/HAVING, aggregates, vector search via `ORDER BY Similarity DESC`) |
 
 All tools return structured JSON. Tools with external service dependencies use `GetService<T>` fallback — gracefully degrade when backing services are unavailable.
 
