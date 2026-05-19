@@ -9,9 +9,9 @@ CTEs (`WITH name AS (query) SELECT ...`) and JOINs (`FROM t1 JOIN t2 ON ...`) we
 | Dimension | CTEs | JOINs |
 |-----------|------|-------|
 | **Architecture impact** | Pre-processing step only | Deep — multi-table FROM, row merging, qualified columns |
-| **Execution model** | Recursive call to existing `queryFilteredAsync` | New cross-collection query + row merge logic |
+| **Execution model** | `executeCteSubqueryAsync` — full subquery execution with in-memory filtering via `evaluateExpression` | New cross-collection query + row merge logic |
 | **Row model changes** | None — CTE results are already `Dictionary<string, object?>` | Wide rows from N tables; needs `table.col` disambiguation |
-| **Filter building** | Uses existing `SqlExpressionBuilder` (single record type) | Cross-type filter expressions; needs multi-type awareness |
+| **Filter building** | CTE rows: `evaluateExpression` in-memory (same pattern as HAVING). Store rows: `SqlExpressionBuilder` expression trees (unchanged) | Cross-type filter expressions; needs multi-type awareness |
 | **Code isolation** | Self-contained — hooks into table resolution | Touches parser, filter builder, registry, projection, schema provider |
 | **TableSchemaProvider needed?** | No — CTE columns come from the subquery's projection | Yes — LLM needs join-compatible column metadata |
 | **Parser support** | Already parsed into `query.With` → `Sequence<CommonTableExpression>` | Already parsed into `TableWithJoins.Joins` → `Sequence<Join>` |
@@ -90,7 +90,7 @@ public sealed record TableAlias(
 - Task 1 and Task 2 are tightly coupled — they should be done in sequence by one agent.
 - Task 3 is independent after Task 2 (same table resolution hook, different `TableFactor`).
 - Task 4 can run partially in parallel with Task 3 (basic CTE tests) but full coverage needs Task 3 first.
-- No files outside `CodeMemory/SqlQuery/` (except tests) should be touched.
+- No files outside `src/CodeMemory.Mcp/SqlQuery/` (except tests/docs) should be touched.
 - The existing row pipeline (`applyOrderBy`, `applyGroupBy`, `projectRows`, etc.) needs **zero changes**.
 
 ---
@@ -114,10 +114,13 @@ The `query.With` property is populated by the parser but never accessed. CTE def
 - Read `query.With.CteTables` if non-null
 - For each `CommonTableExpression`:
   - If `Recursive` is true, return an error with a clear message ("Recursive CTEs not yet supported")
-  - Recursively call the data-fetching path (`queryFilteredAsync` or `queryVectorAsync` depending on the CTE body) with `int.MaxValue` as the limit (CTE must produce all rows)
-  - Store the result in a `Dictionary<string, List<Dictionary<string, object?>>>` keyed by `Alias.Name.Value`
+  - Call `executeCteSubqueryAsync` — a new method that fully executes the CTE body (table resolution, data fetch, WHERE, ORDER BY, LIMIT, projection) using the CTE results dictionary for resolution
+  - Table resolution: check CTE results dict first, fall through to `CollectionRegistry`
+  - If CTE references a store table: use `queryFilteredAsync`/`queryVectorAsync` (typed expression tree path, unchanged)
+  - If CTE references a prior CTE: clone rows from the CTE dict + apply WHERE via `evaluateExpression` (in-memory, same pattern as HAVING evaluator)
+  - Apply the CTE subquery's own ORDER BY, LIMIT, and projection using existing post-processing methods
+  - Store the final result in a `Dictionary<string, List<Dictionary<string, object?>>>` keyed by `Alias.Name.Value`
 - Pass this dictionary alongside the execution context so Task 2 can access it
-- If a CTE references another CTE by name, resolve from the dictionary (already-evaluated CTEs)
 
 ### Constraints
 
@@ -135,14 +138,23 @@ The `query.With` property is populated by the parser but never accessed. CTE def
 Dictionary<string, List<Dictionary<string, object?>>>? cteResults = null;
 if (query.With is not null)
 {
-    cteResults = await materializeCtesAsync(query.With, store, ct);
+    cteResults = await materializeCtesAsync(store, query.With, maxResults, ct);
     // cteResults is now available for table resolution in the main query
 }
 ```
 
-2. `materializeCtesAsync` iterates CTEs in order, building a dictionary. Each CTE is evaluated by calling the same data-fetching path used for the main query (`queryFilteredAsync` / `queryVectorAsync`), passing `int.MaxValue` as the row limit.
+2. `materializeCtesAsync` iterates CTEs in order, building a dictionary. Each CTE is evaluated by `executeCteSubqueryAsync`, which:
 
-3. When a CTE subquery's FROM clause references a previously-materialized CTE name, the data source switches from the store collection to the in-memory CTE results.
+   a. Resolves table name (CTE dict first, then `CollectionRegistry`)
+   b. If CTE-referencing-CTE: clones in-memory rows + applies WHERE via `evaluateExpression`
+   c. If CTE-referencing-store: calls `queryFilteredAsync`/`queryVectorAsync` (typed path, unchanged)
+   d. Applies CTE's own ORDER BY, LIMIT, projection via existing post-processing methods
+   e. Returns fully materialized `List<Dictionary<string, object?>>`
+
+3. For the main query's data fetch, if the table resolves to a CTE:
+   - Clone rows from the CTE dict
+   - Apply WHERE filter via `evaluateExpression` (same `isTruthy` base as HAVING)
+   - All existing post-processing (ORDER BY, LIMIT, GROUP BY, HAVING, projection, DISTINCT) works unchanged
 
 ### Acceptance criteria
 
@@ -155,9 +167,7 @@ if (query.With is not null)
 
 ### Files likely involved
 
-- `src/CodeMemory/SqlQuery/SqlQueryService.cs`
-
----
+- `src/CodeMemory.Mcp/SqlQuery/SqlQueryService.cs`
 
 ## Task 2: CTE-Aware Table Resolution
 
@@ -201,18 +211,17 @@ if (!isCte && entry is null)
     return fail($"Unknown table '{tableName}'", sw);
 ```
 
-2. For the data fetch: if `isCte`, skip `queryFilteredAsync`/`queryVectorAsync` and use the in-memory CTE results as the source. Apply the main query's WHERE filter over the CTE rows using the existing `buildFilterExpression` + in-memory filtering (similar to how HAVING filters grouped results).
+2. For the data fetch: if `isCte`, skip `queryFilteredAsync`/`queryVectorAsync` and use the in-memory CTE results as the source. Apply the main query's WHERE filter over the CTE rows using `evaluateExpression` + `isTruthy` (same pattern as the HAVING evaluator — works on `Dictionary<string, object?>` rows without needing typed expression trees).
+
+   > **Design decision**: CTE rows are untyped `Dictionary<string, object?>` — they cannot use expression tree filters (which require typed records like `SymbolRecord`). The `evaluateExpression` method already evaluates arbitrary AST expressions against dictionaries; `filterCteRows` wraps this to produce a filtered subset. This keeps JOINs future-compatible since joined rows would also be dictionaries.
 
 ### Acceptance criteria
 
-- `WITH cte AS (...) SELECT * FROM cte WHERE ...` correctly applies the main query's WHERE filter on CTE rows
+- `WITH cte AS (...) SELECT * FROM cte WHERE ...` correctly applies the main query's WHERE filter on CTE rows via `evaluateExpression`
 - CTE results appear as `Dictionary<string, object?>` rows compatible with ORDER BY, LIMIT, and projection
 - Non-CTE queries are unaffected
 - CTE alias takes priority over collection name (if a CTE has the same name as a registered table, the CTE wins)
-
-### Files likely involved
-
-- `src/CodeMemory/SqlQuery/SqlQueryService.cs`
+- `ORDER BY Similarity DESC` against a CTE table returns a clear error (vector search requires store-level embeddings)
 
 ---
 
@@ -253,7 +262,7 @@ Support derived tables (subqueries in FROM) using the same infrastructure as CTE
 
 ### Files likely involved
 
-- `src/CodeMemory/SqlQuery/SqlQueryService.cs`
+- `src/CodeMemory.Mcp/SqlQuery/SqlQueryService.cs`
 
 ---
 
@@ -289,6 +298,9 @@ CTEs add a new execution path that runs before the main query. Every combination
 - Derived table (subquery in FROM)
 - Nested derived tables
 - CTE followed by derived table in the same query
+- CTE subquery with vector search (preserves `__score`)
+- `ORDER BY Similarity DESC` on CTE table returns error
+- CTE with all post-processing steps (WHERE, GROUP BY, HAVING, ORDER BY, LIMIT)
 - Non-CTE queries must pass unchanged (regression)
 
 ### Constraints
@@ -299,8 +311,8 @@ CTEs add a new execution path that runs before the main query. Every combination
 
 ### Acceptance criteria
 
-- At least 20 new test methods covering the scenarios above.
-- All existing 249 tests still pass.
+- At least 20 new test methods covering the scenarios above (excluding derived table scenarios which are Task 3).
+- All existing ~249 tests still pass.
 
 ### Files likely involved
 
@@ -338,7 +350,7 @@ Update documentation to reflect CTE support and the new task split.
 ### Files likely involved
 
 - `docs/SQL-KNOWNISSUES.md`
-- `src/CodeMemory/Mcp/SqlQueryTool.cs`
+- `src/CodeMemory.Mcp/Tools/SqlQueryTool.cs`
 
 ---
 
@@ -552,9 +564,10 @@ ORDER BY Name
 
 ---
 
-#### 3.3 Vector search with CTE (pre-filter chunks by language)
+#### 3.3 Vector search with CTE — NOT SUPPORTED (initial pass)
 
 ```sql
+-- This pattern does NOT work in the initial CTE implementation:
 WITH csharp_chunks AS (
     SELECT Id, SymbolId, FilePath, Content, Embedding
     FROM ChunkRecord
@@ -565,9 +578,19 @@ WHERE Content LIKE '%async%'
 ORDER BY Similarity DESC LIMIT 5
 ```
 
-**Why this tool:** Combines CTE pre-filtering with vector search. The CTE reduces the search space to C# chunks, then `ORDER BY Similarity DESC` ranks by embedding similarity. Without CTEs, all the filtering and ranking must sit in one flat WHERE.
+**Why not supported:** `ORDER BY Similarity DESC` triggers the vector search path which requires store-level embedding access. CTE rows are dictionaries without embedding vectors (`recordToDictionary` strips `ReadOnlyMemory<float>` properties). A future enhancement could implement in-memory vector re-ranking by preserving embeddings as `float[]` in CTE rows.
 
-**Expect:** Top 5 C# chunks about async, ranked by semantic similarity. Each row includes `__score`.
+**What DOES work:** CTE subquery can perform vector search directly (the `__score` column is preserved in CTE rows if the subquery's FROM clause targets a store table with vector search):
+
+```sql
+WITH top_chunks AS (
+    SELECT FilePath, Content FROM ChunkRecord
+    WHERE Content LIKE '%async%' ORDER BY Similarity DESC LIMIT 5
+)
+SELECT * FROM top_chunks
+```
+
+**Expect:** CTE materializes the vector search results, including `__score`. Main query returns those rows unchanged.
 
 ---
 
@@ -736,6 +759,8 @@ ORDER BY cnt DESC
 | CTE referencing undefined CTE | Error | Forward references not allowed; CTEs evaluated in order |
 | Cyclic CTE references | Error | CTE must not reference itself (without RECURSIVE) |
 | Subqueries in WHERE/IN | Not supported | CTE materializes the result set, but WHERE IN (subquery) requires separate subquery support |
+| `ORDER BY Similarity DESC` on CTE table | Not supported | Vector search requires store-level embeddings. CTE rows are plain dictionaries. Returns clear error. |
+| CTE subquery with vector search | Supported | CTE body can use `ORDER BY Similarity DESC` on a store table; `__score` preserved in results |
 | Derived tables (`FROM (subquery)`) | Requires Task 3 | Shares CTE infrastructure |
 | CTE with UNION/INTERSECT | Not supported | Requires `SetExpression.SetOperation` support |
 | Non-recursive CTEs | Supported | Primary feature |

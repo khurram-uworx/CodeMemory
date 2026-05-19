@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "CodeMemory.Mcp": {
+      "commandName": "Project",
+      "commandLineArgs": "--repo E:\\khurram-uworx\\CodeMemory"
+    }
+  }
+}
