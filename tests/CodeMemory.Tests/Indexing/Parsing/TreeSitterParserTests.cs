@@ -130,6 +130,42 @@ public sealed class TreeSitterParserTests
     }
 
     [Test]
+    public async Task ParseAsync_WithGoFile_ReturnsParseResultWithTsTree()
+    {
+        Assume.That(isTreeSitterAvailable(), "Tree-sitter native libraries not available");
+
+        var parser = new TreeSitterParser(NullLogger<TreeSitterParser>.Instance);
+        var path = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}.go");
+        try
+        {
+            await File.WriteAllTextAsync(path, "package main\n\ntype Foo struct{}\nfunc main() {}");
+            var result = await parser.ParseAsync(path);
+            Assert.That(result, Is.Not.Null);
+            Assert.That(result!.TsTree, Is.Not.Null);
+            Assert.That(result.Language, Is.EqualTo(Language.Go));
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Test]
+    public async Task ParseAsync_WithRustFile_ReturnsParseResultWithTsTree()
+    {
+        Assume.That(isTreeSitterAvailable(), "Tree-sitter native libraries not available");
+
+        var parser = new TreeSitterParser(NullLogger<TreeSitterParser>.Instance);
+        var path = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}.rs");
+        try
+        {
+            await File.WriteAllTextAsync(path, "struct Foo; fn run() {}");
+            var result = await parser.ParseAsync(path);
+            Assert.That(result, Is.Not.Null);
+            Assert.That(result!.TsTree, Is.Not.Null);
+            Assert.That(result.Language, Is.EqualTo(Language.Rust));
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Test]
     public async Task ParseAsync_WithHtmlFile_ReturnsParseResultWithTsTree()
     {
         Assume.That(isTreeSitterAvailable(), "Tree-sitter native libraries not available");

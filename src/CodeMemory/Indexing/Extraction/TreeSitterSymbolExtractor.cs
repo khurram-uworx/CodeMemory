@@ -180,6 +180,8 @@ public sealed class TreeSitterSymbolExtractor : ISymbolExtractor
             Parsing.Language.JavaScript => new LanguageConfig(jsLanguage, jsQuery, jsKindMap),
             Parsing.Language.Java => new LanguageConfig(javaLanguage, javaQuery, javaKindMap),
             Parsing.Language.Python => new LanguageConfig(pythonLanguage, pythonQuery, pythonKindMap),
+            Parsing.Language.Go => new LanguageConfig(goLanguage, goQuery, goKindMap),
+            Parsing.Language.Rust => new LanguageConfig(rustLanguage, rustQuery, rustKindMap),
             Parsing.Language.HTML => null,
             _ => null,
         };
@@ -188,6 +190,8 @@ public sealed class TreeSitterSymbolExtractor : ISymbolExtractor
     static readonly TreeSitter.Language jsLanguage = new("JavaScript");
     static readonly TreeSitter.Language javaLanguage = new("Java");
     static readonly TreeSitter.Language pythonLanguage = new("Python");
+    static readonly TreeSitter.Language goLanguage = new("Go");
+    static readonly TreeSitter.Language rustLanguage = new("Rust");
 
     static readonly string tsQuery = string.Join(" ",
         "(class_declaration name: (_) @name) @node",
@@ -229,12 +233,24 @@ public sealed class TreeSitterSymbolExtractor : ISymbolExtractor
         "(class_definition name: (_) @name) @node",
         "(function_definition name: (_) @name) @node"
     );
+    static readonly string goQuery = string.Join(" ",
+        "(type_spec name: (_) @name) @node",
+        "(function_declaration name: (_) @name) @node",
+        "(method_declaration name: (_) @name) @node"
+    );
+
+    static readonly string rustQuery = string.Join(" ",
+        "(struct_item name: (_) @name) @node",
+        "(enum_item name: (_) @name) @node",
+        "(trait_item name: (_) @name) @node",
+        "(function_item name: (_) @name) @node"
+    );
 
     static readonly HashSet<string> methodLikeTypes = new(StringComparer.Ordinal)
     {
         "method_definition", "method_signature", "abstract_method_signature",
         "function_declaration", "method_declaration", "constructor_declaration",
-        "function_definition",
+        "function_definition", "method_declaration", "function_item",
     };
 
     static readonly HashSet<string> classLikeTypes = new(StringComparer.Ordinal)
@@ -243,7 +259,7 @@ public sealed class TreeSitterSymbolExtractor : ISymbolExtractor
         "interface_declaration", "enum_declaration",
         "record_declaration", "annotation_type_declaration",
         "struct_declaration",
-        "class_definition",
+        "class_definition", "struct_item", "trait_item", "enum_item", "impl_item",
     };
 
     static readonly HashSet<string> variableDeclTypes = new(StringComparer.Ordinal)
@@ -292,12 +308,27 @@ public sealed class TreeSitterSymbolExtractor : ISymbolExtractor
         ["function_definition"] = CodeSymbolKind.Function,
     };
 
+    static readonly Dictionary<string, CodeSymbolKind> goKindMap = new(StringComparer.Ordinal)
+    {
+        ["type_spec"] = CodeSymbolKind.Class,
+        ["function_declaration"] = CodeSymbolKind.Function,
+        ["method_declaration"] = CodeSymbolKind.Method,
+    };
+
+    static readonly Dictionary<string, CodeSymbolKind> rustKindMap = new(StringComparer.Ordinal)
+    {
+        ["struct_item"] = CodeSymbolKind.Struct,
+        ["enum_item"] = CodeSymbolKind.Enum,
+        ["trait_item"] = CodeSymbolKind.Interface,
+        ["function_item"] = CodeSymbolKind.Function,
+    };
+
     static bool isInsideClass(Node node)
     {
         var current = node.Parent;
         while (current != default)
         {
-            if (current.Type == "class_definition")
+            if (current.Type is "class_definition" or "impl_item")
                 return true;
             if (current.Type is "program" or "module")
                 return false;
@@ -345,6 +376,10 @@ public sealed class TreeSitterSymbolExtractor : ISymbolExtractor
 
         // Python: reclassify function_definition inside class_definition as Method
         if (nodeType == "function_definition" && isInsideClass(node))
+            kind = CodeSymbolKind.Method;
+
+        // Rust: reclassify function_item inside impl_item as Method
+        if (nodeType == "function_item" && isInsideClass(node))
             kind = CodeSymbolKind.Method;
 
         var name = nameNode.Text;

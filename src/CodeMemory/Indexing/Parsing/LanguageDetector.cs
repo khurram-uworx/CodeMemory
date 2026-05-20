@@ -8,6 +8,8 @@ public enum Language
     JavaScript,
     Java,
     Python,
+    Go,
+    Rust,
     HTML,
 }
 
@@ -22,6 +24,8 @@ public static class LanguageDetector
         [".jsx"] = Language.JavaScript,
         [".java"] = Language.Java,
         [".py"] = Language.Python,
+        [".go"] = Language.Go,
+        [".rs"] = Language.Rust,
         [".html"] = Language.HTML,
         [".htm"] = Language.HTML,
     };

@@ -11,6 +11,8 @@ public sealed class TreeSitterParser : ILanguageParser
         [Language.JavaScript] = new TreeSitter.Language("JavaScript"),
         [Language.Java] = new TreeSitter.Language("Java"),
         [Language.Python] = new TreeSitter.Language("Python"),
+        [Language.Go] = new TreeSitter.Language("Go"),
+        [Language.Rust] = new TreeSitter.Language("Rust"),
         [Language.HTML] = new TreeSitter.Language("HTML"),
     };
 
