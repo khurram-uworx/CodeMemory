@@ -42,7 +42,7 @@ var builder = Host.CreateApplicationBuilder(args);
 
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole(options => options.LogToStandardErrorThreshold = LogLevel.Trace);
-builder.Logging.AddProvider(new CodeMemory.Mcp.CodeMemoryFileLoggerProvider());
+builder.Logging.AddProvider(new CodeMemory.Mcp.CodeMemoryFileLoggerProvider(repoRoot, version));
 
 if (!builder.Environment.IsDevelopment())
     builder.Logging.SetMinimumLevel(LogLevel.Warning);
