@@ -90,6 +90,8 @@ public sealed class IndexingEngine
             [Language.Python] = tsParser,
             [Language.Go] = tsParser,
             [Language.Rust] = tsParser,
+            [Language.C] = tsParser,
+            [Language.Cpp] = tsParser,
             [Language.HTML] = tsParser,
         };
         extractors = new Dictionary<Language, (ISymbolExtractor, IRelationshipExtractor)>
@@ -101,6 +103,8 @@ public sealed class IndexingEngine
             [Language.Python] = (tsExtractor, tsRelationshipExtractor),
             [Language.Go] = (tsExtractor, tsRelationshipExtractor),
             [Language.Rust] = (tsExtractor, tsRelationshipExtractor),
+            [Language.C] = (tsExtractor, tsRelationshipExtractor),
+            [Language.Cpp] = (tsExtractor, tsRelationshipExtractor),
             [Language.HTML] = (tsExtractor, tsRelationshipExtractor),
         };
         this.chunker = chunker;

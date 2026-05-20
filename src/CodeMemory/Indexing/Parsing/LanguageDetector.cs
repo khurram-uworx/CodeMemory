@@ -10,6 +10,8 @@ public enum Language
     Python,
     Go,
     Rust,
+    C,
+    Cpp,
     HTML,
 }
 
@@ -26,6 +28,14 @@ public static class LanguageDetector
         [".py"] = Language.Python,
         [".go"] = Language.Go,
         [".rs"] = Language.Rust,
+        [".c"] = Language.C,
+        [".h"] = Language.C,
+        [".cpp"] = Language.Cpp,
+        [".cc"] = Language.Cpp,
+        [".cxx"] = Language.Cpp,
+        [".hpp"] = Language.Cpp,
+        [".hh"] = Language.Cpp,
+        [".hxx"] = Language.Cpp,
         [".html"] = Language.HTML,
         [".htm"] = Language.HTML,
     };

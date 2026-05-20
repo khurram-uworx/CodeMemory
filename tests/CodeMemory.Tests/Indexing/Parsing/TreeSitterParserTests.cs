@@ -165,6 +165,25 @@ public sealed class TreeSitterParserTests
         finally { File.Delete(path); }
     }
 
+    [TestCase(".c", "struct Foo { int value; }; int run(void) { return 0; }", Language.C)]
+    [TestCase(".cpp", "class Foo { public: void run() {} }; int main() { return 0; }", Language.Cpp)]
+    public async Task ParseAsync_WithCAndCppFiles_ReturnsParseResultWithTsTree(string extension, string code, Language expected)
+    {
+        Assume.That(isTreeSitterAvailable(), "Tree-sitter native libraries not available");
+
+        var parser = new TreeSitterParser(NullLogger<TreeSitterParser>.Instance);
+        var path = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}{extension}");
+        try
+        {
+            await File.WriteAllTextAsync(path, code);
+            var result = await parser.ParseAsync(path);
+            Assert.That(result, Is.Not.Null);
+            Assert.That(result!.TsTree, Is.Not.Null);
+            Assert.That(result.Language, Is.EqualTo(expected));
+        }
+        finally { File.Delete(path); }
+    }
+
     [Test]
     public async Task ParseAsync_WithHtmlFile_ReturnsParseResultWithTsTree()
     {

@@ -40,6 +40,7 @@ public sealed class SemanticChunker
             Language.Python => trimmed.StartsWith("import ") || trimmed.StartsWith("from "),
             Language.Go => trimmed.StartsWith("import ") || trimmed.StartsWith("package "),
             Language.Rust => trimmed.StartsWith("use ") || trimmed.StartsWith("pub ") || trimmed.StartsWith("mod "),
+            Language.C or Language.Cpp => trimmed.StartsWith("#include") || trimmed.StartsWith("#define") || trimmed.StartsWith("#pragma"),
             _ => false,
         };
 

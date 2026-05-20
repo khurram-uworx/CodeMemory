@@ -182,6 +182,8 @@ public sealed class TreeSitterSymbolExtractor : ISymbolExtractor
             Parsing.Language.Python => new LanguageConfig(pythonLanguage, pythonQuery, pythonKindMap),
             Parsing.Language.Go => new LanguageConfig(goLanguage, goQuery, goKindMap),
             Parsing.Language.Rust => new LanguageConfig(rustLanguage, rustQuery, rustKindMap),
+            Parsing.Language.C => new LanguageConfig(cLanguage, cQuery, cKindMap),
+            Parsing.Language.Cpp => new LanguageConfig(cppLanguage, cppQuery, cppKindMap),
             Parsing.Language.HTML => null,
             _ => null,
         };
@@ -192,6 +194,8 @@ public sealed class TreeSitterSymbolExtractor : ISymbolExtractor
     static readonly TreeSitter.Language pythonLanguage = new("Python");
     static readonly TreeSitter.Language goLanguage = new("Go");
     static readonly TreeSitter.Language rustLanguage = new("Rust");
+    static readonly TreeSitter.Language cLanguage = new("C");
+    static readonly TreeSitter.Language cppLanguage = new("Cpp");
 
     static readonly string tsQuery = string.Join(" ",
         "(class_declaration name: (_) @name) @node",
@@ -246,6 +250,20 @@ public sealed class TreeSitterSymbolExtractor : ISymbolExtractor
         "(function_item name: (_) @name) @node"
     );
 
+    static readonly string cQuery = string.Join(" ",
+        "(struct_specifier name: (_) @name) @node",
+        "(function_definition declarator: (function_declarator declarator: (_) @name)) @node",
+        "(declaration declarator: (function_declarator declarator: (_) @name)) @node"
+    );
+
+    static readonly string cppQuery = string.Join(" ",
+        "(class_specifier name: (_) @name) @node",
+        "(struct_specifier name: (_) @name) @node",
+        "(enum_specifier name: (_) @name) @node",
+        "(function_definition declarator: (function_declarator declarator: (_) @name)) @node",
+        "(declaration declarator: (function_declarator declarator: (_) @name)) @node"
+    );
+
     static readonly HashSet<string> methodLikeTypes = new(StringComparer.Ordinal)
     {
         "method_definition", "method_signature", "abstract_method_signature",
@@ -260,6 +278,7 @@ public sealed class TreeSitterSymbolExtractor : ISymbolExtractor
         "record_declaration", "annotation_type_declaration",
         "struct_declaration",
         "class_definition", "struct_item", "trait_item", "enum_item", "impl_item",
+        "class_specifier", "struct_specifier", "enum_specifier",
     };
 
     static readonly HashSet<string> variableDeclTypes = new(StringComparer.Ordinal)
@@ -321,6 +340,22 @@ public sealed class TreeSitterSymbolExtractor : ISymbolExtractor
         ["enum_item"] = CodeSymbolKind.Enum,
         ["trait_item"] = CodeSymbolKind.Interface,
         ["function_item"] = CodeSymbolKind.Function,
+    };
+
+    static readonly Dictionary<string, CodeSymbolKind> cKindMap = new(StringComparer.Ordinal)
+    {
+        ["struct_specifier"] = CodeSymbolKind.Struct,
+        ["function_definition"] = CodeSymbolKind.Function,
+        ["declaration"] = CodeSymbolKind.Function,
+    };
+
+    static readonly Dictionary<string, CodeSymbolKind> cppKindMap = new(StringComparer.Ordinal)
+    {
+        ["class_specifier"] = CodeSymbolKind.Class,
+        ["struct_specifier"] = CodeSymbolKind.Struct,
+        ["enum_specifier"] = CodeSymbolKind.Enum,
+        ["function_definition"] = CodeSymbolKind.Function,
+        ["declaration"] = CodeSymbolKind.Function,
     };
 
     static bool isInsideClass(Node node)

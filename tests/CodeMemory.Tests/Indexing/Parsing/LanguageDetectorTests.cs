@@ -72,4 +72,18 @@ public sealed class LanguageDetectorTests
         var result = LanguageDetector.Detect(path);
         Assert.That(result, Is.EqualTo(Language.HTML));
     }
+
+    [TestCase("foo.c", Language.C)]
+    [TestCase("foo.h", Language.C)]
+    [TestCase("foo.cpp", Language.Cpp)]
+    [TestCase("foo.cc", Language.Cpp)]
+    [TestCase("foo.cxx", Language.Cpp)]
+    [TestCase("foo.hpp", Language.Cpp)]
+    [TestCase("foo.hh", Language.Cpp)]
+    [TestCase("foo.hxx", Language.Cpp)]
+    public void Detect_WithCAndCppExtensions_ReturnsExpectedLanguage(string path, Language expected)
+    {
+        var result = LanguageDetector.Detect(path);
+        Assert.That(result, Is.EqualTo(expected));
+    }
 }

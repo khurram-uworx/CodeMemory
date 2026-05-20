@@ -256,4 +256,32 @@ public sealed class TreeSitterSymbolExtractorTests
         Assert.That(symbols.Any(s => s.Name.StartsWith("do_work") && s.Kind == CodeSymbolKind.Method), Is.True);
         Assert.That(symbols.Any(s => s.Name.StartsWith("free_fn") && s.Kind == CodeSymbolKind.Function), Is.True);
     }
+
+    [Test]
+    public async Task Extract_C_ContainsStructAndFunction()
+    {
+        Assume.That(IsTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            struct Worker { int id; };
+            int run(void) { return 0; }
+            """;
+
+        var (symbols, _) = await ExtractFromCode(code, ".c");
+        Assert.That(symbols.Any(s => s.Name == "Worker" && s.Kind == CodeSymbolKind.Struct), Is.True);
+        Assert.That(symbols.Any(s => s.Name.StartsWith("run") && s.Kind == CodeSymbolKind.Function), Is.True);
+    }
+
+    [Test]
+    public async Task Extract_Cpp_ContainsClassAndFunction()
+    {
+        Assume.That(IsTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            class Worker {};
+            int run() { return 0; }
+            """;
+
+        var (symbols, _) = await ExtractFromCode(code, ".cpp");
+        Assert.That(symbols.Any(s => s.Name == "Worker" && s.Kind == CodeSymbolKind.Class), Is.True);
+        Assert.That(symbols.Any(s => s.Name.StartsWith("run") && s.Kind == CodeSymbolKind.Function), Is.True);
+    }
 }

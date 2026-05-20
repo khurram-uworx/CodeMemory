@@ -13,6 +13,8 @@ public sealed class TreeSitterParser : ILanguageParser
         [Language.Python] = new TreeSitter.Language("Python"),
         [Language.Go] = new TreeSitter.Language("Go"),
         [Language.Rust] = new TreeSitter.Language("Rust"),
+        [Language.C] = new TreeSitter.Language("C"),
+        [Language.Cpp] = new TreeSitter.Language("Cpp"),
         [Language.HTML] = new TreeSitter.Language("HTML"),
     };
 
