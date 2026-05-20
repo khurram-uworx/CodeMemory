@@ -88,6 +88,8 @@ public sealed class IndexingEngine
             [Language.JavaScript] = tsParser,
             [Language.Java] = tsParser,
             [Language.Python] = tsParser,
+            [Language.Go] = tsParser,
+            [Language.Rust] = tsParser,
             [Language.HTML] = tsParser,
         };
         extractors = new Dictionary<Language, (ISymbolExtractor, IRelationshipExtractor)>
@@ -97,6 +99,8 @@ public sealed class IndexingEngine
             [Language.JavaScript] = (tsExtractor, tsRelationshipExtractor),
             [Language.Java] = (tsExtractor, tsRelationshipExtractor),
             [Language.Python] = (tsExtractor, tsRelationshipExtractor),
+            [Language.Go] = (tsExtractor, tsRelationshipExtractor),
+            [Language.Rust] = (tsExtractor, tsRelationshipExtractor),
             [Language.HTML] = (tsExtractor, tsRelationshipExtractor),
         };
         this.chunker = chunker;

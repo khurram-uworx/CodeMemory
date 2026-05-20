@@ -221,4 +221,39 @@ public sealed class TreeSitterSymbolExtractorTests
                 $"Symbol {symbol.FullName} has invalid line range");
         }
     }
+
+    [Test]
+    public async Task Extract_Go_ContainsTypeFunctionAndMethod()
+    {
+        Assume.That(IsTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            package main
+            type Worker struct {}
+            func TopLevel() {}
+            func (w Worker) DoWork() {}
+            """;
+
+        var (symbols, _) = await ExtractFromCode(code, ".go");
+        Assert.That(symbols.Any(s => s.Name == "Worker" && s.Kind == CodeSymbolKind.Class), Is.True);
+        Assert.That(symbols.Any(s => s.Name.StartsWith("TopLevel") && s.Kind == CodeSymbolKind.Function), Is.True);
+        Assert.That(symbols.Any(s => s.Name.StartsWith("DoWork") && s.Kind == CodeSymbolKind.Method), Is.True);
+    }
+
+    [Test]
+    public async Task Extract_Rust_ContainsStructAndMethodInImpl()
+    {
+        Assume.That(IsTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            struct Worker;
+            impl Worker {
+                fn do_work(&self) {}
+            }
+            fn free_fn() {}
+            """;
+
+        var (symbols, _) = await ExtractFromCode(code, ".rs");
+        Assert.That(symbols.Any(s => s.Name == "Worker" && s.Kind == CodeSymbolKind.Struct), Is.True);
+        Assert.That(symbols.Any(s => s.Name.StartsWith("do_work") && s.Kind == CodeSymbolKind.Method), Is.True);
+        Assert.That(symbols.Any(s => s.Name.StartsWith("free_fn") && s.Kind == CodeSymbolKind.Function), Is.True);
+    }
 }

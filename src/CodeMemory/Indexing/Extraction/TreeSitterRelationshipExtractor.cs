@@ -84,6 +84,8 @@ public sealed class TreeSitterRelationshipExtractor : IRelationshipExtractor
             case "abstract_class_declaration":
             case "interface_declaration":
             case "class_definition":
+            case "type_declaration":
+            case "trait_item":
                 processHeritage(node, symbols, byName, byFullName, filePath, language, seen, results);
                 break;
             case "call_expression":
@@ -189,6 +191,56 @@ public sealed class TreeSitterRelationshipExtractor : IRelationshipExtractor
                 var extendsField = node.Fields.FirstOrDefault(f => f.Key == "extends");
                 if (extendsField.Key != null)
                     collectTypeRefs(extendsField.Value, source, "Inherits", byName, byFullName, seen, results);
+            }
+        }
+
+        // Go: embedded struct/interface fields (field_declaration without field_identifier)
+        if (language == Parsing.Language.Go && node.Type == "type_declaration")
+        {
+            foreach (var typeSpec in node.NamedChildren.Where(c => c.Type == "type_spec"))
+            {
+                foreach (var typeBody in typeSpec.NamedChildren.Where(c =>
+                    c.Type is "struct_type" or "interface_type"))
+                {
+                    var fieldList = typeBody.NamedChildren
+                        .FirstOrDefault(c => c.Type == "field_declaration_list");
+                    if (fieldList == default) continue;
+
+                    foreach (var field in fieldList.NamedChildren
+                        .Where(c => c.Type == "field_declaration"))
+                    {
+                        if (field.NamedChildren.Any(c => c.Type == "field_identifier"))
+                            continue;
+
+                        var typeNode = field.NamedChildren.FirstOrDefault(c =>
+                            c.Type is "type_identifier" or "scoped_type_identifier");
+                        if (typeNode == default) continue;
+                        var typeName = extractTypeName(typeNode);
+                        if (typeName == null || primitiveTypes.Contains(typeName)) continue;
+                        var target = findSymbolByName(typeName, byName, byFullName);
+                        if (target == null || target.FullName == source.FullName) continue;
+                        addRelationship(source.FullName, target.FullName, "Inherits", seen, results);
+                    }
+                }
+            }
+        }
+
+        // Rust: supertrait bounds on trait_item
+        if (language == Parsing.Language.Rust && node.Type == "trait_item")
+        {
+            foreach (var child in node.NamedChildren)
+            {
+                if (child.Type == "trait_bounds")
+                {
+                    foreach (var bound in child.NamedChildren)
+                    {
+                        var typeName = extractTypeName(bound);
+                        if (typeName == null || primitiveTypes.Contains(typeName)) continue;
+                        var target = findSymbolByName(typeName, byName, byFullName);
+                        if (target == null || target.FullName == source.FullName) continue;
+                        addRelationship(source.FullName, target.FullName, "Inherits", seen, results);
+                    }
+                }
             }
         }
     }

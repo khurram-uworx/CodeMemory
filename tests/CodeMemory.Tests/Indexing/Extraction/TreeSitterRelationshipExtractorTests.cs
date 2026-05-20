@@ -202,4 +202,45 @@ public sealed class TreeSitterRelationshipExtractorTests
         var inheritsRels = relationships.Where(r => r.RelationshipType == "Inherits").ToList();
         Assert.That(inheritsRels, Has.Count.EqualTo(1));
     }
+
+    [Test]
+    public async Task ExtractRelationships_GoEmbeddedStruct_CreatesInherits()
+    {
+        Assume.That(isTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            package main
+            type Base struct {}
+            type Derived struct {
+                Base
+            }
+            """;
+
+        var (symbols, result, path) = await extractFromCode(code, ".go");
+        var extractor = new TreeSitterRelationshipExtractor(NullLogger<TreeSitterRelationshipExtractor>.Instance);
+        var relationships = extractor.ExtractRelationships(result, symbols, path);
+
+        Assert.That(relationships.Any(r =>
+            r.SourceSymbolId == "Derived" &&
+            r.TargetSymbolId == "Base" &&
+            r.RelationshipType == "Inherits"), Is.True);
+    }
+
+    [Test]
+    public async Task ExtractRelationships_RustTraitBounds_CreatesInherits()
+    {
+        Assume.That(isTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            trait Base {}
+            trait Derived: Base {}
+            """;
+
+        var (symbols, result, path) = await extractFromCode(code, ".rs");
+        var extractor = new TreeSitterRelationshipExtractor(NullLogger<TreeSitterRelationshipExtractor>.Instance);
+        var relationships = extractor.ExtractRelationships(result, symbols, path);
+
+        Assert.That(relationships.Any(r =>
+            r.SourceSymbolId == "Derived" &&
+            r.TargetSymbolId == "Base" &&
+            r.RelationshipType == "Inherits"), Is.True);
+    }
 }

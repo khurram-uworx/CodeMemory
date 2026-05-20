@@ -19,7 +19,6 @@ public sealed class LanguageDetectorTests
     }
 
     [TestCase("foo.rb")]
-    [TestCase("foo.go")]
     [TestCase("foo.csproj")]
     [TestCase("foo")]
     public void Detect_WithNonCsExtension_ReturnsUnknown(string path)
@@ -50,6 +49,20 @@ public sealed class LanguageDetectorTests
     {
         var result = LanguageDetector.Detect("foo.py");
         Assert.That(result, Is.EqualTo(Language.Python));
+    }
+
+    [Test]
+    public void Detect_WithGoExtension_ReturnsGo()
+    {
+        var result = LanguageDetector.Detect("foo.go");
+        Assert.That(result, Is.EqualTo(Language.Go));
+    }
+
+    [Test]
+    public void Detect_WithRustExtension_ReturnsRust()
+    {
+        var result = LanguageDetector.Detect("foo.rs");
+        Assert.That(result, Is.EqualTo(Language.Rust));
     }
 
     [TestCase("foo.html")]
