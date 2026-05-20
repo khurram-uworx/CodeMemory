@@ -13,7 +13,7 @@ public sealed class SqlQueryTool
 
     readonly IStorageService storageService;
     readonly SqlQueryService sqlQueryService;
-    //readonly TableSchemaProvider schemaProvider;
+    readonly TableSchemaProvider schemaProvider;
     readonly ILogger<SqlQueryTool> logger;
 
     public SqlQueryTool(
@@ -24,7 +24,7 @@ public sealed class SqlQueryTool
     {
         this.storageService = storageService;
         this.sqlQueryService = sqlQueryService;
-        //this.schemaProvider = schemaProvider;
+        this.schemaProvider = schemaProvider;
         this.logger = logger;
     }
 
@@ -38,13 +38,20 @@ TABLES:
 
 SYNTAX:
   [WITH cte_name AS (SELECT ...) [, ...]]
-  SELECT [DISTINCT] columns|*|aggregates FROM table|(subquery) AS alias
+  SELECT [DISTINCT] columns|*|aggregates FROM table [[AS] alias]
+    [JOIN table [[AS] alias] ON condition] [, ...]
     [WHERE condition [AND|OR ...]]
     [GROUP BY col] [HAVING condition]
     [ORDER BY col|position [ASC|DESC]]
     [LIMIT n]
   Strings MUST use single quotes: 'text' (not double quotes)
   Derived tables (subqueries in FROM clause) use the same syntax as CTE bodies
+  Multi-table queries (comma-separated FROM or JOIN syntax) are supported:
+    - Use table aliases to qualify column names (e.g., s.Name, r.TargetSymbolId)
+    - JOIN ... ON conditions are AND-combined with WHERE for in-memory filtering
+    - INNER JOIN, LEFT JOIN, CROSS JOIN syntax is parsed; ON/USING conditions applied
+    - JOINs are executed as in-memory cross-product + filter (suitable for repo-scale data)
+    - Self-joins (same table with different aliases) are supported
 
 OPERATORS: =, <>, <, >, <=, >=, LIKE, ILIKE (case-insensitive), IN(...), IS NULL, IS NOT NULL, BETWEEN
 
@@ -55,6 +62,7 @@ AGGREGATES:
 VECTOR SEARCH (ChunkRecord only):
   SELECT ... FROM ChunkRecord WHERE Content LIKE '%text%' ORDER BY Similarity DESC
   Each result row includes __score (0-1) for similarity ranking.
+  Not supported with multi-table queries.
 
 BEHAVIOR:
   - Explicit column list in SELECT returns only those columns
@@ -65,7 +73,7 @@ BEHAVIOR:
    - SELECT supports arithmetic expressions: +, -, *, / (e.g. SELECT LineEnd - LineStart AS Length FROM SymbolRecord)
    - String concatenation with || operator supported (e.g. SELECT Name || ':' || Kind AS combined)
    - Parenthesized WHERE conditions supported: WHERE (Kind = 'Class' OR Kind = 'Interface') AND Name LIKE '%Helper%'
-   - CTEs (WITH ... AS ...) supported: non-recursive, chained CTEs work; CTE name shadows collection names
+   - CTEs (WITH ... AS ...) supported: non-recursive, chained CTEs work; CTE name shadows collection names; CTEs + JOINs work together
    - Derived tables (FROM (subquery) AS alias) supported: can reference CTEs, support nesting
     - ORDER BY Similarity DESC works on direct ChunkRecord queries and CTE/derived-table outer queries (re-ranks CTE results by cosine similarity against the store)
     - Only InMemoryVectorStore backend supported; other backends return an error
@@ -83,9 +91,12 @@ EXAMPLES:
   SELECT * FROM RelationshipRecord WHERE RelationshipType = 'Calls'
   WITH public_classes AS (SELECT * FROM SymbolRecord WHERE Modifiers LIKE '%public%') SELECT Name FROM public_classes ORDER BY Name
   WITH counts AS (SELECT FilePath, COUNT(*) AS cnt FROM SymbolRecord GROUP BY FilePath) SELECT * FROM counts ORDER BY cnt DESC LIMIT 10
-  WITH csharp_chunks AS (SELECT * FROM ChunkRecord WHERE Language = 'CSharp') SELECT FilePath FROM csharp_chunks WHERE Content LIKE '%auth%' ORDER BY Similarity DESC LIMIT 3
   SELECT Name, Kind FROM (SELECT * FROM SymbolRecord) AS sub WHERE sub.Kind = 'Method' ORDER BY Name
   SELECT d.Kind, COUNT(*) AS cnt FROM (SELECT Kind FROM SymbolRecord) AS d GROUP BY d.Kind HAVING cnt > 1
+  -- Multi-table / JOIN examples:
+  SELECT s.Name, COUNT(*) AS cnt FROM SymbolRecord s, RelationshipRecord r WHERE s.Id = r.TargetSymbolId GROUP BY s.Name ORDER BY cnt DESC
+  SELECT s.Name, COUNT(*) AS cnt FROM SymbolRecord s JOIN RelationshipRecord r ON s.Id = r.TargetSymbolId WHERE s.Kind = 'Class' GROUP BY s.Name ORDER BY cnt DESC
+  SELECT c.Name, COUNT(*) AS cnt FROM SymbolRecord c, SymbolRecord m WHERE c.Kind = 'Class' AND m.Kind = 'Method' AND m.Modifiers LIKE '%public%' AND m.FullName LIKE c.FullName || '.%' GROUP BY c.Name ORDER BY cnt DESC
 
 RETURNS JSON: success, rowCount, executionTimeMs, columns, rows, error
 ")]

@@ -8,7 +8,7 @@ namespace CodeMemory.Tests.Services.Query;
 
 public sealed class SqlQueryServiceTests
 {
-    static (InMemoryVectorStore Store, CollectionRegistry Registry, SqlQueryService Service) createServices()
+    internal static (InMemoryVectorStore Store, CollectionRegistry Registry, SqlQueryService Service) createServices()
     {
         var store = new InMemoryVectorStore();
         var registry = new CollectionRegistry();
@@ -18,7 +18,7 @@ public sealed class SqlQueryServiceTests
         return (store, registry, service);
     }
 
-    static async Task seedSymbolsAsync(InMemoryVectorStore store)
+    internal static async Task seedSymbolsAsync(InMemoryVectorStore store)
     {
         var coll = store.GetCollection<string, SymbolRecord>("symbols");
         await coll.UpsertAsync(new SymbolRecord
@@ -78,7 +78,7 @@ public sealed class SqlQueryServiceTests
         });
     }
 
-    static async Task seedChunksAsync(InMemoryVectorStore store)
+    internal static async Task seedChunksAsync(InMemoryVectorStore store)
     {
         var coll = store.GetCollection<string, ChunkRecord>("chunks");
         var gen = new NgramEmbeddingGenerator();
@@ -1600,4 +1600,5 @@ public sealed class SqlQueryServiceTests
         Assert.That(result.RowCount, Is.EqualTo(2));
         Assert.That(result.Rows!.Select(r => r["Name"]), Is.EqualTo(["Helper", "MyClass"]));
     }
+
 }

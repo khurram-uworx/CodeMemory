@@ -2,7 +2,7 @@
 
 | # | Issue | Effort | Impact | Status |
 |---|-------|--------|--------|--------|
-| 3 | JOINs, UNION, WHERE subqueries | Large | High | |
+| 3 | JOINs, UNION, WHERE subqueries | Large | High | Phase 1 — cross-join + WHERE-as-join-condition + explicit JOIN ON supported (in-memory cartesian merge + filter). Self-joins, CTE+JOIN, comma-separated FROM, and explicit JOIN syntax all work. UNION and WHERE subqueries remain unsupported. See "Runtime / Execution Gaps" section below for implementation details. |
 | 6 | `materializeAsync` / `toAsyncEnumerable` deep reflection (~80 lines) | Medium | Medium | Won't Do — generic bridge applied |
 | 9 | ORDER BY boxes via `GetValueOrDefault` | Small | Low | Won't Do — see note |
 | 10 | `getConstantString` compiles throwaway expression | Small | Low | Won't Do — interpreted fallback applied |
@@ -16,10 +16,34 @@
 
 ### 3 JOINs, UNION, WHERE subqueries
 
-JOINs, UNION, and subqueries in WHERE clauses are structurally rejected (`SetExpression` check) or silently mishandled (joins would return cross-product data with no error). JOINs require deep architectural changes: multi-table FROM clause, qualified column names, cross-collection row merging, and the `TableSchemaProvider` (item 11) must be wired first.
+**Phase 1 Complete — Multi-table FROM and cross-join/inner-join support.**
 
-- CTEs are now implemented. Non-recursive CTEs, chained CTEs, and CTE-collection shadowing all work. The `evaluateExpression` method was extended to handle LIKE/ILIKE/IN/IS NULL/BETWEEN for in-memory CTE row filtering. `ORDER BY Similarity DESC` on a CTE table returns a clear error (vector search requires store-level embeddings).
-- Derived tables are now implemented. Reuses the same `executeCteSubqueryAsync` infrastructure as CTEs — CTEs and derived tables compose together (chained CTEs → derived table → main query). Nested derived tables, WHERE filters on outer/subquery, GROUP BY/HAVING, ORDER BY, aggregates, and DISTINCT all work. Missing alias returns a clear error. Vector search (`ORDER BY Similarity DESC`) not supported on derived table queries (same limitation as CTEs).
+JOINs (including explicit `JOIN ... ON`) are now supported via an in-memory cartesian product + filter execution model. All column name resolution works with qualified (`s.Name`) and unqualified (`Name`) references — `CompoundIdentifier` expressions try the full `alias.col` key first and fall back to `col` for backward compatibility.
+
+**Implemented:**
+- Comma-separated FROM (`FROM t1, t2`) — parses multiple `TableWithJoins` entries
+- Explicit JOIN syntax (`FROM t1 JOIN t2 ON condition`, `LEFT JOIN`, `CROSS JOIN`) — ON expressions are AND-combined with WHERE
+- Self-joins (`FROM SymbolRecord c, SymbolRecord m`) — same table with different aliases
+- CTE + JOIN composition (`WITH cte AS (...) SELECT ... FROM cte, other_table`)
+- Table alias qualified columns (`s.Name`, `r.TargetSymbolId`) via `CompoundIdentifier` fallback
+- GROUP BY, ORDER BY, aggregates, HAVING, LIMIT all work on merged result sets
+- Vector search rejected with clear error on multi-table queries
+- `TableSchemaProvider` (item 11) wired in
+
+**Architecture:** `SqlQueryService.cs` detects multi-table queries via `detectMultiTable()`, dispatches to `executeJoinQueryAsync()` which: (1) flattens all `TableWithJoins` + `Joins` into a `TableRef` list via `parseFromClause()`, (2) fetches all rows from each collection (or CTE) with `alias.`-prefixed column names, (3) computes the cartesian product via `cartesianMerge()`, (4) applies the combined WHERE + ON filter via in-memory `evaluateExpression()` on merged dictionaries. `ON` conditions are extracted from `JoinConstraint` and merged via `mergeOnConditions()`. The `rowGetValue()` helper provides qualified→unqualified column fallback in `applyGroupBy`, `makeSortSelector`, and `projectRows`.
+
+**Not yet implemented (Phase 2):**
+- Proper INNER JOIN optimization (early-filter instead of cartesian + filter)
+- LEFT/RIGHT/FULL OUTER JOIN semantics (preserving unmatched rows)
+- `USING(col)` shorthand
+- Nested joins (parenthesized joins)
+- Subqueries in WHERE clause (`WHERE col IN (SELECT ...)`)
+- UNION / INTERSECT / EXCEPT
+- `TableSchemaProvider` join-key metadata annotations
+
+See [docs/SQL-JOINS.md](SQL-JOINS.md) for the full Phase 2 plan with implementation priorities and technical notes.
+
+**UNION and WHERE subqueries** remain structurally rejected (`SetExpression` check).
 
 ---
 
