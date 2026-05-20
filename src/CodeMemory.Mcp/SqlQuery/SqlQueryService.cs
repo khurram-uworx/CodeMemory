@@ -7,6 +7,7 @@ using SqlParser.Ast;
 using SqlParser.Dialects;
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Numerics.Tensors;
 using System.Reflection;
 using System.Text;
 using AstExpr = SqlParser.Ast.Expression;
@@ -28,8 +29,72 @@ public sealed class SqlQueryService
 
     static readonly HashSet<string> AggregateFunctions = ["COUNT", "SUM", "AVG", "MIN", "MAX"];
 
+    static string extractFunctionName(AstExpr.Function func)
+        => func.Name.Values.Last().Value;
+
+    static double? safeToDouble(object? value)
+    {
+        if (value is null) return null;
+        if (value is double d) return d;
+        if (value is long l) return l;
+        if (value is int i) return i;
+        if (value is float f) return f;
+        if (value is decimal m) return (double)m;
+        if (value is string s && double.TryParse(s, out var parsed)) return parsed;
+
+        return null;
+    }
+
     static bool isAggregateFunction(AstExpr.Function func)
         => AggregateFunctions.Contains(extractFunctionName(func).ToUpperInvariant());
+
+    static MethodInfo? findGetAsyncFilterMethod(Type collectionType)
+    => GetAsyncMethodCache.GetOrAdd(collectionType, t => t.GetMethods()
+        .FirstOrDefault(m => m.Name == "GetAsync"
+        && m.GetParameters().Length == 4
+        && m.GetParameters()[0].ParameterType.IsGenericType
+        && m.GetParameters()[0].ParameterType.GetGenericTypeDefinition() == typeof(System.Linq.Expressions.Expression<>)));
+
+    static bool isColumnReference(AstExpr? expr, string name)
+        => expr is AstExpr.Identifier id
+        && string.Equals(id.Ident.Value, name, StringComparison.OrdinalIgnoreCase);
+
+    static object? convertHavingLiteral(Value value)
+        => value switch
+        {
+            Value.Null => null,
+            Value.Boolean b => b.Value,
+            Value.Number n => long.TryParse(n.Value, out var l) ? l : double.Parse(n.Value),
+            Value.SingleQuotedString s => s.Value,
+            _ => null
+        };
+
+    static List<Dictionary<string, object?>> projectRows(
+        List<Dictionary<string, object?>> rows,
+        List<SelectColumnInfo> parsedColumns)
+
+        => [.. rows.Select(r =>
+        {
+            var newRow = new Dictionary<string, object?>();
+
+            foreach (var col in parsedColumns)
+            {
+                if (col.Name is not null && r.TryGetValue(col.Name, out var val))
+                    newRow[col.Alias ?? col.Name] = val;
+                else if (col.Expression is not null)
+                {
+                    var ev = evaluateExpression(col.Expression, r);
+                    newRow[col.Alias ?? expressionToString(col.Expression)] = ev;
+                }
+            }
+
+            // Preserve runtime meta-columns (e.g. __score from vector search)
+            foreach (var kvp in r)
+                if (kvp.Key.StartsWith("__"))
+                    newRow[kvp.Key] = kvp.Value;
+
+            return newRow;
+        })];
 
     static OrderColumn? extractOrderByColumn(AstExpr expr, bool ascending)
     {
@@ -39,6 +104,7 @@ public sealed class SqlQueryService
             return new OrderColumn(comp.Idents[^1].Value, ascending);
         if (expr is AstExpr.LiteralValue lv && lv.Value is Value.Number num)
             return new OrderColumn(num.Value, ascending);
+
         return null;
     }
 
@@ -77,16 +143,13 @@ public sealed class SqlQueryService
         return columns;
     }
 
-    static string extractFunctionName(AstExpr.Function func)
-        => func.Name.Values.Last().Value;
-
     static string? extractFunctionArg(AstExpr.Function func)
     {
         if (func.Args is FunctionArguments.List listArgs)
         {
             var args = listArgs.ArgumentList.Args;
 
-            if (args.Count >= 1 && args[0] is FunctionArg.Unnamed unnamed)
+            if (args?.Count >= 1 && args[0] is FunctionArg.Unnamed unnamed)
             {
                 if (unnamed.FunctionArgExpression is FunctionArgExpression.Wildcard)
                     return null;
@@ -96,6 +159,7 @@ public sealed class SqlQueryService
                     return id.Ident.Value;
             }
         }
+
         return null;
     }
 
@@ -138,9 +202,7 @@ public sealed class SqlQueryService
             });
         }
         else
-        {
             groups = [rows.GroupBy(_ => "").First()];
-        }
 
         var results = new List<Dictionary<string, object?>>();
         foreach (var group in groups)
@@ -164,6 +226,7 @@ public sealed class SqlQueryService
     static object? computeAggregate(IEnumerable<Dictionary<string, object?>> group, SelectColumnInfo col)
     {
         var func = col.AggregateFunction?.ToUpperInvariant() ?? "COUNT";
+
         switch (func)
         {
             case "COUNT":
@@ -216,6 +279,7 @@ public sealed class SqlQueryService
     string? resolveSortColumn(string orderByName, List<SelectColumnInfo> parsedColumns)
     {
         string? firstMatch = null;
+
         foreach (var col in parsedColumns)
         {
             bool nameMatch = col.Name is not null
@@ -233,6 +297,7 @@ public sealed class SqlQueryService
             }
             firstMatch = nameMatch ? col.Name : (col.Name ?? col.Alias);
         }
+
         return firstMatch;
     }
 
@@ -246,6 +311,7 @@ public sealed class SqlQueryService
 
                 return r => evaluateExpression(col.Expression, r);
         }
+
         return r => r.GetValueOrDefault(sortColumn);
     }
 
@@ -280,6 +346,7 @@ public sealed class SqlQueryService
         {
             var left = buildHavingEvaluator(bop.Left, parsedColumns);
             var right = buildHavingEvaluator(bop.Right, parsedColumns);
+
             return r =>
             {
                 var l = left(r);
@@ -294,6 +361,7 @@ public sealed class SqlQueryService
         {
             var left = buildHavingEvaluator(bop.Left, parsedColumns);
             var right = buildHavingEvaluator(bop.Right, parsedColumns);
+
             return r =>
             {
                 var l = left(r);
@@ -370,28 +438,6 @@ public sealed class SqlQueryService
 
         throw new NotSupportedException($"HAVING value expression '{expr.GetType().Name}' not supported");
     }
-
-    static double? safeToDouble(object? value)
-    {
-        if (value is null) return null;
-        if (value is double d) return d;
-        if (value is long l) return l;
-        if (value is int i) return i;
-        if (value is float f) return f;
-        if (value is decimal m) return (double)m;
-        if (value is string s && double.TryParse(s, out var parsed)) return parsed;
-        return null;
-    }
-
-    static object? convertHavingLiteral(Value value)
-        => value switch
-        {
-            Value.Null => null,
-            Value.Boolean b => b.Value,
-            Value.Number n => long.TryParse(n.Value, out var l) ? l : double.Parse(n.Value),
-            Value.SingleQuotedString s => s.Value,
-            _ => null
-        };
 
     static object? evaluateExpression(AstExpr expr, Dictionary<string, object?> row)
     {
@@ -483,18 +529,14 @@ public sealed class SqlQueryService
                     {
                         var operandValue = evaluateExpression(caseExpr.Operand, row);
                         for (int i = 0; i < caseExpr.Conditions.Count; i++)
-                        {
                             if (Equals(operandValue, evaluateExpression(caseExpr.Conditions[i], row)))
                                 return evaluateExpression(caseExpr.Results[i], row);
-                        }
                     }
                     else
                     {
                         for (int i = 0; i < caseExpr.Conditions.Count; i++)
-                        {
                             if (isTruthy(evaluateExpression(caseExpr.Conditions[i], row)))
                                 return evaluateExpression(caseExpr.Results[i], row);
-                        }
                     }
                     return caseExpr.ElseResult is not null
                         ? evaluateExpression(caseExpr.ElseResult, row)
@@ -519,6 +561,7 @@ public sealed class SqlQueryService
                         FunctionArguments.List list => list.ArgumentList.Args,
                         _ => null
                     };
+
                     if (args is null || args.Count == 0) return null;
 
                     return name switch
@@ -533,7 +576,9 @@ public sealed class SqlQueryService
                     var lhs = evaluateExpression(like.Expression, row)?.ToString();
                     var pattern = evaluateExpression(like.Pattern, row)?.ToString();
                     if (lhs is null || pattern is null) return null;
+
                     var result = matchLike(lhs, pattern);
+
                     return like.Negated ? !result : result;
                 }
 
@@ -542,7 +587,9 @@ public sealed class SqlQueryService
                     var lhs = evaluateExpression(iLike.Expression, row)?.ToString();
                     var pattern = evaluateExpression(iLike.Pattern, row)?.ToString();
                     if (lhs is null || pattern is null) return null;
+
                     var result = matchLike(lhs.ToUpperInvariant(), pattern.ToUpperInvariant());
+
                     return iLike.Negated ? !result : result;
                 }
 
@@ -550,7 +597,9 @@ public sealed class SqlQueryService
                 {
                     var lhs = evaluateExpression(inList.Expression, row);
                     var listValues = inList.List.Select(e => evaluateExpression(e, row)).ToList();
+
                     var result = listValues.Any(v => Equals(lhs, v));
+
                     return inList.Negated ? !result : result;
                 }
 
@@ -566,11 +615,15 @@ public sealed class SqlQueryService
                     var lowVal = evaluateExpression(between.Low, row);
                     var highVal = evaluateExpression(between.High, row);
                     if (exprVal is null || lowVal is null || highVal is null) return null;
+
                     var ld = safeToDouble(exprVal);
                     var lv = safeToDouble(lowVal);
                     var hv = safeToDouble(highVal);
+
                     if (ld is null || lv is null || hv is null) return null;
+
                     var result = ld >= lv && ld <= hv;
+
                     return between.Negated ? !result : result;
                 }
 
@@ -587,6 +640,7 @@ public sealed class SqlQueryService
             return input.EndsWith(pattern[1..], StringComparison.Ordinal);
         if (pattern.EndsWith('%') && pattern.Length > 1)
             return input.StartsWith(pattern[..^1], StringComparison.Ordinal);
+
         return input == pattern;
     }
 
@@ -600,6 +654,7 @@ public sealed class SqlQueryService
                 if (val is not null) return val;
             }
         }
+
         return null;
     }
 
@@ -611,6 +666,7 @@ public sealed class SqlQueryService
         if (value is int i) return i != 0;
         if (value is double d) return d != 0;
         if (value is string s) return s.Length > 0;
+
         return true;
     }
 
@@ -676,43 +732,10 @@ public sealed class SqlQueryService
         List<Dictionary<string, object?>> rows, AstExpr? whereExpr)
     {
         if (whereExpr is null || rows.Count == 0) return rows;
+
         return [.. rows.Where(r => isTruthy(evaluateExpression(whereExpr, r)))];
     }
 
-    static List<Dictionary<string, object?>> projectRows(
-        List<Dictionary<string, object?>> rows,
-        List<SelectColumnInfo> parsedColumns)
-    {
-        return [.. rows.Select(r =>
-        {
-            var newRow = new Dictionary<string, object?>();
-
-            foreach (var col in parsedColumns)
-            {
-                if (col.Name is not null && r.TryGetValue(col.Name, out var val))
-                    newRow[col.Alias ?? col.Name] = val;
-                else if (col.Expression is not null)
-                {
-                    var ev = evaluateExpression(col.Expression, r);
-                    newRow[col.Alias ?? expressionToString(col.Expression)] = ev;
-                }
-            }
-
-            // Preserve runtime meta-columns (e.g. __score from vector search)
-            foreach (var kvp in r)
-                if (kvp.Key.StartsWith("__"))
-                    newRow[kvp.Key] = kvp.Value;
-
-            return newRow;
-        })];
-    }
-
-    static MethodInfo? findGetAsyncFilterMethod(Type collectionType)
-        => GetAsyncMethodCache.GetOrAdd(collectionType, t => t.GetMethods()
-            .FirstOrDefault(m => m.Name == "GetAsync"
-            && m.GetParameters().Length == 4
-            && m.GetParameters()[0].ParameterType.IsGenericType
-            && m.GetParameters()[0].ParameterType.GetGenericTypeDefinition() == typeof(System.Linq.Expressions.Expression<>)));
 
     static LambdaExpression makeTrueExpression(Type recordType)
     {
@@ -751,10 +774,6 @@ public sealed class SqlQueryService
         return (null, whereExpr);
     }
 
-    static bool isColumnReference(AstExpr? expr, string name)
-        => expr is AstExpr.Identifier id
-        && string.Equals(id.Ident.Value, name, StringComparison.OrdinalIgnoreCase);
-
     static string extractCleanText(string pattern)
     {
         var text = pattern;
@@ -790,6 +809,7 @@ public sealed class SqlQueryService
         if (relation is TableFactor.Table table)
         {
             var name = table.Name.Values.Last().Value;
+
             return (name, cteResults.ContainsKey(name));
         }
 
@@ -801,6 +821,7 @@ public sealed class SqlQueryService
 
             var subqueryResult = await executeCteSubqueryAsync(store, derived.SubQuery, cteResults, defaultMaxResults, ct);
             cteResults[alias] = subqueryResult;
+
             return (alias, true);
         }
 
@@ -820,12 +841,14 @@ public sealed class SqlQueryService
         var type = asyncEnumerable.GetType();
         var asyncEnumInterface = type.GetInterfaces()
             .FirstOrDefault(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IAsyncEnumerable<>));
+
         if (asyncEnumInterface is null)
             return Task.FromResult(new List<Dictionary<string, object?>>());
 
         var elementType = asyncEnumInterface.GetGenericArguments()[0];
         var method = typeof(SqlQueryService).GetMethod("materializeAsyncCore", BindingFlags.NonPublic | BindingFlags.Static)!
             .MakeGenericMethod(elementType);
+
         return (Task<List<Dictionary<string, object?>>>)method.Invoke(null, [asyncEnumerable, recordType, ct])!;
     }
 
@@ -980,6 +1003,7 @@ public sealed class SqlQueryService
             var method = typeof(SqlExpressionBuilder)
                 .GetMethods(BindingFlags.Public | BindingFlags.Instance)
                 .First(m => m.Name == "BuildFilter" && m.IsGenericMethodDefinition);
+
             return method.MakeGenericMethod(t);
         });
 
@@ -1047,8 +1071,7 @@ public sealed class SqlQueryService
         var closedSearchAsyncMethod = searchAsyncMethod.MakeGenericMethod(typeof(ReadOnlyMemory<float>));
         var searchAsyncEnumerable = closedSearchAsyncMethod.Invoke(collection, invokeParams);
 
-        if (searchAsyncEnumerable is null)
-            return [];
+        if (searchAsyncEnumerable is null) return [];
 
         var results = new List<Dictionary<string, object?>>();
         var resultType = typeof(VectorSearchResult<>).MakeGenericType(entry.RecordType);
@@ -1069,6 +1092,75 @@ public sealed class SqlQueryService
         }
 
         return results;
+    }
+
+    async Task<List<Dictionary<string, object?>>> reRankBySimilarityAsync(
+        VectorStore store,
+        List<Dictionary<string, object?>> rows,
+        AstExpr? whereExpr,
+        int top,
+        CancellationToken ct)
+    {
+        var (searchText, _) = extractVectorSearchText(whereExpr);
+
+        if (string.IsNullOrWhiteSpace(searchText))
+            throw new InvalidOperationException("Vector search requires a Content LIKE '%pattern%' condition in the WHERE clause");
+
+        var embedding = await embeddingGenerator.GenerateAsync([searchText], cancellationToken: ct);
+        var queryVec = embedding[0].Vector;
+
+        var ids = new List<string>(rows.Count);
+        foreach (var r in rows)
+        {
+            if (!r.TryGetValue("Id", out var idVal) || idVal is not string idStr)
+                throw new InvalidOperationException("CTE rows must contain an 'Id' column for vector re-ranking. Only ChunkRecord tables support vector search.");
+
+            ids.Add(idStr);
+        }
+
+        var chunksCollection = store.GetCollection<string, ChunkRecord>("chunks");
+
+        // Find GetAsync(IEnumerable<TKey> keys, ...) — batch lookup by keys
+        var getBatchMethod = chunksCollection.GetType().GetMethods()
+            .FirstOrDefault(m => m.Name == "GetAsync"
+                && m.GetParameters().Length == 3
+                && m.GetParameters()[0].ParameterType.IsGenericType
+                && m.GetParameters()[0].ParameterType.GetGenericTypeDefinition() == typeof(IEnumerable<>));
+        if (getBatchMethod is null)
+            throw new NotSupportedException("InMemoryVectorStore backend required for vector re-ranking");
+
+        var batchAsyncEnumerable = getBatchMethod.Invoke(chunksCollection, [ids, null, ct]);
+
+        var chunkMap = new Dictionary<string, ChunkRecord>(ids.Count, StringComparer.Ordinal);
+        await foreach (var chunk in toAsyncEnumerable<ChunkRecord>(batchAsyncEnumerable!))
+            if (chunk is not null)
+                chunkMap[chunk.Id] = chunk;
+
+        var scored = new List<(Dictionary<string, object?> row, double score)>(rows.Count);
+        foreach (var r in rows)
+        {
+            var id = (string)r["Id"]!;
+            if (!chunkMap.TryGetValue(id, out var chunk) || chunk.Embedding is not { } embeddingVal)
+            {
+                scored.Add((r, 0));
+                continue;
+            }
+
+            var sim = TensorPrimitives.CosineSimilarity(queryVec.Span, embeddingVal.Span);
+            scored.Add((r, sim));
+        }
+
+        scored.Sort((a, b) => b.score.CompareTo(a.score));
+
+        var result = new List<Dictionary<string, object?>>(Math.Min(top, scored.Count));
+        for (int i = 0; i < top && i < scored.Count; i++)
+        {
+            var row = scored[i].row;
+            row["__score"] = scored[i].score;
+            result.Add(row);
+        }
+
+        return result;
     }
 
     async Task<Dictionary<string, List<Dictionary<string, object?>>>> materializeCtesAsync(
@@ -1191,8 +1283,10 @@ public sealed class SqlQueryService
                                 return evaluateExpression(c.Expression, r)?.ToString() ?? "NULL";
                             if (c.Name is not null)
                                 return r.GetValueOrDefault(c.Name)?.ToString() ?? "NULL";
+
                             return "NULL";
                         }));
+
                     return seen.Add(key);
                 })];
             }
@@ -1205,6 +1299,7 @@ public sealed class SqlQueryService
                 {
                     var key = string.Join('\0',
                         keys.Select(n => r.GetValueOrDefault(n)?.ToString() ?? "NULL"));
+
                     return seen.Add(key);
                 })];
             }
@@ -1285,6 +1380,7 @@ public sealed class SqlQueryService
             }
 
             var (tableName, isCte) = await resolveFromSourceAsync(store, selectBody.From[0].Relation, cteResults, maxResults, ct);
+
             if (tableName is null)
                 return fail("Could not determine table name from FROM clause", sw);
 
@@ -1332,9 +1428,14 @@ public sealed class SqlQueryService
             if (isCte)
             {
                 if (isVectorSearch)
-                    return fail("ORDER BY Similarity DESC is not supported when querying a CTE table. The CTE subquery can use vector search, but the main query cannot re-rank CTE results by similarity.", sw);
+                {
+                    if (hasGroupBy || hasAggregates || hasDistinct)
+                        return fail("GROUP BY, DISTINCT, and aggregates are not supported with vector search on CTE", sw);
 
-                result = filterCteRows(cteResults![tableName], whereExpr);
+                    result = await reRankBySimilarityAsync(store, cteResults![tableName], whereExpr, top, ct);
+                }
+                else
+                    result = filterCteRows(cteResults![tableName], whereExpr);
             }
             else if (isVectorSearch)
             {
@@ -1362,8 +1463,10 @@ public sealed class SqlQueryService
                             {
                                 if (c.Expression is not null)
                                     return evaluateExpression(c.Expression, r)?.ToString() ?? "NULL";
+
                                 if (c.Name is not null)
                                     return r.GetValueOrDefault(c.Name)?.ToString() ?? "NULL";
+
                                 return "NULL";
                             }));
                         return seen.Add(key);
@@ -1421,28 +1524,20 @@ public sealed class SqlQueryService
                 }
             }
             else if (isCte)
-            {
                 columns = result.Count > 0
                     ? result[0].Keys.Where(k => !k.StartsWith("__")).ToList()
                     : [];
-            }
             else
-            {
                 columns = entry!.RecordType.GetProperties(BindingFlags.Public | BindingFlags.Instance)
                     .Where(p => p.CanRead)
                     .Select(p => p.Name)
                     .ToList();
-            }
 
             // Append runtime meta-columns if present (e.g. __score from vector search)
             if (result.Count > 0)
-            {
                 foreach (var key in result[0].Keys)
-                {
                     if (key.StartsWith("__") && !columns.Contains(key))
                         columns.Add(key);
-                }
-            }
 
             return new SqlQueryResult(true, result.Count, sw.ElapsedMilliseconds, columns, result);
         }

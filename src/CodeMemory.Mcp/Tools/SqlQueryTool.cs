@@ -67,8 +67,8 @@ BEHAVIOR:
    - Parenthesized WHERE conditions supported: WHERE (Kind = 'Class' OR Kind = 'Interface') AND Name LIKE '%Helper%'
    - CTEs (WITH ... AS ...) supported: non-recursive, chained CTEs work; CTE name shadows collection names
    - Derived tables (FROM (subquery) AS alias) supported: can reference CTEs, support nesting
-   - ORDER BY Similarity DESC not supported on CTE or derived tables (only on direct ChunkRecord queries)
-   - Only InMemoryVectorStore backend supported; other backends return an error
+    - ORDER BY Similarity DESC works on direct ChunkRecord queries and CTE/derived-table outer queries (re-ranks CTE results by cosine similarity against the store)
+    - Only InMemoryVectorStore backend supported; other backends return an error
 
 EXAMPLES:
   SELECT * FROM SymbolRecord WHERE Kind = 'Class' LIMIT 10
@@ -83,6 +83,7 @@ EXAMPLES:
   SELECT * FROM RelationshipRecord WHERE RelationshipType = 'Calls'
   WITH public_classes AS (SELECT * FROM SymbolRecord WHERE Modifiers LIKE '%public%') SELECT Name FROM public_classes ORDER BY Name
   WITH counts AS (SELECT FilePath, COUNT(*) AS cnt FROM SymbolRecord GROUP BY FilePath) SELECT * FROM counts ORDER BY cnt DESC LIMIT 10
+  WITH csharp_chunks AS (SELECT * FROM ChunkRecord WHERE Language = 'CSharp') SELECT FilePath FROM csharp_chunks WHERE Content LIKE '%auth%' ORDER BY Similarity DESC LIMIT 3
   SELECT Name, Kind FROM (SELECT * FROM SymbolRecord) AS sub WHERE sub.Kind = 'Method' ORDER BY Name
   SELECT d.Kind, COUNT(*) AS cnt FROM (SELECT Kind FROM SymbolRecord) AS d GROUP BY d.Kind HAVING cnt > 1
 
