@@ -94,6 +94,18 @@ sealed class MockStorageService : IStorageService
     public Task<IReadOnlyList<ScoredChunk>> SearchChunksAsync(ReadOnlyMemory<float> embedding, int top = 10, VectorSearchOptions<ChunkRecord>? options = null, CancellationToken ct = default)
         => Task.FromResult<IReadOnlyList<ScoredChunk>>([]);
 
+    public Task DeleteSymbolsByFileAsync(string filePath, CancellationToken ct = default)
+        => Task.CompletedTask;
+
+    public Task DeleteChunksByFileAsync(string filePath, CancellationToken ct = default)
+        => Task.CompletedTask;
+
+    public Task DeleteRelationshipsBySourceIdsAsync(IReadOnlyList<string> sourceIds, CancellationToken ct = default)
+        => Task.CompletedTask;
+
+    public Task DeleteRelationshipsByTargetIdsAsync(IReadOnlyList<string> targetIds, CancellationToken ct = default)
+        => Task.CompletedTask;
+
     public Task ClearAllAsync(CancellationToken ct = default)
         => Task.CompletedTask;
 }

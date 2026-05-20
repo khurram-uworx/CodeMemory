@@ -5,6 +5,7 @@ namespace CodeMemory.Indexing;
 public static class IndexingState
 {
     static readonly ConcurrentDictionary<string, bool> repoCompleted = new(StringComparer.OrdinalIgnoreCase);
+    static volatile bool fileWatcherActive;
 
     public static bool IsCompleted(string? repoName = null)
         => repoName is null
@@ -13,4 +14,9 @@ public static class IndexingState
 
     public static void MarkCompleted(string repoName)
         => repoCompleted[repoName] = true;
+
+    public static bool IsFileWatcherActive => fileWatcherActive;
+
+    public static void MarkFileWatcherActive()
+        => fileWatcherActive = true;
 }

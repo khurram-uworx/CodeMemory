@@ -10,9 +10,10 @@ public sealed class McpTools
     [McpServerTool, Description("Ping the server. Returns indexing status — agents should back off and retry if still building the index.")]
     public string Ping()
     {
-        if (IndexingState.IsCompleted())
-            return """{"status":"ok","indexingCompleted":true}""";
+        if (!IndexingState.IsCompleted())
+            return """{"status":"ok","indexingCompleted":false,"message":"Indexing in progress. Retry tools in a few seconds."}""";
 
-        return """{"status":"ok","indexingCompleted":false,"message":"Indexing in progress. Retry tools in a few seconds."}""";
+        var watcherActive = IndexingState.IsFileWatcherActive ? "true" : "false";
+        return $$"""{"status":"ok","indexingCompleted":true,"fileWatcherActive":{{watcherActive}}}""";
     }
 }

@@ -2,6 +2,7 @@ using CodeMemory.Storage;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.VectorData;
+using System.Linq.Expressions;
 
 namespace CodeMemory.AspNet.Storage;
 
@@ -329,6 +330,50 @@ public sealed class HybridStorageService : IStorageService, IDisposable
 
             await db.SaveChangesAsync(ct).ConfigureAwait(false);
         }
+    }
+
+    public async Task DeleteSymbolsByFileAsync(string filePath, CancellationToken ct = default)
+    {
+        throwIfNotInitialized();
+
+        await using var db = createDbContext();
+        await db.Symbols
+            .Where(s => s.FilePath == filePath)
+            .ExecuteDeleteAsync(ct);
+    }
+
+    public async Task DeleteChunksByFileAsync(string filePath, CancellationToken ct = default)
+    {
+        throwIfNotInitialized();
+
+        Expression<Func<ChunkRecord, bool>> filter = c => c.FilePath == filePath;
+        var toDelete = await chunks!.GetAsync(filter, top: 10000, options: null, ct).ToListAsync(ct);
+        var ids = toDelete.Select(c => c.Id).ToList();
+
+        if (ids.Count > 0)
+            await chunks!.DeleteAsync(ids, ct);
+    }
+
+    public async Task DeleteRelationshipsBySourceIdsAsync(IReadOnlyList<string> sourceIds, CancellationToken ct = default)
+    {
+        throwIfNotInitialized();
+
+        if (sourceIds.Count == 0) return;
+        await using var db = createDbContext();
+        await db.Relationships
+            .Where(r => sourceIds.Contains(r.SourceSymbolId))
+            .ExecuteDeleteAsync(ct);
+    }
+
+    public async Task DeleteRelationshipsByTargetIdsAsync(IReadOnlyList<string> targetIds, CancellationToken ct = default)
+    {
+        throwIfNotInitialized();
+
+        if (targetIds.Count == 0) return;
+        await using var db = createDbContext();
+        await db.Relationships
+            .Where(r => targetIds.Contains(r.TargetSymbolId))
+            .ExecuteDeleteAsync(ct);
     }
 
     public async Task<SymbolRecord?> GetSymbolAsync(string id, CancellationToken ct = default)

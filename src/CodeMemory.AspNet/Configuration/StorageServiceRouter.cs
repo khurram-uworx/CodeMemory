@@ -66,6 +66,18 @@ public sealed class StorageServiceRouter : IStorageService
     public Task<IReadOnlyList<ScoredChunk>> SearchChunksAsync(ReadOnlyMemory<float> embedding, int top = 10, VectorSearchOptions<ChunkRecord>? options = null, CancellationToken ct = default)
         => GetStorage().SearchChunksAsync(embedding, top, options, ct);
 
+    public Task DeleteSymbolsByFileAsync(string filePath, CancellationToken ct = default)
+        => GetStorage().DeleteSymbolsByFileAsync(filePath, ct);
+
+    public Task DeleteChunksByFileAsync(string filePath, CancellationToken ct = default)
+        => GetStorage().DeleteChunksByFileAsync(filePath, ct);
+
+    public Task DeleteRelationshipsBySourceIdsAsync(IReadOnlyList<string> sourceIds, CancellationToken ct = default)
+        => GetStorage().DeleteRelationshipsBySourceIdsAsync(sourceIds, ct);
+
+    public Task DeleteRelationshipsByTargetIdsAsync(IReadOnlyList<string> targetIds, CancellationToken ct = default)
+        => GetStorage().DeleteRelationshipsByTargetIdsAsync(targetIds, ct);
+
     public Task ClearAllAsync(CancellationToken ct = default)
         => GetStorage().ClearAllAsync(ct);
 }
