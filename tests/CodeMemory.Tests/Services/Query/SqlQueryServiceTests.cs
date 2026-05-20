@@ -1397,7 +1397,7 @@ public sealed class SqlQueryServiceTests
     }
 
     [Test]
-    public async Task Cte_MainQueryVectorSearchOnCte_ReturnsError()
+    public async Task Cte_MainQueryVectorSearchOnCte_ReRanksBySimilarity()
     {
         var (store, registry, service) = createServices();
         await seedChunksAsync(store);
@@ -1406,8 +1406,9 @@ public sealed class SqlQueryServiceTests
             "WITH csharp_chunks AS (SELECT Id, SymbolId, FilePath, Content FROM ChunkRecord WHERE Language = 'CSharp') " +
             "SELECT FilePath, Content FROM csharp_chunks WHERE Content LIKE '%async%' ORDER BY Similarity DESC LIMIT 5");
 
-        Assert.That(result.Success, Is.False);
-        Assert.That(result.Error, Does.Contain("ORDER BY Similarity DESC"));
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.GreaterThanOrEqualTo(1));
+        Assert.That(result.Rows![0], Contains.Key("__score"));
     }
 
     [Test]
