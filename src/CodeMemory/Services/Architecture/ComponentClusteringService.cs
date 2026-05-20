@@ -6,6 +6,22 @@ namespace CodeMemory.Services.Architecture;
 
 public sealed class ComponentClusteringService : IComponentClusteringService
 {
+    readonly IComponentResolver componentResolver;
+    readonly IStorageService storage;
+    readonly ILogger<ComponentClusteringService> logger;
+
+    public ComponentClusteringService(
+        IComponentResolver componentResolver,
+        IStorageService storage,
+        ILogger<ComponentClusteringService> logger)
+    {
+        this.componentResolver = componentResolver;
+        this.storage = storage;
+        this.logger = logger;
+    }
+
+    static readonly string[] knownKinds = ["Class", "Interface", "Struct", "Enum", "Record", "Method", "Property", "Field", "Event"];
+
     static IReadOnlyList<ComponentCluster> clusterComponents(
         string[] components,
         Dictionary<string, Dictionary<string, int>> matrix,
@@ -87,27 +103,8 @@ public sealed class ComponentClusteringService : IComponentClusteringService
         return totalEdges > 0 ? (double)internalEdges / totalEdges : 1.0;
     }
 
-    static string getTopLevelDirectory(string filePath)
-    {
-        var normalized = filePath.Replace('\\', '/');
-        var trimmed = normalized.TrimStart('/');
-        var slashIndex = trimmed.IndexOf('/');
-        return slashIndex > 0 ? trimmed[..slashIndex] : trimmed;
-    }
-
-    static readonly string[] knownKinds = ["Class", "Interface", "Struct", "Enum", "Record", "Method", "Property", "Field", "Event"];
-
-    readonly IStorageService storage;
-    readonly ILogger<ComponentClusteringService> logger;
-
-    public ComponentClusteringService(IStorageService storage, ILogger<ComponentClusteringService> logger)
-    {
-        this.storage = storage;
-        this.logger = logger;
-    }
-
     public async Task<IReadOnlyList<ComponentCluster>> GetClustersAsync(
-        double threshold = 0.3, CancellationToken ct = default)
+        double threshold = 0.3, int depth = 1, CancellationToken ct = default)
     {
         threshold = Math.Clamp(threshold, 0.01, 1.0);
         var symbolsPerKind = new List<SymbolRecord>();
@@ -125,7 +122,7 @@ public sealed class ComponentClusteringService : IComponentClusteringService
 
         foreach (var sym in symbolsPerKind)
         {
-            var component = getTopLevelDirectory(sym.FilePath);
+            var component = componentResolver.GetComponentName(sym.FilePath, depth);
             symbolToComponent[sym.Id] = component;
             if (!componentFiles.ContainsKey(component))
                 componentFiles[component] = [];
@@ -157,8 +154,8 @@ public sealed class ComponentClusteringService : IComponentClusteringService
         }
 
         var clusters = clusterComponents(componentNames, matrix, threshold);
-        logger.LogDebug("GetClustersAsync(threshold={Threshold}): {Count} clusters from {Components} components",
-            threshold, clusters.Count, componentNames.Length);
+        logger.LogDebug("GetClustersAsync(threshold={Threshold}, depth={Depth}): {Count} clusters from {Components} components",
+            threshold, depth, clusters.Count, componentNames.Length);
         return clusters;
     }
 }

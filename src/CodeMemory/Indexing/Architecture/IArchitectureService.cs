@@ -10,5 +10,5 @@ public sealed record ArchitectureOverview(
 
 public interface IArchitectureService
 {
-    Task<ArchitectureOverview> GetOverviewAsync(string? path = null, CancellationToken ct = default);
+    Task<ArchitectureOverview> GetOverviewAsync(string? path = null, int depth = 1, CancellationToken ct = default);
 }

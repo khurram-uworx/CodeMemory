@@ -3,6 +3,7 @@ using CodeMemory.Indexing.Chunking;
 using CodeMemory.Indexing.Extraction;
 using CodeMemory.Indexing.Parsing;
 using CodeMemory.Services;
+using CodeMemory.Services.Architecture;
 using CodeMemory.Storage;
 using Memori.Storage;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -72,12 +73,14 @@ public sealed class IndexingEngineTests
             var tsRelExtractor = new TreeSitterRelationshipExtractor(NullLogger<TreeSitterRelationshipExtractor>.Instance);
             var chunker = new SemanticChunker(NullLogger<SemanticChunker>.Instance);
 
+            var detector = new ProjectFileDetector(NullLogger<ProjectFileDetector>.Instance);
+
             var engine = new IndexingEngine(
                 NullLogger<IndexingEngine>.Instance, crawler,
                 roslynParser, tsParser,
                 roslynExtractor, roslynRelExtractor,
                 tsExtractor, tsRelExtractor,
-                chunker, storage);
+                chunker, storage, detector);
 
             await engine.RunIndexingAsync(repoDir, default);
 

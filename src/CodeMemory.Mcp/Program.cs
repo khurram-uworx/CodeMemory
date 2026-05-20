@@ -68,6 +68,10 @@ builder.Services.AddSingleton<CodeMemory.Mcp.SqlQuery.TableSchemaProvider>();
 // Built-in n-gram embedding generator
 builder.Services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>, NgramEmbeddingGenerator>();
 
+// Component resolution (build-file-first, directory fallback)
+builder.Services.AddSingleton<ProjectFileDetector>();
+builder.Services.AddSingleton<IComponentResolver, ComponentResolver>();
+
 builder.Services.AddSingleton<IndexingEngine>();
 
 // Query services

@@ -2,6 +2,7 @@ using CodeMemory.Indexing;
 using CodeMemory.Indexing.Chunking;
 using CodeMemory.Indexing.Extraction;
 using CodeMemory.Indexing.Parsing;
+using CodeMemory.Services.Architecture;
 using CodeMemory.Storage;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
@@ -62,12 +63,14 @@ public sealed class IndexingEngine
     readonly SemanticChunker chunker;
     readonly IStorageService storage;
     readonly IEmbeddingGenerator<string, Embedding<float>>? embeddingGenerator;
+    readonly ProjectFileDetector projectFileDetector;
 
     public IndexingEngine(ILogger<IndexingEngine> logger, FileCrawler crawler,
         RoslynCSharpParser roslynParser, TreeSitterParser tsParser,
         RoslynSymbolExtractor roslynExtractor, RoslynRelationshipExtractor roslynRelationshipExtractor,
         TreeSitterSymbolExtractor tsExtractor, TreeSitterRelationshipExtractor tsRelationshipExtractor,
         SemanticChunker chunker, IStorageService storage,
+        ProjectFileDetector projectFileDetector,
         IEmbeddingGenerator<string, Embedding<float>>? embeddingGenerator = null)
     {
         this.logger = logger;
@@ -92,6 +95,7 @@ public sealed class IndexingEngine
         };
         this.chunker = chunker;
         this.storage = storage;
+        this.projectFileDetector = projectFileDetector;
         this.embeddingGenerator = embeddingGenerator;
     }
 
@@ -208,6 +212,13 @@ public sealed class IndexingEngine
         }
         else if (allChunks.Count > 0)
             logger.LogWarning("No embedding generator registered — skipping chunk storage. Register an IEmbeddingGenerator<string, Embedding<float>> to enable semantic chunk storage.");
+
+        var componentMapping = projectFileDetector.Discover(repoRoot);
+        if (componentMapping.Count > 0)
+        {
+            ComponentMapping.Initialize(componentMapping);
+            logger.LogInformation("Project file detection: discovered {Count} components", componentMapping.Count);
+        }
 
         logger.LogInformation(
             "Indexing complete — {Files} files, {Parsed} parsed, {Symbols} symbols, {Chunks} chunks, {Relationships} relationships",

@@ -44,6 +44,10 @@ builder.Services.AddSingleton<ISemanticSearchService, SemanticSearchService>();
 builder.Services.AddSingleton<SymbolQueryService>();
 builder.Services.AddSingleton<RelationshipQueryService>();
 
+// Component resolution (build-file-first, directory fallback)
+builder.Services.AddSingleton<CodeMemory.Services.Architecture.ProjectFileDetector>();
+builder.Services.AddSingleton<CodeMemory.Services.Architecture.IComponentResolver, CodeMemory.Services.Architecture.ComponentResolver>();
+
 // Architecture intelligence services
 builder.Services.AddSingleton<CodeMemory.Indexing.Graph.IDependencyGraphService, DependencyGraphService>();
 builder.Services.AddSingleton<CodeMemory.Indexing.Architecture.IArchitectureService, ArchitectureService>();
