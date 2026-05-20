@@ -31,4 +31,7 @@ public static class LanguageDetector
         var ext = Path.GetExtension(filePath);
         return extensionMap.TryGetValue(ext, out var language) ? language : Language.Unknown;
     }
+
+    public static IReadOnlyCollection<string> SupportedExtensions
+        => extensionMap.Keys;
 }

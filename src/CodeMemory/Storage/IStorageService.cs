@@ -38,5 +38,13 @@ public interface IStorageService
 
     Task<IReadOnlyList<ScoredChunk>> SearchChunksAsync(ReadOnlyMemory<float> embedding, int top = 10, VectorSearchOptions<ChunkRecord>? options = null, CancellationToken ct = default);
 
+    Task DeleteSymbolsByFileAsync(string filePath, CancellationToken ct = default);
+
+    Task DeleteChunksByFileAsync(string filePath, CancellationToken ct = default);
+
+    Task DeleteRelationshipsBySourceIdsAsync(IReadOnlyList<string> sourceIds, CancellationToken ct = default);
+
+    Task DeleteRelationshipsByTargetIdsAsync(IReadOnlyList<string> targetIds, CancellationToken ct = default);
+
     Task ClearAllAsync(CancellationToken ct = default);
 }

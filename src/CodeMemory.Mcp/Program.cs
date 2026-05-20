@@ -74,6 +74,13 @@ builder.Services.AddSingleton<IComponentResolver, ComponentResolver>();
 
 builder.Services.AddSingleton<IndexingEngine>();
 
+// File watcher (started after initial indexing completes)
+builder.Services.AddSingleton(sp => new FileWatcherService(
+    repoRoot,
+    sp.GetRequiredService<IStorageService>(),
+    sp.GetRequiredService<IndexingEngine>(),
+    sp.GetRequiredService<ILogger<FileWatcherService>>()));
+
 // Query services
 builder.Services.AddSingleton<ISemanticSearchService, SemanticSearchService>();
 builder.Services.AddSingleton<SymbolQueryService>();
@@ -107,6 +114,10 @@ _ = Task.Run(async () =>
         var engine = app.Services.GetRequiredService<IndexingEngine>();
         await engine.RunIndexingAsync(repoRoot, CancellationToken.None);
         IndexingState.MarkCompleted(repoRoot);
+
+        var watcher = app.Services.GetRequiredService<FileWatcherService>();
+        await watcher.StartAsync(CancellationToken.None);
+        IndexingState.MarkFileWatcherActive();
     }
     catch (Exception ex)
     {

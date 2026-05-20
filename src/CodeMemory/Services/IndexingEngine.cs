@@ -12,6 +12,12 @@ using System.Text.Json;
 
 namespace CodeMemory.Services;
 
+public sealed record FileIndexResult(
+    string FilePath,
+    IReadOnlyList<SymbolRecord> Symbols,
+    IReadOnlyList<ChunkRecord> Chunks,
+    IReadOnlyList<RelationshipRecord> Relationships);
+
 public sealed class IndexingEngine
 {
     static SymbolRecord mapToSymbolRecord(Symbol s, string guid)
@@ -146,7 +152,7 @@ public sealed class IndexingEngine
                     parseResults.Add((result, entry.RelativePath));
 
                     var fileText = result.FileText;
-                    var chunks = chunker.ChunkAll(symbols, fileText, entry.Path, lang);
+                    var chunks = chunker.ChunkAll(symbols, fileText, entry.RelativePath, lang);
                     chunkCount += chunks.Count;
 
                     allChunks.AddRange(chunks);
@@ -223,5 +229,98 @@ public sealed class IndexingEngine
         logger.LogInformation(
             "Indexing complete — {Files} files, {Parsed} parsed, {Symbols} symbols, {Chunks} chunks, {Relationships} relationships",
             fileCount, parsedCount, symbolCount, chunkCount, allSymbols.Count > 0 ? "extracted" : "0");
+    }
+
+    public async Task<FileIndexResult> ProcessFileAsync(string filePath, CancellationToken ct)
+    {
+        var extension = Path.GetExtension(filePath);
+        var lang = LanguageDetector.Detect(filePath);
+
+        if (lang == Language.Unknown || !parsers.TryGetValue(lang, out var parser))
+        {
+            logger.LogDebug("Skipping unsupported file: {Path}", filePath);
+            return new FileIndexResult(filePath, [], [], []);
+        }
+
+        var result = await parser.ParseAsync(filePath, ct);
+        if (result == null)
+        {
+            logger.LogDebug("Parser returned null for: {Path}", filePath);
+            return new FileIndexResult(filePath, [], [], []);
+        }
+
+        var rootUri = new Uri(storage.RepoRoot + Path.DirectorySeparatorChar);
+        var fileUri = new Uri(filePath);
+        var relativePath = Uri.UnescapeDataString(rootUri.MakeRelativeUri(fileUri).ToString())
+            .Replace('/', Path.DirectorySeparatorChar);
+
+        var (symbolExtractor, relationshipExtractor) = extractors[lang];
+        var symbols = symbolExtractor.Extract(result, relativePath);
+
+        if (symbols.Count == 0)
+        {
+            logger.LogDebug("No symbols extracted from: {Path}", relativePath);
+            return new FileIndexResult(filePath, [], [], []);
+        }
+
+        var fullNameToGuid = new Dictionary<string, string>(symbols.Count);
+        var symbolRecords = new List<SymbolRecord>(symbols.Count);
+
+        foreach (var s in symbols)
+        {
+            var guid = Guid.NewGuid().ToString("N");
+            fullNameToGuid[s.FullName] = guid;
+            symbolRecords.Add(mapToSymbolRecord(s, guid));
+        }
+
+        var relationshipRecords = new List<RelationshipRecord>();
+        try
+        {
+            var relationships = relationshipExtractor.ExtractRelationships(result, symbols, relativePath);
+            relationshipRecords = relationships
+                .Where(r => fullNameToGuid.ContainsKey(r.SourceSymbolId) && fullNameToGuid.ContainsKey(r.TargetSymbolId))
+                .Select(r => mapToRelationshipRecord(r, fullNameToGuid))
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Relationship extraction failed for {Path}", relativePath);
+        }
+
+        var fileText = result.FileText;
+        var chunks = chunker.ChunkAll(symbols, fileText, relativePath, lang);
+
+        List<ChunkRecord> chunkRecords;
+        if (chunks.Count > 0 && embeddingGenerator != null)
+        {
+            var contents = chunks.Select(c => c.Content).ToList();
+            var generatedEmbeddings = await embeddingGenerator.GenerateAsync(contents, null, ct);
+
+            chunkRecords = new List<ChunkRecord>(chunks.Count);
+            for (int i = 0; i < chunks.Count; i++)
+            {
+                var vector = generatedEmbeddings[i].Vector;
+                var norm = TensorPrimitives.Norm(vector.Span);
+                var normalized = new float[vector.Length];
+
+                if (norm > 0)
+                    for (int j = 0; j < vector.Length; j++)
+                        normalized[j] = vector.Span[j] / norm;
+
+                chunkRecords.Add(mapToChunkRecord(chunks[i], normalized, fullNameToGuid));
+            }
+        }
+        else
+        {
+            chunkRecords = chunks.Select(c => mapToChunkRecord(c, null, fullNameToGuid)).ToList();
+            if (chunks.Count > 0 && embeddingGenerator == null)
+                logger.LogDebug("No embedding generator — stored chunks without embeddings for {Path}", relativePath);
+        }
+
+        logger.LogDebug(
+            "Processed file {Path} — {Symbols} symbols, {Chunks} chunks, {Relationships} relationships",
+            relativePath, symbolRecords.Count, chunkRecords.Count, relationshipRecords.Count);
+
+        return new FileIndexResult(filePath, symbolRecords, chunkRecords, relationshipRecords);
     }
 }

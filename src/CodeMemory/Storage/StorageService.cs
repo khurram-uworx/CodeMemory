@@ -118,6 +118,56 @@ public sealed class StorageService : IStorageService, IDisposable
         }
     }
 
+    public async Task DeleteSymbolsByFileAsync(string filePath, CancellationToken ct = default)
+    {
+        throwIfNotInitialized();
+
+        Expression<Func<SymbolRecord, bool>> filter = s => s.FilePath == filePath;
+        var toDelete = await symbols!.GetAsync(filter, top: 10000, options: null, ct).ToListAsync(ct);
+        var ids = toDelete.Select(s => s.Id).ToList();
+
+        if (ids.Count > 0)
+            await symbols!.DeleteAsync(ids, ct);
+    }
+
+    public async Task DeleteChunksByFileAsync(string filePath, CancellationToken ct = default)
+    {
+        throwIfNotInitialized();
+
+        Expression<Func<ChunkRecord, bool>> filter = c => c.FilePath == filePath;
+        var toDelete = await chunks!.GetAsync(filter, top: 10000, options: null, ct).ToListAsync(ct);
+        var ids = toDelete.Select(c => c.Id).ToList();
+
+        if (ids.Count > 0)
+            await chunks!.DeleteAsync(ids, ct);
+    }
+
+    public async Task DeleteRelationshipsBySourceIdsAsync(IReadOnlyList<string> sourceIds, CancellationToken ct = default)
+    {
+        throwIfNotInitialized();
+
+        if (sourceIds.Count == 0) return;
+        Expression<Func<RelationshipRecord, bool>> filter = r => sourceIds.Contains(r.SourceSymbolId);
+        var toDelete = await relationships!.GetAsync(filter, top: 10000, options: null, ct).ToListAsync(ct);
+        var ids = toDelete.Select(r => r.Id).ToList();
+
+        if (ids.Count > 0)
+            await relationships!.DeleteAsync(ids, ct);
+    }
+
+    public async Task DeleteRelationshipsByTargetIdsAsync(IReadOnlyList<string> targetIds, CancellationToken ct = default)
+    {
+        throwIfNotInitialized();
+
+        if (targetIds.Count == 0) return;
+        Expression<Func<RelationshipRecord, bool>> filter = r => targetIds.Contains(r.TargetSymbolId);
+        var toDelete = await relationships!.GetAsync(filter, top: 10000, options: null, ct).ToListAsync(ct);
+        var ids = toDelete.Select(r => r.Id).ToList();
+
+        if (ids.Count > 0)
+            await relationships!.DeleteAsync(ids, ct);
+    }
+
     public async Task<SymbolRecord?> GetSymbolAsync(string id, CancellationToken ct = default)
     {
         throwIfNotInitialized();
