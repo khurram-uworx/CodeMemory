@@ -256,4 +256,316 @@ public sealed class TreeSitterSymbolExtractorTests
         Assert.That(symbols.Any(s => s.Name.StartsWith("do_work") && s.Kind == CodeSymbolKind.Method), Is.True);
         Assert.That(symbols.Any(s => s.Name.StartsWith("free_fn") && s.Kind == CodeSymbolKind.Function), Is.True);
     }
+
+    [Test]
+    public async Task Extract_C_ContainsStructAndFunction()
+    {
+        Assume.That(IsTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            struct Worker { int id; };
+            int run(void) { return 0; }
+            """;
+
+        var (symbols, _) = await ExtractFromCode(code, ".c");
+        Assert.That(symbols.Any(s => s.Name == "Worker" && s.Kind == CodeSymbolKind.Struct), Is.True);
+        Assert.That(symbols.Any(s => s.Name.StartsWith("run") && s.Kind == CodeSymbolKind.Function), Is.True);
+    }
+
+    [Test]
+    public async Task Extract_Cpp_ContainsClassAndFunction()
+    {
+        Assume.That(IsTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            class Worker {};
+            int run() { return 0; }
+            """;
+
+        var (symbols, _) = await ExtractFromCode(code, ".cpp");
+        Assert.That(symbols.Any(s => s.Name == "Worker" && s.Kind == CodeSymbolKind.Class), Is.True);
+        Assert.That(symbols.Any(s => s.Name.StartsWith("run") && s.Kind == CodeSymbolKind.Function), Is.True);
+    }
+
+    [Test]
+    public async Task Extract_Cpp_MethodInsideClass_IsMethod()
+    {
+        Assume.That(IsTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            class Worker {
+                int run() { return 0; }
+            };
+            """;
+
+        var (symbols, _) = await ExtractFromCode(code, ".cpp");
+        var method = symbols.FirstOrDefault(s => s.Name.StartsWith("run"));
+        Assert.That(method, Is.Not.Null);
+        Assert.That(method!.Kind, Is.EqualTo(CodeSymbolKind.Method));
+        Assert.That(method.FullName, Is.EqualTo("Worker.run()"));
+    }
+
+    [Test]
+    public async Task Extract_Cpp_MethodInsideStruct_IsMethod()
+    {
+        Assume.That(IsTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            struct Worker {
+                int run() { return 0; }
+            };
+            """;
+
+        var (symbols, _) = await ExtractFromCode(code, ".cpp");
+        var method = symbols.FirstOrDefault(s => s.Name.StartsWith("run"));
+        Assert.That(method, Is.Not.Null);
+        Assert.That(method!.Kind, Is.EqualTo(CodeSymbolKind.Method));
+    }
+
+    [Test]
+    public async Task Extract_C_ContainsEnumAndUnion()
+    {
+        Assume.That(IsTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            enum Color { RED, GREEN, BLUE };
+            union Data { int i; float f; };
+            """;
+
+        var (symbols, _) = await ExtractFromCode(code, ".c");
+        Assert.That(symbols.Any(s => s.Name == "Color" && s.Kind == CodeSymbolKind.Enum), Is.True);
+        Assert.That(symbols.Any(s => s.Name == "Data" && s.Kind == CodeSymbolKind.Struct), Is.True);
+    }
+
+    [Test]
+    public async Task Extract_Cpp_ContainsNamespace()
+    {
+        Assume.That(IsTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            namespace MyNs {
+                class Worker {};
+            }
+            """;
+
+        var (symbols, _) = await ExtractFromCode(code, ".cpp");
+        Assert.That(symbols.Any(s => s.Name == "MyNs" && s.Kind == CodeSymbolKind.Module), Is.True);
+    }
+
+    [Test]
+    public async Task Extract_Cpp_MethodQualifiedByNamespace()
+    {
+        Assume.That(IsTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            namespace MyNs {
+                class Worker {
+                    int run() { return 0; }
+                };
+            }
+            """;
+
+        var (symbols, _) = await ExtractFromCode(code, ".cpp");
+        var method = symbols.FirstOrDefault(s => s.Name.StartsWith("run"));
+        Assert.That(method, Is.Not.Null);
+        Assert.That(method!.FullName, Is.EqualTo("MyNs.Worker.run()"));
+    }
+
+    [Test]
+    public async Task Extract_Cpp_ContainsTypeAlias()
+    {
+        Assume.That(IsTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            using IntPtr = int*;
+            typedef unsigned long ulong;
+            """;
+
+        var (symbols, _) = await ExtractFromCode(code, ".cpp");
+        Assert.That(symbols.Any(s => s.Name == "IntPtr" && s.Kind == CodeSymbolKind.TypeAlias), Is.True);
+        Assert.That(symbols.Any(s => s.Name == "ulong" && s.Kind == CodeSymbolKind.TypeAlias), Is.True);
+    }
+
+    [Test]
+    public async Task Extract_Cpp_ContainsTemplateClass()
+    {
+        Assume.That(IsTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            template<typename T>
+            class Container {
+                T value;
+            public:
+                T get() { return value; }
+            };
+            """;
+
+        var (symbols, _) = await ExtractFromCode(code, ".cpp");
+        Assert.That(symbols.Any(s => s.Name == "Container" && s.Kind == CodeSymbolKind.Class), Is.True);
+    }
+
+    [Test]
+    public async Task Extract_Cpp_ContainsEnumAndUnion()
+    {
+        Assume.That(IsTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            enum Color { RED, GREEN, BLUE };
+            union Data { int i; float f; };
+            """;
+
+        var (symbols, _) = await ExtractFromCode(code, ".cpp");
+        Assert.That(symbols.Any(s => s.Name == "Color" && s.Kind == CodeSymbolKind.Enum), Is.True);
+        Assert.That(symbols.Any(s => s.Name == "Data" && s.Kind == CodeSymbolKind.Struct), Is.True);
+    }
+
+    [Test]
+    public async Task Extract_Cpp_HeaderWithCppKeywords_DetectedAsCpp()
+    {
+        Assume.That(IsTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            class Worker {
+                int run() { return 0; }
+            };
+            """;
+
+        var (symbols, _) = await ExtractFromCode(code, ".h");
+        Assert.That(symbols.Any(s => s.Name == "Worker" && s.Kind == CodeSymbolKind.Class), Is.True);
+        var method = symbols.FirstOrDefault(s => s.Name.StartsWith("run"));
+        Assert.That(method, Is.Not.Null);
+        Assert.That(method!.Kind, Is.EqualTo(CodeSymbolKind.Method));
+    }
+
+    [Test]
+    public async Task Extract_C_ContainsGlobalVariable()
+    {
+        Assume.That(IsTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            int global;
+            int initialized = 42;
+            static int counter;
+            """;
+
+        var (symbols, _) = await ExtractFromCode(code, ".c");
+        Assert.That(symbols.Any(s => s.Name == "global" && s.Kind == CodeSymbolKind.Variable), Is.True);
+        Assert.That(symbols.Any(s => s.Name == "initialized" && s.Kind == CodeSymbolKind.Variable), Is.True);
+        var counter = symbols.FirstOrDefault(s => s.Name == "counter");
+        Assert.That(counter, Is.Not.Null);
+        Assert.That(counter!.Kind, Is.EqualTo(CodeSymbolKind.Variable));
+        Assert.That(counter.Modifiers, Does.Contain("static"));
+    }
+
+    [Test]
+    public async Task Extract_C_DoesNotIndexLocalVariables()
+    {
+        Assume.That(IsTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            int global;
+            void func() {
+                int local;
+            }
+            """;
+
+        var (symbols, _) = await ExtractFromCode(code, ".c");
+        Assert.That(symbols.Any(s => s.Name == "global"), Is.True);
+        Assert.That(symbols.Any(s => s.Name == "local"), Is.False);
+    }
+
+    [Test]
+    public async Task Extract_C_ContainsPointerAndArrayGlobals()
+    {
+        Assume.That(IsTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            int* ptr;
+            int buffer[256];
+            """;
+
+        var (symbols, _) = await ExtractFromCode(code, ".c");
+        Assert.That(symbols.Any(s => s.Name == "ptr" && s.Kind == CodeSymbolKind.Variable), Is.True);
+        Assert.That(symbols.Any(s => s.Name == "buffer" && s.Kind == CodeSymbolKind.Variable), Is.True);
+    }
+
+    [Test]
+    public async Task Extract_Cpp_ContainsGlobalVariable()
+    {
+        Assume.That(IsTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            int global;
+            int initialized = 42;
+            """;
+
+        var (symbols, _) = await ExtractFromCode(code, ".cpp");
+        Assert.That(symbols.Any(s => s.Name == "global" && s.Kind == CodeSymbolKind.Variable), Is.True);
+        Assert.That(symbols.Any(s => s.Name == "initialized" && s.Kind == CodeSymbolKind.Variable), Is.True);
+    }
+
+    [Test]
+    public async Task Extract_Cpp_ContainsExternVariable()
+    {
+        Assume.That(IsTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            extern int external;
+            """;
+
+        var (symbols, _) = await ExtractFromCode(code, ".cpp");
+        var ext = symbols.FirstOrDefault(s => s.Name == "external");
+        Assert.That(ext, Is.Not.Null);
+        Assert.That(ext!.Kind, Is.EqualTo(CodeSymbolKind.Variable));
+        Assert.That(ext.Modifiers, Does.Contain("extern"));
+    }
+
+    [Test]
+    public async Task Extract_C_GlobalVariablesInHeader()
+    {
+        Assume.That(IsTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            int global;
+            """;
+
+        var (symbols, _) = await ExtractFromCode(code, ".h");
+        Assert.That(symbols.Any(s => s.Name == "global" && s.Kind == CodeSymbolKind.Variable), Is.True);
+    }
+
+    [Test]
+    public async Task Extract_Cpp_TemplateClass_HasTemplateModifier()
+    {
+        Assume.That(IsTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            template<typename T>
+            class Container {
+                T value;
+            public:
+                T get() { return value; }
+            };
+            """;
+
+        var (symbols, _) = await ExtractFromCode(code, ".cpp");
+        var cls = symbols.FirstOrDefault(s => s.Name == "Container");
+        Assert.That(cls, Is.Not.Null);
+        Assert.That(cls!.Kind, Is.EqualTo(CodeSymbolKind.Class));
+        Assert.That(cls.Modifiers, Does.Contain("template<typename T>"));
+    }
+
+    [Test]
+    public async Task Extract_Cpp_TemplateFunction_HasTemplateModifier()
+    {
+        Assume.That(IsTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            template<typename T>
+            T max(T a, T b) { return a > b ? a : b; }
+            """;
+
+        var (symbols, _) = await ExtractFromCode(code, ".cpp");
+        var func = symbols.FirstOrDefault(s => s.Name.StartsWith("max"));
+        Assert.That(func, Is.Not.Null);
+        Assert.That(func!.Kind, Is.EqualTo(CodeSymbolKind.Function));
+        Assert.That(func.Modifiers, Does.Contain("template<typename T>"));
+    }
+
+    [Test]
+    public async Task Extract_Cpp_TemplateVariable_IsVariable()
+    {
+        Assume.That(IsTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            template<typename T>
+            constexpr T pi = T(3.14159);
+            """;
+
+        var (symbols, _) = await ExtractFromCode(code, ".cpp");
+        var pi = symbols.FirstOrDefault(s => s.Name == "pi");
+        Assert.That(pi, Is.Not.Null);
+        Assert.That(pi!.Kind, Is.EqualTo(CodeSymbolKind.Variable));
+        Assert.That(pi.Modifiers, Does.Contain("constexpr"));
+        Assert.That(pi.Modifiers, Does.Contain("template<typename T>"));
+    }
 }

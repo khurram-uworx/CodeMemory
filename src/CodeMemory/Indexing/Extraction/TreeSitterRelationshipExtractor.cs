@@ -86,6 +86,7 @@ public sealed class TreeSitterRelationshipExtractor : IRelationshipExtractor
             case "class_definition":
             case "type_declaration":
             case "trait_item":
+            case "class_specifier":
                 processHeritage(node, symbols, byName, byFullName, filePath, language, seen, results);
                 break;
             case "call_expression":
@@ -243,6 +244,49 @@ public sealed class TreeSitterRelationshipExtractor : IRelationshipExtractor
                 }
             }
         }
+
+        // C++: extract base types from class_specifier text
+        if (language is Parsing.Language.Cpp && node.Type is "class_specifier")
+        {
+            foreach (var baseType in extractBaseTypes(node))
+            {
+                if (primitiveTypes.Contains(baseType)) continue;
+                var target = findSymbolByName(baseType, byName, byFullName);
+                if (target == null || target.FullName == source.FullName) continue;
+                addRelationship(source.FullName, target.FullName, "Inherits", seen, results);
+            }
+        }
+    }
+
+    static List<string> extractBaseTypes(Node node)
+    {
+        // tree-sitter-cpp in TreeSitter.DotNet v1.3.0 does not expose inheritance
+        // as structured nodes (no base_class_clause, base_specifier, etc.).
+        // Fall back to text-based extraction from the class_specifier source.
+        var text = node.Text.AsSpan();
+        var nameStart = text.IndexOf("class", StringComparison.Ordinal) + 5;
+        while (nameStart < text.Length && text[nameStart] == ' ') nameStart++;
+        var nameEnd = nameStart;
+        while (nameEnd < text.Length && !char.IsWhiteSpace(text[nameEnd]) && text[nameEnd] != ':')
+            nameEnd++;
+        var colonIdx = text.Slice(nameEnd).IndexOf(':');
+        if (colonIdx < 0) return [];
+        var afterColon = text.Slice(nameEnd + colonIdx + 1);
+        var braceIdx = afterColon.IndexOf('{');
+        var baseSection = braceIdx >= 0 ? afterColon[..braceIdx].Trim() : afterColon.Trim();
+
+        var result = new List<string>();
+        foreach (var part in baseSection.ToString().Split(','))
+        {
+            var trimmed = part.Trim();
+            // Remove access specifiers
+            foreach (var keyword in new[] { "public ", "private ", "protected ", "virtual " })
+                if (trimmed.StartsWith(keyword, StringComparison.Ordinal))
+                    trimmed = trimmed[keyword.Length..].Trim();
+            if (trimmed.Length > 0 && !result.Contains(trimmed))
+                result.Add(trimmed);
+        }
+        return result;
     }
 
     void processNestedHeritageClause(Node clause, Symbol source,

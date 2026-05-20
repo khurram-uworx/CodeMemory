@@ -90,6 +90,8 @@ public sealed class IndexingEngine
             [Language.Python] = tsParser,
             [Language.Go] = tsParser,
             [Language.Rust] = tsParser,
+            [Language.C] = tsParser,
+            [Language.Cpp] = tsParser,
             [Language.HTML] = tsParser,
         };
         extractors = new Dictionary<Language, (ISymbolExtractor, IRelationshipExtractor)>
@@ -101,6 +103,8 @@ public sealed class IndexingEngine
             [Language.Python] = (tsExtractor, tsRelationshipExtractor),
             [Language.Go] = (tsExtractor, tsRelationshipExtractor),
             [Language.Rust] = (tsExtractor, tsRelationshipExtractor),
+            [Language.C] = (tsExtractor, tsRelationshipExtractor),
+            [Language.Cpp] = (tsExtractor, tsRelationshipExtractor),
             [Language.HTML] = (tsExtractor, tsRelationshipExtractor),
         };
         this.chunker = chunker;
@@ -140,7 +144,8 @@ public sealed class IndexingEngine
                 if (result != null)
                 {
                     parsedCount++;
-                    var (symbolExtractor, _) = extractors[lang];
+                    var effectiveLang = result.Language;
+                    var (symbolExtractor, _) = extractors[effectiveLang];
                     var symbols = symbolExtractor.Extract(result, entry.RelativePath);
                     symbolCount += symbols.Count;
 
@@ -156,7 +161,7 @@ public sealed class IndexingEngine
                     parseResults.Add((result, entry.RelativePath));
 
                     var fileText = result.FileText;
-                    var chunks = chunker.ChunkAll(symbols, fileText, entry.RelativePath, lang);
+                    var chunks = chunker.ChunkAll(symbols, fileText, entry.RelativePath, effectiveLang);
                     chunkCount += chunks.Count;
 
                     allChunks.AddRange(chunks);
@@ -258,7 +263,8 @@ public sealed class IndexingEngine
         var relativePath = Uri.UnescapeDataString(rootUri.MakeRelativeUri(fileUri).ToString())
             .Replace('/', Path.DirectorySeparatorChar);
 
-        var (symbolExtractor, relationshipExtractor) = extractors[lang];
+        var effectiveLang = result.Language;
+        var (symbolExtractor, relationshipExtractor) = extractors[effectiveLang];
         var symbols = symbolExtractor.Extract(result, relativePath);
 
         if (symbols.Count == 0)
