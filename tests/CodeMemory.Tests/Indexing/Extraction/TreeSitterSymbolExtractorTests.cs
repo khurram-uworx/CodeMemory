@@ -515,4 +515,57 @@ public sealed class TreeSitterSymbolExtractorTests
         var (symbols, _) = await ExtractFromCode(code, ".h");
         Assert.That(symbols.Any(s => s.Name == "global" && s.Kind == CodeSymbolKind.Variable), Is.True);
     }
+
+    [Test]
+    public async Task Extract_Cpp_TemplateClass_HasTemplateModifier()
+    {
+        Assume.That(IsTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            template<typename T>
+            class Container {
+                T value;
+            public:
+                T get() { return value; }
+            };
+            """;
+
+        var (symbols, _) = await ExtractFromCode(code, ".cpp");
+        var cls = symbols.FirstOrDefault(s => s.Name == "Container");
+        Assert.That(cls, Is.Not.Null);
+        Assert.That(cls!.Kind, Is.EqualTo(CodeSymbolKind.Class));
+        Assert.That(cls.Modifiers, Does.Contain("template<typename T>"));
+    }
+
+    [Test]
+    public async Task Extract_Cpp_TemplateFunction_HasTemplateModifier()
+    {
+        Assume.That(IsTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            template<typename T>
+            T max(T a, T b) { return a > b ? a : b; }
+            """;
+
+        var (symbols, _) = await ExtractFromCode(code, ".cpp");
+        var func = symbols.FirstOrDefault(s => s.Name.StartsWith("max"));
+        Assert.That(func, Is.Not.Null);
+        Assert.That(func!.Kind, Is.EqualTo(CodeSymbolKind.Function));
+        Assert.That(func.Modifiers, Does.Contain("template<typename T>"));
+    }
+
+    [Test]
+    public async Task Extract_Cpp_TemplateVariable_IsVariable()
+    {
+        Assume.That(IsTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            template<typename T>
+            constexpr T pi = T(3.14159);
+            """;
+
+        var (symbols, _) = await ExtractFromCode(code, ".cpp");
+        var pi = symbols.FirstOrDefault(s => s.Name == "pi");
+        Assert.That(pi, Is.Not.Null);
+        Assert.That(pi!.Kind, Is.EqualTo(CodeSymbolKind.Variable));
+        Assert.That(pi.Modifiers, Does.Contain("constexpr"));
+        Assert.That(pi.Modifiers, Does.Contain("template<typename T>"));
+    }
 }

@@ -132,7 +132,7 @@ public sealed class TreeSitterSymbolExtractor : ISymbolExtractor
 
                 if (modifierText is "abstract" or "static" or "async" or "readonly"
                     or "public" or "private" or "protected" or "sealed" or "override"
-                    or "virtual" or "const" or "default" or "extern")
+                    or "virtual" or "const" or "constexpr" or "default" or "extern")
 
                     if (!modifiers.Contains(modifierText))
                         modifiers.Add(modifierText);
@@ -150,6 +150,23 @@ public sealed class TreeSitterSymbolExtractor : ISymbolExtractor
                         if (!modifiers.Contains(modText))
                             modifiers.Add(modText);
                     }
+        }
+
+        // C++: extract template parameters as modifier on the inner declaration
+        if (node?.Parent?.Type == "template_declaration")
+        {
+            var paramField = node.Parent.Fields.FirstOrDefault(f => f.Key == "parameters");
+            if (paramField.Key != null)
+            {
+                var paramText = paramField.Value.Text.Trim();
+                if (!string.IsNullOrEmpty(paramText))
+                {
+                    if (paramText.StartsWith('<'))
+                        modifiers.Add($"template{paramText}");
+                    else
+                        modifiers.Add($"template<{paramText}>");
+                }
+            }
         }
 
         return modifiers;
@@ -434,7 +451,7 @@ public sealed class TreeSitterSymbolExtractor : ISymbolExtractor
             var declField = node.Fields.FirstOrDefault(f => f.Key == "declarator");
             if (declField.Key != null && declField.Value.Type != "function_declarator")
             {
-                if (node.Parent?.Type == "translation_unit")
+                if (node.Parent?.Type is "translation_unit" or "template_declaration")
                     nodeType = "variable_declarator";
                 else
                     return;
