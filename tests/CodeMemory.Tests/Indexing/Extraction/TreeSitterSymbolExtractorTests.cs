@@ -425,4 +425,94 @@ public sealed class TreeSitterSymbolExtractorTests
         Assert.That(method, Is.Not.Null);
         Assert.That(method!.Kind, Is.EqualTo(CodeSymbolKind.Method));
     }
+
+    [Test]
+    public async Task Extract_C_ContainsGlobalVariable()
+    {
+        Assume.That(IsTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            int global;
+            int initialized = 42;
+            static int counter;
+            """;
+
+        var (symbols, _) = await ExtractFromCode(code, ".c");
+        Assert.That(symbols.Any(s => s.Name == "global" && s.Kind == CodeSymbolKind.Variable), Is.True);
+        Assert.That(symbols.Any(s => s.Name == "initialized" && s.Kind == CodeSymbolKind.Variable), Is.True);
+        var counter = symbols.FirstOrDefault(s => s.Name == "counter");
+        Assert.That(counter, Is.Not.Null);
+        Assert.That(counter!.Kind, Is.EqualTo(CodeSymbolKind.Variable));
+        Assert.That(counter.Modifiers, Does.Contain("static"));
+    }
+
+    [Test]
+    public async Task Extract_C_DoesNotIndexLocalVariables()
+    {
+        Assume.That(IsTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            int global;
+            void func() {
+                int local;
+            }
+            """;
+
+        var (symbols, _) = await ExtractFromCode(code, ".c");
+        Assert.That(symbols.Any(s => s.Name == "global"), Is.True);
+        Assert.That(symbols.Any(s => s.Name == "local"), Is.False);
+    }
+
+    [Test]
+    public async Task Extract_C_ContainsPointerAndArrayGlobals()
+    {
+        Assume.That(IsTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            int* ptr;
+            int buffer[256];
+            """;
+
+        var (symbols, _) = await ExtractFromCode(code, ".c");
+        Assert.That(symbols.Any(s => s.Name == "ptr" && s.Kind == CodeSymbolKind.Variable), Is.True);
+        Assert.That(symbols.Any(s => s.Name == "buffer" && s.Kind == CodeSymbolKind.Variable), Is.True);
+    }
+
+    [Test]
+    public async Task Extract_Cpp_ContainsGlobalVariable()
+    {
+        Assume.That(IsTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            int global;
+            int initialized = 42;
+            """;
+
+        var (symbols, _) = await ExtractFromCode(code, ".cpp");
+        Assert.That(symbols.Any(s => s.Name == "global" && s.Kind == CodeSymbolKind.Variable), Is.True);
+        Assert.That(symbols.Any(s => s.Name == "initialized" && s.Kind == CodeSymbolKind.Variable), Is.True);
+    }
+
+    [Test]
+    public async Task Extract_Cpp_ContainsExternVariable()
+    {
+        Assume.That(IsTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            extern int external;
+            """;
+
+        var (symbols, _) = await ExtractFromCode(code, ".cpp");
+        var ext = symbols.FirstOrDefault(s => s.Name == "external");
+        Assert.That(ext, Is.Not.Null);
+        Assert.That(ext!.Kind, Is.EqualTo(CodeSymbolKind.Variable));
+        Assert.That(ext.Modifiers, Does.Contain("extern"));
+    }
+
+    [Test]
+    public async Task Extract_C_GlobalVariablesInHeader()
+    {
+        Assume.That(IsTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            int global;
+            """;
+
+        var (symbols, _) = await ExtractFromCode(code, ".h");
+        Assert.That(symbols.Any(s => s.Name == "global" && s.Kind == CodeSymbolKind.Variable), Is.True);
+    }
 }
