@@ -59,6 +59,21 @@ public sealed class SqlQueryService
         => expr is AstExpr.Identifier id
         && string.Equals(id.Ident.Value, name, StringComparison.OrdinalIgnoreCase);
 
+    static object? rowGetValue(Dictionary<string, object?> row, string colName)
+    {
+        if (row.TryGetValue(colName, out var val)) return val;
+
+        if (!colName.Contains('.'))
+        {
+            var dotPrefix = "." + colName;
+            foreach (var key in row.Keys)
+                if (key.EndsWith(dotPrefix, StringComparison.Ordinal))
+                    return row.GetValueOrDefault(key);
+        }
+
+        return null;
+    }
+
     static object? convertHavingLiteral(Value value)
         => value switch
         {
@@ -194,7 +209,7 @@ public sealed class SqlQueryService
 
                 foreach (var col in groupByColumns)
                 {
-                    sb.Append(r.GetValueOrDefault(col)?.ToString() ?? "NULL");
+                    sb.Append(rowGetValue(r, col)?.ToString() ?? "NULL");
                     sb.Append('\0');
                 }
 
@@ -214,7 +229,13 @@ public sealed class SqlQueryService
                 if (col.IsAggregate)
                     row[col.Alias ?? col.AggregateFunction + "(*)"] = computeAggregate(group, col);
                 else if (col.Name is not null)
-                    row[col.Alias ?? col.Name] = group.First().GetValueOrDefault(col.Name);
+                    row[col.Alias ?? col.Name] = rowGetValue(group.First(), col.Name);
+                else if (col.Expression is not null)
+                {
+                    var val = evaluateExpression(col.Expression, group.First());
+                    var key = col.Alias ?? expressionToString(col.Expression);
+                    row[key] = val;
+                }
             }
 
             results.Add(row);
@@ -312,7 +333,7 @@ public sealed class SqlQueryService
                 return r => evaluateExpression(col.Expression, r);
         }
 
-        return r => r.GetValueOrDefault(sortColumn);
+        return r => rowGetValue(r, sortColumn);
     }
 
     // HAVING evaluator
@@ -410,7 +431,12 @@ public sealed class SqlQueryService
         if (expr is AstExpr.Identifier id)
             return r => r.TryGetValue(id.Ident.Value, out var v) ? v : null;
         if (expr is AstExpr.CompoundIdentifier comp)
-            return r => r.TryGetValue(comp.Idents[^1].Value, out var v) ? v : null;
+        {
+            var fullKey = string.Join(".", comp.Idents.Select(i => i.Value));
+            return r => r.TryGetValue(fullKey, out var v) ? v
+                : r.TryGetValue(comp.Idents[^1].Value, out var v2) ? v2
+                : null;
+        }
 
         if (expr is AstExpr.LiteralValue lv)
         {
@@ -447,7 +473,12 @@ public sealed class SqlQueryService
                 return row.GetValueOrDefault(id.Ident.Value);
 
             case AstExpr.CompoundIdentifier comp:
-                return row.GetValueOrDefault(comp.Idents[^1].Value);
+                {
+                    var fullKey = string.Join(".", comp.Idents.Select(i => i.Value));
+                    if (row.TryGetValue(fullKey, out var qualifiedVal))
+                        return qualifiedVal;
+                    return row.GetValueOrDefault(comp.Idents[^1].Value);
+                }
 
             case AstExpr.LiteralValue lv:
                 return convertHavingLiteral(lv.Value);
@@ -1327,6 +1358,136 @@ public sealed class SqlQueryService
         return result;
     }
 
+    sealed record TableRef(string TableName, string? Alias);
+
+    static bool detectMultiTable(Sequence<TableWithJoins>? from)
+        => from is not null && (from.Count > 1 || (from.Count == 1 && from[0].Joins is { Count: > 0 }));
+
+    static AstExpr? mergeOnConditions(Sequence<TableWithJoins> from, AstExpr? existing)
+    {
+        AstExpr? result = existing;
+
+        foreach (var twj in from)
+            if (twj.Joins is not null)
+                foreach (var join in twj.Joins)
+                    if (join.JoinOperator is JoinOperator.ConstrainedJoinOperator constrained
+                        && constrained.JoinConstraint is JoinConstraint.On onExpr)
+                    {
+                        if (result is null)
+                            result = onExpr.Expression;
+                        else
+                            result = new AstExpr.BinaryOp(result, BinaryOperator.And, onExpr.Expression);
+                    }
+
+        return result;
+    }
+
+    static List<TableRef> parseFromClause(Sequence<TableWithJoins> from)
+    {
+        var tables = new List<TableRef>();
+
+        foreach (var twj in from)
+        {
+            if (twj.Relation is TableFactor.Table baseTable)
+            {
+                var baseName = baseTable.Name.Values.Last().Value;
+                var baseAlias = baseTable.Alias?.Name?.Value;
+                tables.Add(new TableRef(baseName, baseAlias));
+            }
+
+            if (twj.Joins is not null)
+                foreach (var join in twj.Joins)
+                    if (join.Relation is TableFactor.Table joinTable)
+                    {
+                        var joinName = joinTable.Name.Values.Last().Value;
+                        var joinAlias = joinTable.Alias?.Name?.Value;
+                        tables.Add(new TableRef(joinName, joinAlias));
+                    }
+        }
+
+        return tables;
+    }
+
+    static string getPrefix(TableRef table)
+        => table.Alias ?? table.TableName;
+
+    static void prefixRows(List<Dictionary<string, object?>> rows, string prefix)
+    {
+        if (rows.Count == 0 || string.IsNullOrEmpty(prefix)) return;
+
+        foreach (var row in rows)
+        {
+            var keys = row.Keys.Where(k => !k.StartsWith("__")).ToList();
+
+            foreach (var key in keys)
+                if (!key.StartsWith(prefix + ".") && row.TryGetValue(key, out var val))
+                {
+                    row.Remove(key);
+                    row[$"{prefix}.{key}"] = val;
+                }
+        }
+    }
+
+    static List<Dictionary<string, object?>> cartesianMerge(List<List<Dictionary<string, object?>>> allData)
+    {
+        if (allData.Count == 0) return [];
+
+        IEnumerable<Dictionary<string, object?>> result = allData[0];
+
+        for (int i = 1; i < allData.Count; i++)
+        {
+            var next = allData[i];
+            var current = result;
+            result = current.SelectMany(left => next.Select(right =>
+            {
+                var merged = new Dictionary<string, object?>(left);
+                foreach (var kvp in right)
+                    merged[kvp.Key] = kvp.Value;
+                return merged;
+            }));
+        }
+
+        return result.ToList();
+    }
+
+    async Task<List<Dictionary<string, object?>>> executeJoinQueryAsync(
+        VectorStore store,
+        List<TableRef> tables,
+        Dictionary<string, List<Dictionary<string, object?>>> cteResults,
+        AstExpr? whereExpr,
+        int defaultMaxResults,
+        CancellationToken ct)
+    {
+        var allData = new List<List<Dictionary<string, object?>>>();
+
+        foreach (var table in tables)
+        {
+            if (cteResults.TryGetValue(table.TableName, out var cteData) ||
+                (table.Alias is not null && cteResults.TryGetValue(table.Alias, out cteData)))
+            {
+                var prefixed = cteData.Select(r => new Dictionary<string, object?>(r)).ToList();
+                prefixRows(prefixed, getPrefix(table));
+                allData.Add(prefixed);
+                continue;
+            }
+
+            var entry = registry.GetEntry(table.TableName);
+            if (entry is null)
+                throw new InvalidOperationException($"Unknown table '{table.TableName}' in multi-table query");
+
+            var rows = await queryFilteredAsync(store, entry, null, int.MaxValue, ct);
+            prefixRows(rows, getPrefix(table));
+            allData.Add(rows);
+        }
+
+        var merged = cartesianMerge(allData);
+
+        if (whereExpr is not null)
+            merged = filterCteRows(merged, whereExpr);
+
+        return merged;
+    }
+
     public async Task<SqlQueryResult> ExecuteAsync(VectorStore store, string sql, int maxResults = 100, CancellationToken ct = default)
     {
         var sw = Stopwatch.StartNew();
@@ -1379,14 +1540,7 @@ public sealed class SqlQueryService
                 cteResults = new Dictionary<string, List<Dictionary<string, object?>>>(StringComparer.OrdinalIgnoreCase);
             }
 
-            var (tableName, isCte) = await resolveFromSourceAsync(store, selectBody.From[0].Relation, cteResults, maxResults, ct);
-
-            if (tableName is null)
-                return fail("Could not determine table name from FROM clause", sw);
-
-            var entry = isCte ? null : registry.GetEntry(tableName);
-            if (!isCte && entry is null)
-                return fail($"Unknown table '{tableName}'. Available: {string.Join(", ", registry.AllEntries.Keys)}", sw);
+            bool isMultiTable = detectMultiTable(selectBody.From);
 
             // Parse SELECT projection for column/aggregate info
             bool hasExplicitProjection = selectBody.Projection is { Count: > 0 }
@@ -1425,30 +1579,55 @@ public sealed class SqlQueryService
             int fetchTop = needsFullFetch ? int.MaxValue : top;
 
             List<Dictionary<string, object?>> result;
-            if (isCte)
+            string? singleTableName = null;
+            CollectionEntry? entry = null;
+            bool isCte = false;
+
+            if (isMultiTable)
             {
                 if (isVectorSearch)
-                {
-                    if (hasGroupBy || hasAggregates || hasDistinct)
-                        return fail("GROUP BY, DISTINCT, and aggregates are not supported with vector search on CTE", sw);
+                    return fail("Vector search (ORDER BY Similarity DESC) is not supported with multi-table queries", sw);
 
-                    result = await reRankBySimilarityAsync(store, cteResults![tableName], whereExpr, top, ct);
-                }
-                else
-                    result = filterCteRows(cteResults![tableName], whereExpr);
-            }
-            else if (isVectorSearch)
-            {
-                if (hasGroupBy || hasAggregates || hasDistinct)
-                    return fail("GROUP BY, DISTINCT, and aggregates are not supported with vector search", sw);
-
-                if (entry!.RecordType != typeof(ChunkRecord))
-                    return fail("ORDER BY Similarity DESC is only supported for ChunkRecord", sw);
-
-                result = await queryVectorAsync(store, entry, whereExpr, top, ct);
+                var mergedWhere = mergeOnConditions(selectBody.From, whereExpr);
+                var tables = parseFromClause(selectBody.From);
+                result = await executeJoinQueryAsync(store, tables, cteResults, mergedWhere, maxResults, ct);
             }
             else
-                result = await queryFilteredAsync(store, entry!, whereExpr, fetchTop, ct);
+            {
+                (singleTableName, isCte) = await resolveFromSourceAsync(store, selectBody.From[0].Relation, cteResults, maxResults, ct);
+                entry = isCte ? null : registry.GetEntry(singleTableName ?? "");
+
+                if (singleTableName is null)
+                    return fail("Could not determine table name from FROM clause", sw);
+
+                if (!isCte && entry is null)
+                    return fail($"Unknown table '{singleTableName}'. Available: {string.Join(", ", registry.AllEntries.Keys)}", sw);
+
+                if (isCte)
+                {
+                    if (isVectorSearch)
+                    {
+                        if (hasGroupBy || hasAggregates || hasDistinct)
+                            return fail("GROUP BY, DISTINCT, and aggregates are not supported with vector search on CTE", sw);
+
+                        result = await reRankBySimilarityAsync(store, cteResults![singleTableName], whereExpr, top, ct);
+                    }
+                    else
+                        result = filterCteRows(cteResults![singleTableName], whereExpr);
+                }
+                else if (isVectorSearch)
+                {
+                    if (hasGroupBy || hasAggregates || hasDistinct)
+                        return fail("GROUP BY, DISTINCT, and aggregates are not supported with vector search", sw);
+
+                    if (entry!.RecordType != typeof(ChunkRecord))
+                        return fail("ORDER BY Similarity DESC is only supported for ChunkRecord", sw);
+
+                    result = await queryVectorAsync(store, entry, whereExpr, top, ct);
+                }
+                else
+                    result = await queryFilteredAsync(store, entry!, whereExpr, fetchTop, ct);
+            }
 
             // Apply DISTINCT — evaluates computed expressions inline so aliased/math columns work
             if (hasDistinct && !hasGroupBy && !hasAggregates)
@@ -1474,7 +1653,7 @@ public sealed class SqlQueryService
                 }
                 else
                 {
-                    var keys = isCte && result.Count > 0
+                    var keys = (isCte || isMultiTable) && result.Count > 0
                         ? result[0].Keys.Where(k => !k.StartsWith("__")).ToList()
                         : entry!.RecordType.GetProperties().Select(p => p.Name).ToList();
                     result = [.. result.Where(r =>
@@ -1523,7 +1702,7 @@ public sealed class SqlQueryService
                         columns.Add("*");
                 }
             }
-            else if (isCte)
+            else if (isCte || isMultiTable)
                 columns = result.Count > 0
                     ? result[0].Keys.Where(k => !k.StartsWith("__")).ToList()
                     : [];
