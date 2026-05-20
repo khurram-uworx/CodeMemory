@@ -6,8 +6,11 @@
     },
     "code-memory": {
       "type": "local",
-      "command": "npx -y @uworx/code-memory",
-      "args": [],
+      "command": "npx",
+      "args": [
+        "-y",
+        "@uworx/code-memory"
+      ],
       "tools": [
         "*"
       ]
