@@ -243,4 +243,26 @@ public sealed class TreeSitterRelationshipExtractorTests
             r.TargetSymbolId == "Base" &&
             r.RelationshipType == "Inherits"), Is.True);
     }
+
+    [Test]
+    public async Task ExtractRelationships_CppInheritance_CreatesInherits()
+    {
+        Assume.That(isTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            class Base {};
+            class Derived : public Base {};
+            """;
+
+        var (symbols, result, path) = await extractFromCode(code, ".cpp");
+        Assert.That(symbols.Any(s => s.Name == "Base"), Is.True, "Base symbol not extracted");
+        Assert.That(symbols.Any(s => s.Name == "Derived"), Is.True, "Derived symbol not extracted");
+
+        var extractor = new TreeSitterRelationshipExtractor(NullLogger<TreeSitterRelationshipExtractor>.Instance);
+        var relationships = extractor.ExtractRelationships(result, symbols, path);
+
+        Assert.That(relationships.Any(r =>
+            r.SourceSymbolId == "Derived" &&
+            r.TargetSymbolId == "Base" &&
+            r.RelationshipType == "Inherits"), Is.True);
+    }
 }

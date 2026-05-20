@@ -253,15 +253,21 @@ public sealed class TreeSitterSymbolExtractor : ISymbolExtractor
     static readonly string cQuery = string.Join(" ",
         "(struct_specifier name: (_) @name) @node",
         "(function_definition declarator: (function_declarator declarator: (_) @name)) @node",
-        "(declaration declarator: (function_declarator declarator: (_) @name)) @node"
+        "(declaration declarator: (function_declarator declarator: (_) @name)) @node",
+        "(enum_specifier name: (_) @name) @node",
+        "(union_specifier name: (_) @name) @node"
     );
 
     static readonly string cppQuery = string.Join(" ",
         "(class_specifier name: (_) @name) @node",
         "(struct_specifier name: (_) @name) @node",
         "(enum_specifier name: (_) @name) @node",
+        "(union_specifier name: (_) @name) @node",
         "(function_definition declarator: (function_declarator declarator: (_) @name)) @node",
-        "(declaration declarator: (function_declarator declarator: (_) @name)) @node"
+        "(declaration declarator: (function_declarator declarator: (_) @name)) @node",
+        "(namespace_definition name: (_) @name) @node",
+        "(type_definition declarator: (_) @name) @node",
+        "(alias_declaration name: (_) @name) @node"
     );
 
     static readonly HashSet<string> methodLikeTypes = new(StringComparer.Ordinal)
@@ -279,6 +285,7 @@ public sealed class TreeSitterSymbolExtractor : ISymbolExtractor
         "struct_declaration",
         "class_definition", "struct_item", "trait_item", "enum_item", "impl_item",
         "class_specifier", "struct_specifier", "enum_specifier",
+        "namespace_definition",
     };
 
     static readonly HashSet<string> variableDeclTypes = new(StringComparer.Ordinal)
@@ -347,6 +354,8 @@ public sealed class TreeSitterSymbolExtractor : ISymbolExtractor
         ["struct_specifier"] = CodeSymbolKind.Struct,
         ["function_definition"] = CodeSymbolKind.Function,
         ["declaration"] = CodeSymbolKind.Function,
+        ["enum_specifier"] = CodeSymbolKind.Enum,
+        ["union_specifier"] = CodeSymbolKind.Struct,
     };
 
     static readonly Dictionary<string, CodeSymbolKind> cppKindMap = new(StringComparer.Ordinal)
@@ -354,8 +363,13 @@ public sealed class TreeSitterSymbolExtractor : ISymbolExtractor
         ["class_specifier"] = CodeSymbolKind.Class,
         ["struct_specifier"] = CodeSymbolKind.Struct,
         ["enum_specifier"] = CodeSymbolKind.Enum,
+        ["union_specifier"] = CodeSymbolKind.Struct,
         ["function_definition"] = CodeSymbolKind.Function,
         ["declaration"] = CodeSymbolKind.Function,
+        ["namespace_definition"] = CodeSymbolKind.Module,
+        ["type_definition"] = CodeSymbolKind.TypeAlias,
+        ["alias_declaration"] = CodeSymbolKind.TypeAlias,
+        ["template_declaration"] = CodeSymbolKind.Class,
     };
 
     static bool isInsideClass(Node node)
@@ -363,9 +377,10 @@ public sealed class TreeSitterSymbolExtractor : ISymbolExtractor
         var current = node.Parent;
         while (current != default)
         {
-            if (current.Type is "class_definition" or "impl_item")
+            if (current.Type is "class_definition" or "impl_item"
+                or "class_specifier" or "struct_specifier")
                 return true;
-            if (current.Type is "program" or "module")
+            if (current.Type is "program" or "module" or "translation_unit")
                 return false;
             current = current.Parent;
         }

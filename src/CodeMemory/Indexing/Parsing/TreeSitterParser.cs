@@ -25,13 +25,6 @@ public sealed class TreeSitterParser : ILanguageParser
 
     public async Task<ParseResult?> ParseAsync(string filePath, CancellationToken cancellationToken = default)
     {
-        var lang = LanguageDetector.Detect(filePath);
-        if (lang == Parsing.Language.Unknown)
-            return null;
-
-        if (!languageMap.TryGetValue(lang, out var tsLanguage))
-            return null;
-
         string text;
         try
         {
@@ -42,6 +35,13 @@ public sealed class TreeSitterParser : ILanguageParser
             logger.LogWarning(ex, "Failed to read file: {FilePath}", filePath);
             return null;
         }
+
+        var lang = LanguageDetector.Detect(filePath, text);
+        if (lang == Parsing.Language.Unknown)
+            return null;
+
+        if (!languageMap.TryGetValue(lang, out var tsLanguage))
+            return null;
 
         try
         {

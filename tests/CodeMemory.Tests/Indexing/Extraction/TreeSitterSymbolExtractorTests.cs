@@ -284,4 +284,145 @@ public sealed class TreeSitterSymbolExtractorTests
         Assert.That(symbols.Any(s => s.Name == "Worker" && s.Kind == CodeSymbolKind.Class), Is.True);
         Assert.That(symbols.Any(s => s.Name.StartsWith("run") && s.Kind == CodeSymbolKind.Function), Is.True);
     }
+
+    [Test]
+    public async Task Extract_Cpp_MethodInsideClass_IsMethod()
+    {
+        Assume.That(IsTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            class Worker {
+                int run() { return 0; }
+            };
+            """;
+
+        var (symbols, _) = await ExtractFromCode(code, ".cpp");
+        var method = symbols.FirstOrDefault(s => s.Name.StartsWith("run"));
+        Assert.That(method, Is.Not.Null);
+        Assert.That(method!.Kind, Is.EqualTo(CodeSymbolKind.Method));
+        Assert.That(method.FullName, Is.EqualTo("Worker.run()"));
+    }
+
+    [Test]
+    public async Task Extract_Cpp_MethodInsideStruct_IsMethod()
+    {
+        Assume.That(IsTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            struct Worker {
+                int run() { return 0; }
+            };
+            """;
+
+        var (symbols, _) = await ExtractFromCode(code, ".cpp");
+        var method = symbols.FirstOrDefault(s => s.Name.StartsWith("run"));
+        Assert.That(method, Is.Not.Null);
+        Assert.That(method!.Kind, Is.EqualTo(CodeSymbolKind.Method));
+    }
+
+    [Test]
+    public async Task Extract_C_ContainsEnumAndUnion()
+    {
+        Assume.That(IsTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            enum Color { RED, GREEN, BLUE };
+            union Data { int i; float f; };
+            """;
+
+        var (symbols, _) = await ExtractFromCode(code, ".c");
+        Assert.That(symbols.Any(s => s.Name == "Color" && s.Kind == CodeSymbolKind.Enum), Is.True);
+        Assert.That(symbols.Any(s => s.Name == "Data" && s.Kind == CodeSymbolKind.Struct), Is.True);
+    }
+
+    [Test]
+    public async Task Extract_Cpp_ContainsNamespace()
+    {
+        Assume.That(IsTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            namespace MyNs {
+                class Worker {};
+            }
+            """;
+
+        var (symbols, _) = await ExtractFromCode(code, ".cpp");
+        Assert.That(symbols.Any(s => s.Name == "MyNs" && s.Kind == CodeSymbolKind.Module), Is.True);
+    }
+
+    [Test]
+    public async Task Extract_Cpp_MethodQualifiedByNamespace()
+    {
+        Assume.That(IsTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            namespace MyNs {
+                class Worker {
+                    int run() { return 0; }
+                };
+            }
+            """;
+
+        var (symbols, _) = await ExtractFromCode(code, ".cpp");
+        var method = symbols.FirstOrDefault(s => s.Name.StartsWith("run"));
+        Assert.That(method, Is.Not.Null);
+        Assert.That(method!.FullName, Is.EqualTo("MyNs.Worker.run()"));
+    }
+
+    [Test]
+    public async Task Extract_Cpp_ContainsTypeAlias()
+    {
+        Assume.That(IsTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            using IntPtr = int*;
+            typedef unsigned long ulong;
+            """;
+
+        var (symbols, _) = await ExtractFromCode(code, ".cpp");
+        Assert.That(symbols.Any(s => s.Name == "IntPtr" && s.Kind == CodeSymbolKind.TypeAlias), Is.True);
+        Assert.That(symbols.Any(s => s.Name == "ulong" && s.Kind == CodeSymbolKind.TypeAlias), Is.True);
+    }
+
+    [Test]
+    public async Task Extract_Cpp_ContainsTemplateClass()
+    {
+        Assume.That(IsTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            template<typename T>
+            class Container {
+                T value;
+            public:
+                T get() { return value; }
+            };
+            """;
+
+        var (symbols, _) = await ExtractFromCode(code, ".cpp");
+        Assert.That(symbols.Any(s => s.Name == "Container" && s.Kind == CodeSymbolKind.Class), Is.True);
+    }
+
+    [Test]
+    public async Task Extract_Cpp_ContainsEnumAndUnion()
+    {
+        Assume.That(IsTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            enum Color { RED, GREEN, BLUE };
+            union Data { int i; float f; };
+            """;
+
+        var (symbols, _) = await ExtractFromCode(code, ".cpp");
+        Assert.That(symbols.Any(s => s.Name == "Color" && s.Kind == CodeSymbolKind.Enum), Is.True);
+        Assert.That(symbols.Any(s => s.Name == "Data" && s.Kind == CodeSymbolKind.Struct), Is.True);
+    }
+
+    [Test]
+    public async Task Extract_Cpp_HeaderWithCppKeywords_DetectedAsCpp()
+    {
+        Assume.That(IsTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            class Worker {
+                int run() { return 0; }
+            };
+            """;
+
+        var (symbols, _) = await ExtractFromCode(code, ".h");
+        Assert.That(symbols.Any(s => s.Name == "Worker" && s.Kind == CodeSymbolKind.Class), Is.True);
+        var method = symbols.FirstOrDefault(s => s.Name.StartsWith("run"));
+        Assert.That(method, Is.Not.Null);
+        Assert.That(method!.Kind, Is.EqualTo(CodeSymbolKind.Method));
+    }
 }

@@ -43,7 +43,52 @@ public static class LanguageDetector
     public static Language Detect(string filePath)
     {
         var ext = Path.GetExtension(filePath);
-        return extensionMap.TryGetValue(ext, out var language) ? language : Language.Unknown;
+        if (!extensionMap.TryGetValue(ext, out var language))
+            return Language.Unknown;
+
+        if (language == Language.C && ext.Equals(".h", StringComparison.OrdinalIgnoreCase))
+            return sniffFile(filePath);
+
+        return language;
+    }
+
+    public static Language Detect(string filePath, string fileContent)
+    {
+        var ext = Path.GetExtension(filePath);
+        if (!extensionMap.TryGetValue(ext, out var language))
+            return Language.Unknown;
+
+        if (language == Language.C && ext.Equals(".h", StringComparison.OrdinalIgnoreCase))
+            return sniffContent(fileContent.AsSpan());
+
+        return language;
+    }
+
+    static Language sniffFile(string filePath)
+    {
+        try
+        {
+            using var reader = new StreamReader(filePath);
+            var buffer = new char[4096];
+            var charsRead = reader.ReadBlock(buffer, 0, buffer.Length);
+            return sniffContent(new string(buffer, 0, charsRead));
+        }
+        catch
+        {
+            return Language.C;
+        }
+    }
+
+    static Language sniffContent(ReadOnlySpan<char> content)
+    {
+        // C++-only keywords that are vanishingly rare in C headers
+        if (content.Contains("class", StringComparison.Ordinal) ||
+            content.Contains("namespace", StringComparison.Ordinal) ||
+            content.Contains("template", StringComparison.Ordinal) ||
+            content.Contains("::", StringComparison.Ordinal))
+            return Language.Cpp;
+
+        return Language.C;
     }
 
     public static IReadOnlyCollection<string> SupportedExtensions
