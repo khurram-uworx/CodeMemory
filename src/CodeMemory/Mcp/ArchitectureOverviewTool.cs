@@ -20,7 +20,8 @@ public sealed class ArchitectureOverviewTool
 
     [McpServerTool, Description("Returns a high-level overview of the repository structure: top-level components, language breakdown, file counts, and symbol counts.")]
     public async Task<ArchitectureOverview> GetArchitectureOverviewAsync(
-        [Description("Optional subdirectory to focus on")] string? path = null)
+        [Description("Optional subdirectory to focus on")] string? path = null,
+        [Description("Directory depth for fallback component resolution when no project files are found (default 1)")] int depth = 1)
     {
         if (architectureService == null)
         {
@@ -28,6 +29,6 @@ public sealed class ArchitectureOverviewTool
             return new ArchitectureOverview([], new Dictionary<string, int>(), 0, 0);
         }
 
-        return await architectureService.GetOverviewAsync(path);
+        return await architectureService.GetOverviewAsync(path, depth);
     }
 }

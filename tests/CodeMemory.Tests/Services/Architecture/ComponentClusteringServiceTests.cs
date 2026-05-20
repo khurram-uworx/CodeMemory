@@ -6,8 +6,10 @@ namespace CodeMemory.Tests.Services.Architecture;
 
 public sealed class ComponentClusteringServiceTests : BaseServicesTests
 {
+    static readonly IComponentResolver testResolver = new TestComponentResolver();
+
     static ComponentClusteringService createService(IStorageService storage)
-        => new ComponentClusteringService(storage, NullLogger<ComponentClusteringService>.Instance);
+        => new ComponentClusteringService(testResolver, storage, NullLogger<ComponentClusteringService>.Instance);
 
     [Test]
     public async Task GetClustersAsync_ReturnsEmpty_WhenNoSymbols()

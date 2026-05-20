@@ -57,16 +57,4 @@ public sealed class ArchitectureOverviewToolTests : BaseToolTests
         Assert.That(obj["totalSymbols"]?.GetValue<int>(), Is.EqualTo(42));
         Assert.That(text, Does.Contain("C#"));
     }
-
-    sealed class MockArchitectureService : IArchitectureService
-    {
-        public Task<ArchitectureOverview> GetOverviewAsync(string? path = null, CancellationToken ct = default)
-        {
-            return Task.FromResult(new ArchitectureOverview(
-                [new ComponentInfo("src", 5, 20), new ComponentInfo("tests", 3, 2)],
-                new Dictionary<string, int> { ["C#"] = 8, ["JavaScript"] = 2 },
-                10, 42
-            ));
-        }
-    }
 }

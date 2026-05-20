@@ -181,7 +181,7 @@ sealed class MockDependencyGraphService : IDependencyGraphService
 sealed class MockClusteringService : IComponentClusteringService
 {
     public Task<IReadOnlyList<ComponentCluster>> GetClustersAsync(
-        double threshold = 0.3, CancellationToken ct = default)
+        double threshold = 0.3, int depth = 1, CancellationToken ct = default)
     {
         return Task.FromResult<IReadOnlyList<ComponentCluster>>([
             new ComponentCluster("src+tests", ["src", "tests"], 0.75),
@@ -216,7 +216,7 @@ sealed class MockGitHistoryService : IGitHistoryService
 
 sealed class MockArchitectureService : IArchitectureService
 {
-    public Task<ArchitectureOverview> GetOverviewAsync(string? path = null, CancellationToken ct = default)
+    public Task<ArchitectureOverview> GetOverviewAsync(string? path = null, int depth = 1, CancellationToken ct = default)
     {
         return Task.FromResult(new ArchitectureOverview(
             [new ComponentInfo("src", 5, 20), new ComponentInfo("tests", 3, 2)],

@@ -6,14 +6,6 @@ namespace CodeMemory.Services.Architecture;
 
 public sealed class ArchitectureService : IArchitectureService
 {
-    static string getTopLevelDirectory(string filePath)
-    {
-        var normalized = filePath.Replace('\\', '/');
-        var trimmed = normalized.TrimStart('/');
-        var slashIndex = trimmed.IndexOf('/');
-        return slashIndex > 0 ? trimmed[..slashIndex] : trimmed;
-    }
-
     static readonly HashSet<string> knownKinds =
     [
         "Class", "Interface", "Struct", "Enum", "Record",
@@ -21,16 +13,20 @@ public sealed class ArchitectureService : IArchitectureService
     ];
 
     readonly IStorageService storage;
+    readonly IComponentResolver componentResolver;
     readonly ILogger<ArchitectureService> logger;
 
-    public ArchitectureService(IStorageService storage, ILogger<ArchitectureService> logger)
+    public ArchitectureService(IStorageService storage,
+        IComponentResolver componentResolver,
+        ILogger<ArchitectureService> logger)
     {
         this.storage = storage;
+        this.componentResolver = componentResolver;
         this.logger = logger;
     }
 
     public async Task<ArchitectureOverview> GetOverviewAsync(
-        string? path = null, CancellationToken ct = default)
+        string? path = null, int depth = 1, CancellationToken ct = default)
     {
         var allSymbols = new List<SymbolRecord>();
 
@@ -75,7 +71,7 @@ public sealed class ArchitectureService : IArchitectureService
 
         foreach (var symbol in filtered)
         {
-            var component = getTopLevelDirectory(symbol.FilePath);
+            var component = componentResolver.GetComponentName(symbol.FilePath, depth);
             if (!componentFiles.ContainsKey(component))
                 componentFiles[component] = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 

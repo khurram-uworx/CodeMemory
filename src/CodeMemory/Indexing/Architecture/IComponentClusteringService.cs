@@ -8,5 +8,5 @@ public sealed record ComponentCluster(
 public interface IComponentClusteringService
 {
     Task<IReadOnlyList<ComponentCluster>> GetClustersAsync(
-        double threshold = 0.3, CancellationToken ct = default);
+        double threshold = 0.3, int depth = 1, CancellationToken ct = default);
 }

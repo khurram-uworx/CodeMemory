@@ -6,8 +6,10 @@ namespace CodeMemory.Tests.Services.Architecture;
 
 public sealed class ArchitectureServiceTests : BaseServicesTests
 {
+    static readonly IComponentResolver testResolver = new TestComponentResolver();
+
     static ArchitectureService createService(IStorageService storage)
-        => new ArchitectureService(storage, NullLogger<ArchitectureService>.Instance);
+        => new ArchitectureService(storage, testResolver, NullLogger<ArchitectureService>.Instance);
 
     [Test]
     public async Task GetOverviewAsync_ReturnsEmpty_WhenNoSymbols()
