@@ -250,7 +250,7 @@ public sealed class TreeSitterSymbolExtractor : ISymbolExtractor
     {
         "method_definition", "method_signature", "abstract_method_signature",
         "function_declaration", "method_declaration", "constructor_declaration",
-        "function_definition", "method_declaration", "function_item",
+        "function_definition", "function_item",
     };
 
     static readonly HashSet<string> classLikeTypes = new(StringComparer.Ordinal)

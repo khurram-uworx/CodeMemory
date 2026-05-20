@@ -38,6 +38,8 @@ public sealed class SemanticChunker
                 trimmed.StartsWith("module "),
             Language.Java => trimmed.StartsWith("import ") || trimmed.StartsWith("package "),
             Language.Python => trimmed.StartsWith("import ") || trimmed.StartsWith("from "),
+            Language.Go => trimmed.StartsWith("import ") || trimmed.StartsWith("package "),
+            Language.Rust => trimmed.StartsWith("use ") || trimmed.StartsWith("pub ") || trimmed.StartsWith("mod "),
             _ => false,
         };
 

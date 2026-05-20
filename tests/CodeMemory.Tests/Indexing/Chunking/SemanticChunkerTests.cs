@@ -267,4 +267,54 @@ public sealed class SemanticChunkerTests
         Assert.That(serviceChunk.Content, Does.Contain("import java.util.List;"));
         Assert.That(serviceChunk.Content, Does.Contain("import java.util.ArrayList;"));
     }
+
+    [Test]
+    public async Task ChunkAll_WithGo_ImportAndPackageInFileContext()
+    {
+        Assume.That(isTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            package main
+            import "fmt"
+            import "os"
+
+            type Worker struct {
+                Name string
+            }
+            func (w Worker) Work() {}
+            """;
+
+        var (symbols, fileText) = await extractTsSymbols(code, ".go");
+        var chunker = new SemanticChunker(NullLogger<SemanticChunker>.Instance);
+        var chunks = chunker.ChunkAll(symbols, fileText, "test.go", Language.Go);
+
+        var workerChunk = chunks.FirstOrDefault(c => c.SymbolId == "Worker");
+        Assert.That(workerChunk, Is.Not.Null);
+        Assert.That(workerChunk!.Content, Does.Contain("package main"));
+        Assert.That(workerChunk.Content, Does.Contain("import \"fmt\""));
+        Assert.That(workerChunk.Content, Does.Contain("import \"os\""));
+    }
+
+    [Test]
+    public async Task ChunkAll_WithRust_UseInFileContext()
+    {
+        Assume.That(isTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            use std::collections::HashMap;
+            use std::io;
+
+            struct Config {
+                values: HashMap<String, String>,
+            }
+            fn run() {}
+            """;
+
+        var (symbols, fileText) = await extractTsSymbols(code, ".rs");
+        var chunker = new SemanticChunker(NullLogger<SemanticChunker>.Instance);
+        var chunks = chunker.ChunkAll(symbols, fileText, "test.rs", Language.Rust);
+
+        var configChunk = chunks.FirstOrDefault(c => c.SymbolId == "Config");
+        Assert.That(configChunk, Is.Not.Null);
+        Assert.That(configChunk!.Content, Does.Contain("use std::collections::HashMap;"));
+        Assert.That(configChunk.Content, Does.Contain("use std::io;"));
+    }
 }
