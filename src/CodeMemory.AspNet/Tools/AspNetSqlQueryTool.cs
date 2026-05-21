@@ -40,6 +40,7 @@ public sealed class AspNetSqlQueryTool
     static IDictionary<string, object?> fail(string error, Stopwatch sw)
     {
         sw.Stop();
+
         return new Dictionary<string, object?>
         {
             ["success"] = false,
@@ -150,6 +151,7 @@ public sealed class AspNetSqlQueryTool
         while (i < sql.Length)
         {
             builder.Append(sql[i]);
+
             if (sql[i] == quote)
             {
                 if (i + 1 < sql.Length && sql[i + 1] == quote)
@@ -190,8 +192,10 @@ public sealed class AspNetSqlQueryTool
         while (rows.Count < maxResults && await reader.ReadAsync(ct))
         {
             var row = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+
             for (var i = 0; i < reader.FieldCount; i++)
                 row[columns[i]] = await reader.IsDBNullAsync(i, ct) ? null : reader.GetValue(i);
+
             rows.Add(row);
         }
 
@@ -222,6 +226,7 @@ public sealed class AspNetSqlQueryTool
     (bool Success, string TableName, string? Error) validateQuery(string query)
     {
         Sequence<Statement> statements;
+
         try
         {
             statements = parser.Parse(query.AsSpan(), Dialect);

@@ -190,7 +190,7 @@ public static class ServiceCollectionExtensions
         }
         else if (useSqlite)
         {
-            var memoryPath = Path.Combine(repoRoot, ".memorycode");
+            var memoryPath = Path.Combine(repoRoot, ".codememory");
             Directory.CreateDirectory(memoryPath);
 
             var sqliteConnectionString = $"Data Source={Path.Combine(memoryPath, "sqlvec.db")}";

@@ -122,6 +122,8 @@ public sealed partial class GitIgnoreParser
 
             if (isSimpleLiteral(line))
             {
+                line = line.TrimStart('/');
+
                 if (negate)
                     literalNegations.Add(line);
                 else

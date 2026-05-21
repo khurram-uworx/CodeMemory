@@ -73,6 +73,7 @@ public sealed class FileWatcherService : IDisposable
     {
         if (disposed) return;
         if (!isWatchedExtension(e.FullPath)) return;
+        if (isGitIgnored(e.FullPath)) return;
 
         lock (gate)
         {
