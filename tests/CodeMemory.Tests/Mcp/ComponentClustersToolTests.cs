@@ -23,6 +23,7 @@ public sealed class ComponentClustersToolTests : BaseToolTests
     public async Task ReturnsEmpty_WhenNoService()
     {
         await using var factory = new WebApplicationFactory<Program>();
+        await factory.RegisterRepoAsync();
         var client = factory.CreateClient();
 
         var result = await CallTool(client, "get_component_clusters",

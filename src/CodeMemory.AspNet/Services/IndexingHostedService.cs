@@ -1,21 +1,25 @@
+using System.Diagnostics;
 using CodeMemory.AspNet.Configuration;
+using CodeMemory.AspNet.Registry;
 using CodeMemory.Indexing;
 using CodeMemory.Services;
+using CodeMemory.Storage;
+using Memori.Storage;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.AI;
 
 namespace CodeMemory.AspNet.Services;
 
 public sealed class IndexingHostedService : BackgroundService
 {
     readonly IServiceProvider serviceProvider;
-    readonly IConfiguration configuration;
     readonly IRepoContextAccessor repoContext;
     readonly ILogger<IndexingHostedService> logger;
 
-    public IndexingHostedService(IServiceProvider serviceProvider, IConfiguration configuration,
+    public IndexingHostedService(IServiceProvider serviceProvider,
         IRepoContextAccessor repoContext, ILogger<IndexingHostedService> logger)
     {
         this.serviceProvider = serviceProvider;
-        this.configuration = configuration;
         this.repoContext = repoContext;
         this.logger = logger;
     }
@@ -24,77 +28,137 @@ public sealed class IndexingHostedService : BackgroundService
     {
         logger.LogInformation("Indexing hosted service starting");
 
-        var repositories = configuration.GetSection("Repositories").Get<Dictionary<string, string>>()
-            ?? new Dictionary<string, string>();
+        // Small delay to let startup bootstrap finish
+        await Task.Delay(500, stoppingToken);
 
-        if (repositories.Count == 0)
+        var dbFactory = serviceProvider.GetRequiredService<IDbContextFactory<RepoRegistryDbContext>>();
+        var registry = serviceProvider.GetRequiredService<IServiceRegistry>();
+
+        await using var db = await dbFactory.CreateDbContextAsync(stoppingToken);
+
+        var pendingRepos = await db.RegisteredRepos
+            .Where(r => r.CloneStatus == "Pending" || r.IndexStatus == "Pending")
+            .ToListAsync(stoppingToken);
+
+        if (pendingRepos.Count == 0)
         {
-            logger.LogWarning("No repositories configured in appsettings.json:Repositories");
+            logger.LogInformation("No pending repos to index");
             return;
         }
 
-        var appBasePath = Environment.CurrentDirectory;
-
-        // Initialize all storage services upfront so MCP tools can query any repo immediately
-        var registry = serviceProvider.GetRequiredService<IServiceRegistry>();
-        var initializationFailures = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (name, _) in repositories)
+        foreach (var repo in pendingRepos)
         {
+            if (stoppingToken.IsCancellationRequested) break;
+
             try
             {
-                var storage = registry.GetStorage(name);
-                await storage.InitializeAsync(stoppingToken);
-            }
-            catch (Exception ex)
-            {
-                initializationFailures.Add(name);
-                logger.LogError(ex, "Failed to initialize storage for repository '{Name}'", name);
-            }
-        }
-
-        try
-        {
-            foreach (var (name, path) in repositories)
-            {
-                if (initializationFailures.Contains(name))
+                if (repo.CloneStatus == "Pending" && !string.IsNullOrEmpty(repo.GitUrl))
                 {
-                    logger.LogWarning(
-                        "Skipping indexing for repository '{Name}' because storage initialization failed",
-                        name);
-                    continue;
+                    logger.LogInformation("Cloning repository '{Name}' from {Url}", repo.Name, repo.GitUrl);
+
+                    await UpdateCloneStatusAsync(dbFactory, repo.Name, "Cloning", ct: stoppingToken);
+
+                    var psi = new ProcessStartInfo("git")
+                    {
+                        Arguments = string.IsNullOrEmpty(repo.Branch)
+                            ? $"clone --depth 1 \"{repo.GitUrl}\" \"{repo.LocalPath}\""
+                            : $"clone --branch \"{repo.Branch}\" --depth 1 \"{repo.GitUrl}\" \"{repo.LocalPath}\"",
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        UseShellExecute = false,
+                    };
+
+                    using var process = Process.Start(psi)
+                        ?? throw new InvalidOperationException("Failed to start git process.");
+
+                    await process.WaitForExitAsync(stoppingToken);
+                    if (process.ExitCode != 0)
+                    {
+                        var error = await process.StandardError.ReadToEndAsync(stoppingToken);
+                        throw new InvalidOperationException($"git clone failed: {error}");
+                    }
                 }
 
-                var repoPath = Path.IsPathRooted(path) ? path : Path.GetFullPath(Path.Combine(appBasePath, path));
-                logger.LogInformation("Indexing repository '{Name}' at path '{Path}'", name, repoPath);
+                if (repo.CloneStatus != "Cloned")
+                {
+                    await UpdateCloneStatusAsync(dbFactory, repo.Name, "Cloned", localPath: repo.LocalPath, ct: stoppingToken);
+                }
 
-                repoContext.CurrentRepoName = name;
-                repoContext.CurrentRepoRoot = repoPath;
+                // Initialize storage if not already registered
+                try
+                {
+                    registry.GetStorage(repo.Name);
+                }
+                catch
+                {
+                    var embeddingGenerator = serviceProvider.GetRequiredService<IEmbeddingGenerator<string, Embedding<float>>>();
+                    var loggerFactory = serviceProvider.GetRequiredService<ILoggerFactory>();
+                    var storage = new StorageService(repo.LocalPath,
+                        loggerFactory.CreateLogger<StorageService>(),
+                        new Memori.Storage.InMemoryVectorStore(), embeddingGenerator);
+                    registry.Register(repo.Name, storage);
+                }
+
+                await UpdateIndexStatusAsync(dbFactory, repo.Name, "Indexing", ct: stoppingToken);
+
+                repoContext.CurrentRepoName = repo.Name;
+                repoContext.CurrentRepoRoot = repo.LocalPath;
 
                 using var scope = serviceProvider.CreateScope();
                 var engine = scope.ServiceProvider.GetRequiredService<IndexingEngine>();
+                await engine.RunIndexingAsync(repo.LocalPath, stoppingToken);
 
-                try
-                {
-                    await engine.RunIndexingAsync(repoPath, stoppingToken);
-                    IndexingState.MarkCompleted(name);
-                }
-                catch (OperationCanceledException)
-                {
-                    logger.LogInformation("Indexing cancelled for repository '{Name}'", name);
-                    break;
-                }
-                catch (Exception ex)
-                {
-                    logger.LogError(ex, "Error indexing repository '{Name}'", name);
-                }
+                IndexingState.MarkCompleted(repo.Name);
+                await UpdateIndexStatusAsync(dbFactory, repo.Name, "Indexed", ct: stoppingToken);
             }
-        }
-        finally
-        {
-            repoContext.CurrentRepoName = null;
-            repoContext.CurrentRepoRoot = null;
+            catch (OperationCanceledException)
+            {
+                logger.LogInformation("Indexing cancelled for repository '{Name}'", repo.Name);
+                break;
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Error processing repository '{Name}'", repo.Name);
+                var statusField = repo.CloneStatus == "Pending" ? "CloneStatus" : "IndexStatus";
+                if (statusField == "CloneStatus")
+                    await UpdateCloneStatusAsync(dbFactory, repo.Name, "Failed", errorMessage: ex.Message, ct: stoppingToken);
+                else
+                    await UpdateIndexStatusAsync(dbFactory, repo.Name, "Failed", errorMessage: ex.Message, ct: stoppingToken);
+            }
+            finally
+            {
+                repoContext.CurrentRepoName = null;
+                repoContext.CurrentRepoRoot = null;
+            }
         }
 
         logger.LogInformation("Indexing hosted service completed");
+    }
+
+    static async Task UpdateCloneStatusAsync(IDbContextFactory<RepoRegistryDbContext> dbFactory,
+        string name, string status, string? localPath = null, string? errorMessage = null,
+        CancellationToken ct = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        var repo = await db.RegisteredRepos.FirstOrDefaultAsync(r => r.Name == name, ct);
+        if (repo is null) return;
+
+        repo.CloneStatus = status;
+        if (localPath is not null) repo.LocalPath = localPath;
+        if (errorMessage is not null) repo.ErrorMessage = errorMessage;
+        await db.SaveChangesAsync(ct);
+    }
+
+    static async Task UpdateIndexStatusAsync(IDbContextFactory<RepoRegistryDbContext> dbFactory,
+        string name, string status, string? errorMessage = null, CancellationToken ct = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        var repo = await db.RegisteredRepos.FirstOrDefaultAsync(r => r.Name == name, ct);
+        if (repo is null) return;
+
+        repo.IndexStatus = status;
+        if (status == "Indexed") repo.LastIndexedAt = DateTime.UtcNow;
+        if (errorMessage is not null) repo.ErrorMessage = errorMessage;
+        await db.SaveChangesAsync(ct);
     }
 }

@@ -6,6 +6,7 @@ namespace CodeMemory.AspNet.Configuration;
 public interface IServiceRegistry
 {
     void Register(string repoName, IStorageService storage);
+    bool Unregister(string repoName);
     IStorageService GetStorage(string? repoName);
 }
 
@@ -15,6 +16,9 @@ public sealed class ServiceRegistry : IServiceRegistry
 
     public void Register(string repoName, IStorageService storage)
         => storageServices[repoName] = storage;
+
+    public bool Unregister(string repoName)
+        => storageServices.TryRemove(repoName, out _);
 
     T getService<T>(string? repoName) where T : class
     {

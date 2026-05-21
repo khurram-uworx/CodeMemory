@@ -23,6 +23,7 @@ public sealed class ArchitectureOverviewToolTests : BaseToolTests
     public async Task ReturnsDefault_WhenNoService()
     {
         await using var factory = new WebApplicationFactory<Program>();
+        await factory.RegisterRepoAsync();
         var client = factory.CreateClient();
 
         var result = await CallTool(client, "get_architecture_overview",

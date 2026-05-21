@@ -25,6 +25,7 @@ public sealed class TraceDependencyToolTests : BaseToolTests
     public async Task TraceDependency_ReturnsEmpty_WhenNoService()
     {
         await using var factory = new WebApplicationFactory<Program>();
+        await factory.RegisterRepoAsync();
         var client = factory.CreateClient();
 
         while (!IndexingState.IsCompleted())
