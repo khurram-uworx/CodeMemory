@@ -8,6 +8,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using System.Diagnostics;
 using System.Numerics.Tensors;
+using System.Text;
 using System.Text.Json;
 
 namespace CodeMemory.Services;
@@ -60,6 +61,21 @@ public sealed class IndexingEngine
             Id = $"{sourceId}->{targetId}:{r.RelationshipType}",
             RelationshipType = r.RelationshipType,
         };
+    }
+
+    const int MaxTextFileBytes = 100 * 1024;
+
+    static string TruncateToUtf8Boundary(string text, int maxBytes)
+    {
+        if (maxBytes <= 0) return string.Empty;
+        var utf8 = Encoding.UTF8.GetBytes(text);
+        if (utf8.Length <= maxBytes) return text;
+
+        int end = maxBytes;
+        while (end > 0 && (utf8[end] & 0xC0) == 0x80)
+            end--;
+
+        return Encoding.UTF8.GetString(utf8, 0, end);
     }
 
     readonly ILogger<IndexingEngine> logger;
@@ -122,6 +138,8 @@ public sealed class IndexingEngine
 
         long fileCount = 0;
         long parsedCount = 0;
+        long textCount = 0;
+        long partialTextCount = 0;
         long symbolCount = 0;
         long chunkCount = 0;
 
@@ -169,6 +187,39 @@ public sealed class IndexingEngine
                     logger.LogDebug("Parsed: {Path} — {Symbols} symbols, {Chunks} chunks",
                         entry.RelativePath, symbols.Count, chunks.Count);
                 }
+            }
+            else if (lang == Language.Text)
+            {
+                var fileText = await File.ReadAllTextAsync(entry.Path, ct);
+
+                if (string.IsNullOrWhiteSpace(fileText))
+                {
+                    logger.LogDebug("Skipping empty text file: {Path}", entry.RelativePath);
+                    continue;
+                }
+
+                var textSize = Encoding.UTF8.GetByteCount(fileText);
+                var isPartial = textSize > MaxTextFileBytes;
+
+                if (isPartial)
+                {
+                    fileText = TruncateToUtf8Boundary(fileText, MaxTextFileBytes);
+                    partialTextCount++;
+                    logger.LogDebug("Partial text: {Path} ({Size} bytes, truncated to {Max} bytes)",
+                        entry.RelativePath, textSize, MaxTextFileBytes);
+                }
+                else
+                {
+                    textCount++;
+                }
+
+                var fileLines = fileText.Split('\n');
+                var chunks = chunker.ChunkAll([], fileText, entry.RelativePath, Language.Text);
+                chunkCount += chunks.Count;
+                allChunks.AddRange(chunks);
+
+                logger.LogDebug("Indexed text file: {Path} ({Size} bytes, {Lines} lines)",
+                    entry.RelativePath, textSize, fileLines.Length);
             }
         }
 
@@ -235,15 +286,77 @@ public sealed class IndexingEngine
             logger.LogInformation("Project file detection: discovered {Count} components", componentMapping.Count);
         }
 
+        var parsedInfo = $"parsed ({parsedCount} code, {textCount} text)";
+        if (partialTextCount > 0)
+            parsedInfo += $", partially parsed ({partialTextCount} text)";
+
+        var relationshipsInfo = allSymbols.Count > 0 ? "extracted" : "0";
+
         logger.LogInformation(
-            "Indexing complete — {Files} files, {Parsed} parsed, {Symbols} symbols, {Chunks} chunks, {Relationships} relationships",
-            fileCount, parsedCount, symbolCount, chunkCount, allSymbols.Count > 0 ? "extracted" : "0");
+            "Indexing complete — {Files} files, {ParsedInfo}, {Symbols} symbols, {Chunks} chunks, {Relationships} relationships",
+            fileCount, parsedInfo, symbolCount, chunkCount, relationshipsInfo);
     }
 
     public async Task<FileIndexResult> ProcessFileAsync(string filePath, CancellationToken ct)
     {
         var extension = Path.GetExtension(filePath);
         var lang = LanguageDetector.Detect(filePath);
+
+        if (lang == Language.Text)
+        {
+            var textRootUri = new Uri(storage.RepoRoot + Path.DirectorySeparatorChar);
+            var textFileUri = new Uri(filePath);
+            var textRelPath = Uri.UnescapeDataString(textRootUri.MakeRelativeUri(textFileUri).ToString())
+                .Replace('/', Path.DirectorySeparatorChar);
+
+            var textContent = await File.ReadAllTextAsync(filePath, ct);
+
+            if (string.IsNullOrWhiteSpace(textContent))
+            {
+                logger.LogDebug("Skipping empty text file: {Path}", textRelPath);
+                return new FileIndexResult(filePath, [], [], []);
+            }
+
+            var textSize = Encoding.UTF8.GetByteCount(textContent);
+            if (textSize > MaxTextFileBytes)
+            {
+                logger.LogDebug("Text file too large ({Size} bytes), truncating to {Max} bytes: {Path}",
+                    textSize, MaxTextFileBytes, textRelPath);
+                textContent = TruncateToUtf8Boundary(textContent, MaxTextFileBytes);
+            }
+
+            var textChunks = chunker.ChunkAll([], textContent, textRelPath, Language.Text);
+            var emptyGuidMap = new Dictionary<string, string>();
+
+            List<ChunkRecord> textChunkRecords;
+            if (textChunks.Count > 0 && embeddingGenerator != null)
+            {
+                var contents = textChunks.Select(c => c.Content).ToList();
+                var embeddings = await embeddingGenerator.GenerateAsync(contents, null, ct);
+
+                textChunkRecords = new List<ChunkRecord>(textChunks.Count);
+                for (int i = 0; i < textChunks.Count; i++)
+                {
+                    var vector = embeddings[i].Vector;
+                    var norm = TensorPrimitives.Norm(vector.Span);
+                    var normalized = new float[vector.Length];
+                    if (norm > 0)
+                        for (int j = 0; j < vector.Length; j++)
+                            normalized[j] = vector.Span[j] / norm;
+
+                    textChunkRecords.Add(mapToChunkRecord(textChunks[i], normalized, emptyGuidMap));
+                }
+            }
+            else
+            {
+                textChunkRecords = textChunks.Select(c => mapToChunkRecord(c, null, emptyGuidMap)).ToList();
+            }
+
+            logger.LogDebug("Processed text file {Path} — {Chunks} chunk",
+                textRelPath, textChunkRecords.Count);
+
+            return new FileIndexResult(filePath, [], textChunkRecords, []);
+        }
 
         if (lang == Language.Unknown || !parsers.TryGetValue(lang, out var parser))
         {

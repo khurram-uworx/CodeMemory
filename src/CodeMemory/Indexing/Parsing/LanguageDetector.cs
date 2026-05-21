@@ -13,6 +13,7 @@ public enum Language
     C,
     Cpp,
     HTML,
+    Text,
 }
 
 public static class LanguageDetector
@@ -38,6 +39,8 @@ public static class LanguageDetector
         [".hxx"] = Language.Cpp,
         [".html"] = Language.HTML,
         [".htm"] = Language.HTML,
+        [".txt"] = Language.Text,
+        [".md"] = Language.Text,
     };
 
     public static Language Detect(string filePath)
