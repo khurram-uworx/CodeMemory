@@ -1,29 +1,46 @@
-using System.ComponentModel.DataAnnotations;
 using CodeMemory.AspNet.Registry;
-using CodeMemory.AspNet.Registry.Models;
 using CodeMemory.AspNet.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using System.ComponentModel.DataAnnotations;
 
 namespace CodeMemory.AspNet.Pages.Repos;
 
 public sealed class AddModel : PageModel
 {
+    public sealed class InputModel
+    {
+        [Required, MaxLength(200)]
+        [Display(Name = "Repo Name")]
+        public string Name { get; set; } = string.Empty;
+
+        [Required, MaxLength(2000)]
+        [Display(Name = "Source (Git URL or local path)")]
+        public string Source { get; set; } = string.Empty;
+
+        [MaxLength(200)]
+        [Display(Name = "Branch (for URL repos only)")]
+        public string? Branch { get; set; }
+    }
+
     readonly RepoRegistryService registry;
     readonly CloneIndexService cloneIndex;
 
-    public AddModel(RepoRegistryService registry, CloneIndexService cloneIndex)
+    string getCloneBasePath()
     {
-        this.registry = registry;
-        this.cloneIndex = cloneIndex;
+        var config = (IConfiguration)HttpContext.RequestServices.GetRequiredService(typeof(IConfiguration));
+        return config.GetSection("RepoRegistry:CloneBasePath")?.Value
+            ?? Path.Combine(Environment.CurrentDirectory, "cloned-repos");
     }
+
+    public AddModel(RepoRegistryService registry, CloneIndexService cloneIndex)
+        => (this.registry, this.cloneIndex) = (registry, cloneIndex);
 
     [BindProperty]
     public InputModel Input { get; set; } = new();
 
     public void OnGet()
-    {
-    }
+    { }
 
     public async Task<IActionResult> OnPostAsync()
     {
@@ -38,7 +55,7 @@ public sealed class AddModel : PageModel
         }
 
         var isUrl = Input.Source.Contains("://");
-        var cloneBasePath = GetCloneBasePath();
+        var cloneBasePath = getCloneBasePath();
 
         var repo = new RegisteredRepo
         {
@@ -58,27 +75,5 @@ public sealed class AddModel : PageModel
 
         TempData["Message"] = $"Repo '{Input.Name}' registered.";
         return RedirectToPage("/Index");
-    }
-
-    string GetCloneBasePath()
-    {
-        var config = (IConfiguration)HttpContext.RequestServices.GetRequiredService(typeof(IConfiguration));
-        return config.GetSection("RepoRegistry:CloneBasePath")?.Value
-            ?? Path.Combine(Environment.CurrentDirectory, "cloned-repos");
-    }
-
-    public sealed class InputModel
-    {
-        [Required, MaxLength(200)]
-        [Display(Name = "Repo Name")]
-        public string Name { get; set; } = string.Empty;
-
-        [Required, MaxLength(2000)]
-        [Display(Name = "Source (Git URL or local path)")]
-        public string Source { get; set; } = string.Empty;
-
-        [MaxLength(200)]
-        [Display(Name = "Branch (for URL repos only)")]
-        public string? Branch { get; set; }
     }
 }

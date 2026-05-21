@@ -1,4 +1,3 @@
-using CodeMemory.AspNet.Registry.Models;
 using Microsoft.EntityFrameworkCore;
 
 namespace CodeMemory.AspNet.Registry;

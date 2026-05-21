@@ -51,7 +51,7 @@ New features MUST:
 
 CodeMemory is NOT: an IDE, a chat assistant, a code generator, or a standalone AI agent runtime.
 
-It IS: a repository intelligence and memory substrate exposed via MCP. Includes dependency graphs, architecture overviews, component clustering, and git history — all accessible through MCP tools.
+It IS: a repository intelligence and memory substrate exposed via MCP. Includes dependency graphs, architecture overviews, component clustering, git history, file watcher auto-reindexing, and SQL query engine — all accessible through MCP tools.
 
 ---
 
@@ -76,13 +76,13 @@ Use `docs/TASKS-TEMPLATE.md` for new task breakdowns. Each task must include: Pr
 Four projects:
 - **`CodeMemory`** — Pure library (`Microsoft.NET.Sdk`, `OutputType Library`). No ASP.NET dependency. Contains all service logic, MCP tool definitions, storage interfaces, and models. Includes `IndexingState` static class tracking per-repo indexing completion.
 - **`CodeMemory.Storage`** — Vector store providers (SQLite + In-memory). References `CodeMemory` for interfaces and model types. Depends on `Memori` NuGet for `InMemoryVectorStore`.
-- **`CodeMemory.Mcp`** — Standalone stdio MCP server for single-repo agent usage. Uses `WithStdioServerTransport`. Takes optional `--repo <path>` argument. Indexing is **non-blocking** — starts in background `Task.Run`, server loop starts immediately.
-- **`CodeMemory.AspNet`** — ASP.NET Core host. Owns `Program.cs`, DI registration, MCP Streamable HTTP transport, `BackgroundService` lifecycle (`IndexingHostedService`).
+- **`CodeMemory.Mcp`** — Standalone stdio MCP server for single-repo agent usage. Uses `WithStdioServerTransport`. Takes optional `--repo <path>` argument. Indexing is **non-blocking** — starts in background `Task.Run`, server loop starts immediately. After indexing, `FileWatcherService` auto-reindexes file changes.
+- **`CodeMemory.AspNet`** — ASP.NET Core host. Owns `Program.cs`, DI registration, MCP Streamable HTTP transport, `BackgroundService` lifecycle (`IndexingHostedService`), enterprise portal (Razor Pages), repo registry, and clone/index service.
 
 ### Key rules
 
 - Services with `BackgroundService` inheritance MUST live in `CodeMemory.AspNet`. Core indexing logic (`IndexingEngine`) lives in `CodeMemory` and is wrapped by `IndexingHostedService` in `CodeMemory.AspNet`.
-- MCP tool types live in `CodeMemory` (`CodeMemory.Mcp` namespace). Registration uses `WithToolsFromAssembly(typeof(McpTools).Assembly)` from both `CodeMemory.AspNet.Program.cs` and `CodeMemory.Mcp.Program.cs`.
+- MCP tool types live in two places: `CodeMemory.Mcp` namespace (core tools — `McpTools`, `AdminTool`, `SemanticSearchTool`, tool services) and `CodeMemory.AspNet.Tools` (AspNet-specific — `AspNetSqlQueryTool`). Registration in `CodeMemory.AspNet.Program.cs` uses both `WithToolsFromAssembly(typeof(McpTools).Assembly)` and `WithToolsFromAssembly(typeof(AspNetSqlQueryTool).Assembly)`.
 - `IStorageService` interface and storage models (`SymbolRecord`, `ChunkRecord`, etc.) live in `CodeMemory.Storage.Services` / `CodeMemory.Storage.Models` namespaces but in the `CodeMemory` assembly.
 
 ### Multi-Repo Architecture
@@ -107,6 +107,7 @@ The `ping` MCP tool returns:
 ```json
 {"status":"ok","indexingCompleted":true}
 ```
+(or with `"fileWatcherActive":true` when the Mcp host watcher is running)
 or when still indexing:
 ```json
 {"status":"ok","indexingCompleted":false,"message":"Indexing in progress. Retry tools in a few seconds."}
@@ -121,7 +122,7 @@ or when still indexing:
 - Hardcoded `/api/mcp/default` in tests causes 404 after removing the fallback default repo — always route to a specific configured repo.
 - Repo-relative paths resolve from `Environment.CurrentDirectory`, which differs between dev (AspNet project dir) and test (test bin dir) — use `Path.GetFullPath` with assembly-relative roots in test infrastructure.
 - MCP SDK documentation lives in the NuGet cache, not on NuGet.org — NuGet.org search returns Azure Functions MCP docs for the legacy SDK, not the ASP.NET Core `ModelContextProtocol.AspNetCore` package.
-- **In-memory storage (`Storage:Provider: "inmemory"`)** loses all data on restart — do not use for production persistence. SQLite (`"sqlite"`) persists vectors in `.codememory/sqlvec.db`.
+- **In-memory storage (`Storage:Provider: "inmemory"`)** loses all data on restart — do not use for production persistence. SQLite (`"sqlite"`) persists vectors in `.codememory/sqlvec.db`. For production persistence, use `"pgvector"` or `"sqlserver"` providers with `HybridStorageService`.
 - **Ping before use** — indexing is non-blocking in both hosts; agents MUST poll `ping` until `indexingCompleted: true` (see [Non-Blocking Indexing](#non-blocking-indexing--ping-contract) above).
 - The `IndexingState` static class uses `ConcurrentDictionary` — it is process-scoped. In multi-repo ASP.NET, `IndexingState.IsCompleted()` without a repo name checks all repos are done.
 - **`sql_query` MCP tool parses SQL via SqlParserCS and executes against InMemoryVectorStore** — WHERE clauses become LINQ expression trees via `SqlExpressionBuilder`. Only `SELECT` is supported. The SQL surface maps to three tables (`SymbolRecord`, `ChunkRecord`, `RelationshipRecord`). `InMemoryVectorStore` is the only supported backend; SQLite backend returns a clear error. Vector search is triggered by `ORDER BY Similarity DESC` on `ChunkRecord` queries (requires `Content LIKE '%pattern%'` in WHERE). CTE/derived-table outer queries also support `ORDER BY Similarity DESC` — the results are re-ranked by computing cosine similarity against the store's original embeddings (looked up by `Id`), with no vector data copied. Aggregates (`COUNT`/`SUM`/`AVG`/`MIN`/`MAX`), `GROUP BY`, `DISTINCT`, and `HAVING` are applied client-side after fetching all matching rows. CTEs (non-recursive) and derived tables (`FROM (subquery) AS alias`) are supported — both share the same `executeCteSubqueryAsync` infrastructure and compose together.

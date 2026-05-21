@@ -20,9 +20,11 @@ dotnet add package CodeMemory
 - **Symbol history** — per-symbol git commit history with authors and timestamps
 - **Hotspot detection** — most frequently changed files ranked by commit count
 - **Edit context** — comprehensive context for a symbol: source code, dependency chains, related symbols, and test coverage
-- **SQL queries** — compose arbitrary filters across indexed fields using SQL (`SELECT`, `WHERE`, `ORDER BY`, `GROUP BY`, `HAVING`, aggregates, vector search) — parsed by SqlParserCS, executed as LINQ over InMemoryVectorStore
+- **SQL queries** — compose arbitrary filters across indexed fields using SQL (`SELECT`, `WHERE`, `ORDER BY`, `GROUP BY`, `HAVING`, CTEs, derived tables, aggregates, vector search via `ORDER BY Similarity DESC`) — parsed by SqlParserCS, executed as LINQ over InMemoryVectorStore
 - **Multi-repo support** — per-repository storage isolation via `ServiceRegistry` + `IRepoContextAccessor`
-- **Pluggable storage** — in-memory (`InMemoryVectorStore`, default, zero-dependency) or SQLite with vector extensions (`Microsoft.SemanticKernel.Connectors.SqliteVec`)
+- **Pluggable storage** — in-memory (`InMemoryVectorStore`, default, zero-dependency), SQLite (`Microsoft.SemanticKernel.Connectors.SqliteVec`), PostgreSQL with pgvector (`Microsoft.SemanticKernel.Connectors.PgVector`), or SQL Server (`Microsoft.SemanticKernel.Connectors.SqlServer`)
+- **File watcher** — post-indexing `FileWatcherService` auto-reindexes changed/created/deleted files via `FileSystemWatcher` with debounce coalescing
+- **Multi-language parsing** — Roslyn (C#) + Tree-sitter (TS/JS/Java/Python/Go/Rust/C/C++) for symbol extraction and relationships; .txt/.md indexed as text chunks
 
 ## Dependency Injection
 
@@ -44,13 +46,14 @@ services.AddSingleton<CollectionRegistry>();
 | Package | Role |
 |---|---|
 | **Memori** | `NgramEmbeddingGenerator` for offline embeddings + `InMemoryVectorStore` — no API keys, no model downloads |
-| **SqlParserCS** | SQL parsing (SELECT, WHERE, ORDER BY, GROUP BY, HAVING, aggregates) |
+| **SqlParserCS** | SQL parsing (SELECT, WHERE, ORDER BY, GROUP BY, HAVING, CTEs, aggregates) |
 | **Microsoft.Extensions.AI.Abstractions** | `IEmbeddingGenerator`, `IChatClient` abstractions |
 | **Microsoft.Extensions.VectorData.Abstractions** | Vector store abstractions |
 | **ModelContextProtocol** | MCP server types and tool attributes |
 | **Microsoft.CodeAnalysis.CSharp** | Roslyn-based C# parsing |
-| **TreeSitter.DotNet** | Multi-language parsing (TS, JS, Java) — optional |
+| **TreeSitter.DotNet** | Multi-language parsing (TS, JS, Java, Python, Go, Rust, C/C++) — optional |
 | **System.Numerics.Tensors** | `TensorPrimitives.Norm` for embedding normalization |
+| **Microsoft.EntityFrameworkCore** | Relational storage for symbols/relationships (AspNet hybrid path) |
 
 ## Targets
 

@@ -1,5 +1,4 @@
 using CodeMemory.AspNet.Registry;
-using CodeMemory.AspNet.Registry.Models;
 using CodeMemory.Indexing;
 using CodeMemory.Storage;
 using Microsoft.Data.Sqlite;

@@ -39,7 +39,9 @@ CodeMemory indexes a repository and exposes MCP tools:
 | `get_symbol_history` | Git commit history for a symbol |
 | `get_hotspots` | Most frequently changed files |
 | `sql_query` | SQL queries over indexed data (SELECT/WHERE/ORDER BY/GROUP BY/HAVING, CTEs, derived tables, aggregates, vector search via `ORDER BY Similarity DESC`) |
-| `ping` | Health check + indexing status (`indexingCompleted: true/false`) |
+| `rescan_repository` | Trigger full re-index of the current repository |
+| `get_repository_root` | Returns the root path of the active repository |
+| `ping` | Health check + indexing status (`indexingCompleted: true/false`, `fileWatcherActive`) |
 
 All tools return structured JSON. No freeform prompts, no chat — pure deterministic repository intelligence.
 
@@ -99,7 +101,7 @@ The root route (`GET /`) returns storage provider, per-repo indexing status, and
 
 - **Host**: ASP.NET Core with MCP over Streamable HTTP
 - **Storage**: Pluggable — in-memory (`InMemoryVectorStore`, default, zero-dependency), SQLite (`Microsoft.SemanticKernel.Connectors.SqliteVec`), PostgreSQL with pgvector, or SQL Server. Relational providers use `HybridStorageService` — symbols/relationships in EF Core tables, chunks in the vector store.
-- **Parsing**: Roslyn (C#), with language detection for other file types
+- **Parsing**: Roslyn (C#) + Tree-sitter (TS, JS, Java, Python, Go, Rust, C/C++) + Text/Markdown indexing
 - **Embeddings**: Memori n-gram embedding generator (offline, no API key) or pluggable via `IEmbeddingGenerator<string, Embedding<float>>`
 - **Relationship extraction**: Syntax-based (Inherits, Implements, Calls, References)
 - **Git analysis**: Shell git commands with in-memory caching
@@ -118,7 +120,7 @@ Key external packages and version constraints:
 - **Microsoft.CodeAnalysis.CSharp** — Roslyn-based C# parsing.
 - **ModelContextProtocol** — MCP server types and tool attributes.
 - **ModelContextProtocol.AspNetCore** — MCP Streamable HTTP transport (AspNet host only).
-- **TreeSitter.DotNet** — multi-language parsing (TS, JS, Java).
+- **TreeSitter.DotNet** — multi-language parsing (TS, JS, Java, Python, Go, Rust, C/C++).
 - **System.Numerics.Tensors** — `TensorPrimitives.Norm` for embedding normalization.
 - **Microsoft.SemanticKernel.Connectors.SqliteVec** (optional — SQLite vector storage).
 - **Microsoft.SemanticKernel.Connectors.PgVector** (optional — PostgreSQL vector storage).
