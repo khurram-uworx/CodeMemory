@@ -36,6 +36,8 @@ TABLES:
   - ChunkRecord: Id(key), SymbolId(string), FilePath(string), Content(string), Language(string), LineStart(int), LineEnd(int), MetadataJson(string?), Embedding(vector)
   - RelationshipRecord: Id(key), SourceSymbolId(string), TargetSymbolId(string), RelationshipType(string)
 
+Only SELECT is supported. INSERT/UPDATE/DELETE/CREATE are not.
+
 SYNTAX:
   [WITH cte_name AS (SELECT ...) [, ...]]
   SELECT [DISTINCT] columns|*|aggregates FROM table [[AS] alias]
@@ -63,6 +65,11 @@ VECTOR SEARCH (ChunkRecord only):
   SELECT ... FROM ChunkRecord WHERE Content LIKE '%text%' ORDER BY Similarity DESC
   Each result row includes __score (0-1) for similarity ranking.
   Not supported with multi-table queries.
+
+TEXT / DOCUMENT FILES:
+  .md and .txt files are indexed as file-level chunks with Language = 'Text'.
+  These chunks are stored in ChunkRecord and searchable via semantic_search
+  or SQL queries (e.g., SELECT * FROM ChunkRecord WHERE Language = 'Text').
 
 BEHAVIOR:
   - Explicit column list in SELECT returns only those columns

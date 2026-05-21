@@ -122,7 +122,7 @@ public sealed class IndexingEngineProcessFileTests
     {
         var dir = Path.Combine(Path.GetTempPath(), "CodeMemoryProcessFileTests", Guid.NewGuid().ToString());
         Directory.CreateDirectory(dir);
-        var filePath = Path.Combine(dir, "readme.txt");
+        var filePath = Path.Combine(dir, "readme.rb");
         File.WriteAllText(filePath, "hello world");
 
         try
@@ -137,6 +137,64 @@ public sealed class IndexingEngineProcessFileTests
             Assert.That(result.Symbols, Is.Empty);
             Assert.That(result.Chunks, Is.Empty);
             Assert.That(result.Relationships, Is.Empty);
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+                Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Test]
+    public async Task ProcessFileAsync_OnTextFile_ReturnsChunks()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "CodeMemoryProcessFileTests", Guid.NewGuid().ToString());
+        Directory.CreateDirectory(dir);
+        var filePath = Path.Combine(dir, "readme.md");
+        File.WriteAllText(filePath, "# Hello\n\nThis is a **markdown** file.");
+
+        try
+        {
+            var storage = CreateInMemoryStorage(dir);
+            await storage.InitializeAsync();
+
+            var engine = CreateEngine(storage);
+            var result = await engine.ProcessFileAsync(filePath, CancellationToken.None);
+
+            Assert.That(result.FilePath, Is.EqualTo(filePath));
+            Assert.That(result.Symbols, Is.Empty);
+            Assert.That(result.Chunks, Is.Not.Empty);
+            Assert.That(result.Relationships, Is.Empty);
+            Assert.That(result.Chunks[0].Language, Is.EqualTo("Text"));
+            Assert.That(result.Chunks[0].FilePath, Is.EqualTo("readme.md"));
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+                Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Test]
+    public async Task ProcessFileAsync_OnTextFile_TruncatesLargeFiles()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "CodeMemoryProcessFileTests", Guid.NewGuid().ToString());
+        Directory.CreateDirectory(dir);
+        var filePath = Path.Combine(dir, "large.txt");
+        var largeContent = new string('A', 200 * 1024);
+        File.WriteAllText(filePath, largeContent);
+
+        try
+        {
+            var storage = CreateInMemoryStorage(dir);
+            await storage.InitializeAsync();
+
+            var engine = CreateEngine(storage);
+            var result = await engine.ProcessFileAsync(filePath, CancellationToken.None);
+
+            Assert.That(result.FilePath, Is.EqualTo(filePath));
+            Assert.That(result.Chunks, Is.Not.Empty);
+            Assert.That(result.Chunks[0].Content.Length, Is.LessThan(200 * 1024));
         }
         finally
         {

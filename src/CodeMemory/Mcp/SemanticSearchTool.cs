@@ -22,9 +22,9 @@ public sealed class SemanticSearchTool
         storage = serviceProvider.GetService<IStorageService>();
     }
 
-    [McpServerTool, Description("Searches the indexed repository for code semantically related to the given natural language query. Returns metadata-only results (file paths, scores, line ranges) — no source code content. Use the read tool to fetch specific lines from matched files.")]
+    [McpServerTool, Description("Searches the indexed repository for code and documentation semantically related to the given natural language query. Returns metadata-only results (file paths, scores, line ranges) — no source content. Use the read tool to fetch specific lines from matched files.")]
     public async Task<IReadOnlyList<SearchResult>> SemanticSearchAsync(
-        [Description("Natural language query describing the code to find")] string query,
+        [Description("Natural language query describing the code or documentation to find")] string query,
         [Description("Maximum number of results to return (default 10, max 50)")] int maxResults = 10,
         [Description("Minimum cosine similarity threshold (0-1, default 0). Higher values return only highly relevant results.")] double minimumSimilarity = 0)
     {
