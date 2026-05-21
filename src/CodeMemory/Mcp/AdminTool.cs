@@ -1,4 +1,8 @@
-//using CodeMemory.Services;
+using System.ComponentModel;
+using System.Text.Json;
+using CodeMemory.Indexing;
+using CodeMemory.Services;
+using CodeMemory.Storage;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
 
@@ -7,53 +11,65 @@ namespace CodeMemory.Mcp;
 [McpServerToolType]
 public sealed class AdminTool
 {
-    //readonly IIndexingService? indexingService;
+    readonly IStorageService storage;
+    readonly IServiceScopeFactory scopeFactory;
     readonly ILogger<AdminTool> logger;
 
-    public AdminTool(ILogger<AdminTool> logger, IServiceProvider serviceProvider)
+    public AdminTool(IStorageService storage, IServiceScopeFactory scopeFactory, ILogger<AdminTool> logger)
     {
+        this.storage = storage;
+        this.scopeFactory = scopeFactory;
         this.logger = logger;
-        //indexingService = serviceProvider.GetService<IIndexingService>();
     }
 
-    //[McpServerTool, Description("Triggers a full re-index of the current repository. Clears all stored symbols, chunks, and relationships, then rescans the entire codebase. Use this after git pull, manual file changes, or to recover from a corrupted index.")]
-    //public async Task<string> RescanRepositoryAsync(
-    //    [Description("Optional: skip files matching these patterns (e.g., '**/*.generated.cs,**/bin/**')")] string? excludePatterns = null)
-    //{
-    //    if (indexingService == null)
-    //    {
-    //        logger.LogWarning("Indexing service not available");
-    //        return JsonSerializer.Serialize(new { status = "error", message = "Indexing service not available" });
-    //    }
+    [McpServerTool, Description("Triggers a full re-index of the current repository. Clears all stored symbols, chunks, and relationships, then rescans the entire codebase. Use this after git pull, manual file changes, or to recover from a corrupted index.")]
+    public async Task<string> RescanRepositoryAsync(
+        [Description("Optional: skip files matching these patterns (e.g., '**/*.generated.cs,**/bin/**')")] string? excludePatterns = null,
+        CancellationToken ct = default)
+    {
+        try
+        {
+            var repoRoot = storage.RepoRoot;
+            logger.LogInformation("Rescan requested for repo {RepoRoot}", repoRoot);
 
-    //    try
-    //    {
-    //        logger.LogInformation("Rescan requested for repo {RepoRoot}", indexingService.RepoRoot);
-    //        await indexingService.RescanAsync();
-    //        return JsonSerializer.Serialize(new
-    //        {
-    //            status = "ok",
-    //            repoRoot = indexingService.RepoRoot,
-    //            message = "Repository re-indexed successfully"
-    //        });
-    //    }
-    //    catch (Exception ex)
-    //    {
-    //        logger.LogError(ex, "Rescan failed for {RepoRoot}", indexingService.RepoRoot);
-    //        return JsonSerializer.Serialize(new { status = "error", message = ex.Message });
-    //    }
-    //}
+            IndexingState.MarkIncomplete(repoRoot);
 
-    //[McpServerTool, Description("Returns the root path of the currently active repository being indexed and queried.")]
-    //public string GetRepositoryRoot()
-    //{
-    //    if (indexingService == null)
-    //        return JsonSerializer.Serialize(new { status = "error", message = "Indexing service not available" });
+            await storage.ClearAllAsync(ct);
 
-    //    return JsonSerializer.Serialize(new
-    //    {
-    //        status = "ok",
-    //        repoRoot = indexingService.RepoRoot
-    //    });
-    //}
+            using var scope = scopeFactory.CreateScope();
+            var engine = scope.ServiceProvider.GetRequiredService<IndexingEngine>();
+            await engine.RunIndexingAsync(repoRoot, ct);
+
+            IndexingState.MarkCompleted(repoRoot);
+
+            return JsonSerializer.Serialize(new
+            {
+                status = "ok",
+                repoRoot,
+                message = "Repository re-indexed successfully"
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Rescan failed");
+            return JsonSerializer.Serialize(new { status = "error", message = ex.Message });
+        }
+    }
+
+    [McpServerTool, Description("Returns the root path of the currently active repository being indexed and queried.")]
+    public string GetRepositoryRoot()
+    {
+        try
+        {
+            return JsonSerializer.Serialize(new
+            {
+                status = "ok",
+                repoRoot = storage.RepoRoot
+            });
+        }
+        catch (Exception ex)
+        {
+            return JsonSerializer.Serialize(new { status = "error", message = ex.Message });
+        }
+    }
 }

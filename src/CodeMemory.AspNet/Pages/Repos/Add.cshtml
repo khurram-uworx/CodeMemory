@@ -1,0 +1,36 @@
+@page
+@model CodeMemory.AspNet.Pages.Repos.AddModel
+@{
+    ViewData["Title"] = "Add Repository";
+}
+
+<h1>Add Repository</h1>
+
+<form method="post" class="row g-3 mt-2">
+    <div class="col-md-6">
+        <label asp-for="Input.Name" class="form-label"></label>
+        <input asp-for="Input.Name" class="form-control" placeholder="my-repo" />
+        <span asp-validation-for="Input.Name" class="text-danger"></span>
+    </div>
+
+    <div class="col-12">
+        <label asp-for="Input.Source" class="form-label"></label>
+        <input asp-for="Input.Source" class="form-control" placeholder="https://github.com/user/repo.git or C:\path\to\repo" />
+        <span asp-validation-for="Input.Source" class="text-danger"></span>
+        <div class="form-text">GitHub URL or absolute/relative local path.</div>
+    </div>
+
+    <div class="col-md-4">
+        <label asp-for="Input.Branch" class="form-label"></label>
+        <input asp-for="Input.Branch" class="form-control" placeholder="main (optional)" />
+        <span asp-validation-for="Input.Branch" class="text-danger"></span>
+    </div>
+
+    <div class="col-12">
+        <button type="submit" class="btn btn-primary">
+            <i class="bi bi-plus-circle"></i> Register
+        </button>
+        <a asp-page="/Index" class="btn btn-secondary">Cancel</a>
+    </div>
+</form>
+

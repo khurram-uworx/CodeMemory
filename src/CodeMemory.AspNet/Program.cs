@@ -1,6 +1,6 @@
 using CodeMemory.AspNet.Configuration;
+using CodeMemory.AspNet.Registry;
 using CodeMemory.AspNet.Services;
-using CodeMemory.AspNet.Storage;
 using CodeMemory.Indexing;
 using CodeMemory.Indexing.Chunking;
 using CodeMemory.Indexing.Extraction;
@@ -13,8 +13,8 @@ using CodeMemory.Services.Graph;
 using CodeMemory.Services.Query;
 using CodeMemory.Storage;
 using Memori.Embeddings;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
-using Microsoft.Extensions.VectorData;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -65,17 +65,11 @@ builder.Services.AddMcpServer()
         o.PerSessionExecutionContext = true;
         o.ConfigureSessionOptions = (context, mcpOptions, ct) =>
         {
-            var path = context.Request.Path.Value;
-            if (path is not null)
+            var repoName = context.Request.RouteValues["repoName"] as string;
+            if (!string.IsNullOrEmpty(repoName))
             {
-                // Extract repo name from /api/mcp/{repoName}
-                var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
-                if (segments.Length >= 3
-                    && string.Equals(segments[^2], "mcp", StringComparison.OrdinalIgnoreCase))
-                {
-                    var repoContext = context.RequestServices.GetRequiredService<IRepoContextAccessor>();
-                    repoContext.CurrentRepoName = segments[^1];
-                }
+                var repoContext = context.RequestServices.GetRequiredService<IRepoContextAccessor>();
+                repoContext.CurrentRepoName = repoName;
             }
             return Task.CompletedTask;
         };
@@ -96,55 +90,69 @@ builder.Services.AddCors(options =>
     });
 });
 
+// RepoRegistry — EF Core registry DB for dynamic repo registration
+var registryOptions = builder.Configuration
+    .GetSection(RepoRegistryOptions.SectionName)
+    .Get<RepoRegistryOptions>() ?? new();
+builder.Services.AddSingleton(registryOptions);
+
+var registryConnString = registryOptions.Provider.ToLowerInvariant() switch
+{
+    "sqlite" => builder.Configuration.GetConnectionString("Sqlite")
+        ?? "Data Source=App_Data/registry.db",
+    "sqlserver" => builder.Configuration.GetConnectionString("SqlServer")
+        ?? throw new InvalidOperationException("Connection string 'SqlServer' is required for RepoRegistry SqlServer provider."),
+    "npgsql" or "postgresql" => builder.Configuration.GetConnectionString("Npgsql")
+        ?? builder.Configuration.GetConnectionString("PgVector")
+        ?? throw new InvalidOperationException("Connection string 'Npgsql'/'PgVector' is required for RepoRegistry Npgsql provider."),
+    var p => throw new InvalidOperationException(
+        $"Unsupported RepoRegistry provider '{p}'. Supported: sqlite, sqlserver, npgsql")
+};
+
+builder.Services.AddDbContextFactory<RepoRegistryDbContext>(options =>
+{
+    switch (registryOptions.Provider.ToLowerInvariant())
+    {
+        case "sqlite":
+            options.UseSqlite(registryConnString);
+            break;
+        case "sqlserver":
+            options.UseSqlServer(registryConnString);
+            break;
+        case "npgsql":
+        case "postgresql":
+            options.UseNpgsql(registryConnString);
+            break;
+    }
+});
+
+builder.Services.AddRazorPages();
+builder.Services.AddSingleton<RepoRegistryService>();
+builder.Services.AddSingleton<CloneIndexService>();
+
 var provider = builder.Configuration.GetValue<string>("Storage:Provider") ?? "inmemory";
 
 var app = builder.Build();
 app.UseCors();
+app.MapRazorPages();
 
-// Build per-repo storage registry
-// Embedding generator is optional in StorageService (defaults to 1536 dimensions).
-// IndexingEngine resolves IEmbeddingGenerator from DI separately.
-var loggerFactory = app.Services.GetRequiredService<ILoggerFactory>();
-var embeddingGenerator = app.Services.GetRequiredService<IEmbeddingGenerator<string, Embedding<float>>>();
-var repositories = builder.Configuration.GetSection("Repositories").Get<Dictionary<string, string>>();
-var repoInfos = new List<(string name, string path, string? dbPath)>();
+// Startup bootstrap: seed config → DB, load DB → ServiceRegistry
+var bootstrapper = new StorageBootstrapper(app);
+var allRepos = await bootstrapper.BootstrapAsync();
 
-foreach (var (name, path) in repositories ?? [])
-{
-    var repoRoot = Path.IsPathRooted(path)
-        ? path
-        : Path.GetFullPath(Path.Combine(Environment.CurrentDirectory, path));
+// Single catch-all MCP route
+app.MapMcp("/api/mcp/{repoName}");
 
-    (provider, var dbPath, var storageService) = builder.CreateStorage(provider, name, repoRoot,
-        loggerFactory,
-        embeddingGenerator);
-
-    if (storageService is null)
-        storageService = app.Services.CreateInMemoryStorage(
-            repoRoot,
-            loggerFactory.CreateLogger<StorageService>(),
-            embeddingGenerator);
-
-    storageRegistry.Register(name, storageService);
-    repoInfos.Add((name, repoRoot, dbPath));
-}
-
-// Per-repo MCP endpoints — always requires repo name in URL for storage routing
-//   e.g. POST /api/mcp/codememory, POST /api/mcp/default, etc.
-// No bare /api/mcp endpoint. ConfigureSessionOptions extracts the repo name from the URL.
-foreach (var (name, _, _) in repoInfos)
-    app.MapMcp($"/api/mcp/{name}");
-
+// Status endpoint
 app.MapGet("/", () =>
 {
     var service = "CodeMemory — Repository Intelligence Substrate";
-    var repos = repoInfos.Select(r =>
+    var repos = allRepos.Select(r =>
         new
         {
-            r.name,
-            r.path,
-            indexDb = r.dbPath,
-            indexingCompleted = IndexingState.IsCompleted(r.name)
+            name = r.Name,
+            path = r.LocalPath,
+            indexingCompleted = IndexingState.IsCompleted(r.Name)
         } as object);
 
     return Results.Ok(new
@@ -153,6 +161,45 @@ app.MapGet("/", () =>
         timestamp = DateTimeOffset.UtcNow,
         storageProvider = provider,
         repositories = repos
+    });
+});
+
+// Registry status API — list all repos
+app.MapGet("/api/repos", async (RepoRegistryService registry) =>
+{
+    var repos = await registry.ListAsync();
+    var result = repos.Select(r => new
+    {
+        name = r.Name,
+        source = r.GitUrl ?? r.LocalPath,
+        cloneStatus = r.CloneStatus,
+        indexStatus = r.IndexStatus,
+        lastIndexedAt = r.LastIndexedAt,
+        errorMessage = r.ErrorMessage,
+        indexingCompleted = IndexingState.IsCompleted(r.Name)
+    });
+
+    return Results.Ok(new { repositories = result });
+});
+
+// Registry status API — single repo
+app.MapGet("/api/repos/{name}/status", async (string name, RepoRegistryService registry) =>
+{
+    var repo = await registry.GetAsync(name);
+    if (repo is null)
+        return Results.NotFound(new { error = $"Repository '{name}' not found" });
+
+    return Results.Ok(new
+    {
+        name = repo.Name,
+        source = repo.GitUrl ?? repo.LocalPath,
+        localPath = repo.LocalPath,
+        cloneStatus = repo.CloneStatus,
+        indexStatus = repo.IndexStatus,
+        lastIndexedAt = repo.LastIndexedAt,
+        errorMessage = repo.ErrorMessage,
+        createdAt = repo.CreatedAt,
+        indexingCompleted = IndexingState.IsCompleted(repo.Name)
     });
 });
 

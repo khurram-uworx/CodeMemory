@@ -1,0 +1,96 @@
+@page
+@model IndexModel
+@{
+    ViewData["Title"] = "Repositories";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1>Registered Repositories</h1>
+    <a asp-page="/Repos/Add" class="btn btn-primary">
+        <i class="bi bi-plus-circle"></i> Add Repo
+    </a>
+</div>
+
+@if (TempData["Message"] is string message)
+{
+    <div class="alert alert-success alert-dismissible fade show">@message</div>
+}
+
+@if (Model.Repos.Count == 0)
+{
+    <div class="alert alert-info">No repositories registered. Click "Add Repo" to get started.</div>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-hover align-middle">
+            <thead class="table-dark">
+                <tr>
+                    <th>Name</th>
+                    <th>Status</th>
+                    <th>Source</th>
+                    <th>Last Indexed</th>
+                    <th>MCP Endpoint</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var repo in Model.Repos)
+                {
+                    var status = repo.CloneStatus == "Failed" || repo.IndexStatus == "Failed" ? "Failed"
+                        : repo.CloneStatus == "Pending" ? "Pending"
+                        : repo.CloneStatus == "Cloning" ? "Cloning"
+                        : repo.CloneStatus == "Cloned" && repo.IndexStatus == "Pending" ? "Pending Clone"
+                        : repo.IndexStatus == "Indexing" ? "Indexing"
+                        : repo.IndexStatus == "Indexed" ? "Indexed"
+                        : repo.CloneStatus;
+                    var badgeClass = status switch
+                    {
+                        "Indexed" => "bg-success",
+                        "Failed" => "bg-danger",
+                        "Indexing" or "Cloning" => "bg-warning text-dark",
+                        _ => "bg-secondary"
+                    };
+
+                    <tr>
+                        <td><strong>@repo.Name</strong></td>
+                        <td><span class="badge @badgeClass">@status</span></td>
+                        <td>
+                            @if (!string.IsNullOrEmpty(repo.GitUrl))
+                            {
+                                <a href="@repo.GitUrl" target="_blank" class="text-break">@repo.GitUrl</a>
+                            }
+                            else
+                            {
+                                <code class="text-break">@repo.LocalPath</code>
+                            }
+                        </td>
+                        <td>@repo.LastIndexedAt?.ToString("g") ?? "—"</td>
+                        <td><code>/api/mcp/@repo.Name</code></td>
+                        <td>
+                            <form method="post" asp-page-handler="Reindex" class="d-inline">
+                                <input type="hidden" name="name" value="@repo.Name" />
+                                <button type="submit" class="btn btn-sm btn-outline-primary" title="Re-index">
+                                    <i class="bi bi-arrow-clockwise"></i>
+                                </button>
+                            </form>
+                            <form method="post" asp-page-handler="Delete" class="d-inline"
+                                  onsubmit="return confirm('Delete repo @repo.Name? This will remove all indexed data.')">
+                                <input type="hidden" name="name" value="@repo.Name" />
+                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    @if (!string.IsNullOrEmpty(repo.ErrorMessage))
+                    {
+                        <tr class="table-danger">
+                            <td colspan="6"><small>@repo.ErrorMessage</small></td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+}
