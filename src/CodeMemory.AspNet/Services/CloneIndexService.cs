@@ -1,5 +1,3 @@
-using System.Collections.Concurrent;
-using System.Diagnostics;
 using CodeMemory.AspNet.Configuration;
 using CodeMemory.AspNet.Registry;
 using CodeMemory.AspNet.Registry.Models;
@@ -8,6 +6,8 @@ using CodeMemory.Services;
 using CodeMemory.Storage;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
+using System.Collections.Concurrent;
+using System.Diagnostics;
 
 namespace CodeMemory.AspNet.Services;
 
