@@ -41,6 +41,7 @@ public sealed class SemanticSearchToolTests : BaseToolTests
                     s.AddSingleton<ISemanticSearchService>(mock);
                 });
             });
+        await factory.RegisterRepoAsync();
         var client = factory.CreateClient();
 
         var result = await CallTool(client, "semantic_search",
@@ -60,6 +61,7 @@ public sealed class SemanticSearchToolTests : BaseToolTests
     public async Task SemanticSearch_ReturnsEmpty_WhenNoService()
     {
         await using var factory = new WebApplicationFactory<Program>();
+        await factory.RegisterRepoAsync();
         var client = factory.CreateClient();
 
         var result = await CallTool(client, "semantic_search",

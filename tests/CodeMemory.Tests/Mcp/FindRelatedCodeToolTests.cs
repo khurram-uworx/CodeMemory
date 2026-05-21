@@ -32,6 +32,7 @@ public sealed class FindRelatedCodeToolTests : BaseToolTests
     public async Task FindRelatedCode_ReturnsEmpty_WhenNoService()
     {
         await using var factory = new WebApplicationFactory<Program>();
+        await factory.RegisterRepoAsync();
         var client = factory.CreateClient();
 
         var result = await CallTool(client, "find_related_code",
