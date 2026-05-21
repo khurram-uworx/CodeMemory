@@ -219,7 +219,7 @@ get_symbol_history / get_hotspots
 
 Configurable via `Storage:Provider` in appsettings.json:
 - **`"inmemory"`** (default) — `InMemoryVectorStore` from Memori. No persistence, data lost on restart. No external dependencies. Best for CI/testing/agent sessions.
-- **`"sqlite"`** — `SqliteVectorStore` via `Microsoft.SemanticKernel.Connectors.SqliteVec`. Persistent storage at `.memorycode/sqlvec.db` per repo. Uses `HybridStorageService` — symbols/relationships in EF Core SQLite tables, chunks in vector store.
+- **`"sqlite"`** — `SqliteVectorStore` via `Microsoft.SemanticKernel.Connectors.SqliteVec`. Persistent storage at `.codememory/sqlvec.db` per repo. Uses `HybridStorageService` — symbols/relationships in EF Core SQLite tables, chunks in vector store.
 - **`"pgvector"`** — `PostgresVectorStore` + EF Core PostgreSQL (Npgsql). Per-repo schema isolation. Requires PostgreSQL + pgvector extension.
 - **`"sqlserver"`** — `SqlServerVectorStore` + EF Core SQL Server. Per-repo schema isolation. Requires SQL Server.
 

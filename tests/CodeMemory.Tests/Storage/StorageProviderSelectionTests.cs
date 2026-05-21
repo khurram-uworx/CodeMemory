@@ -45,7 +45,7 @@ public sealed class StorageProviderSelectionTests
                 NullLoggerFactory.Instance);
 
             Assert.That(provider, Is.EqualTo("sqlite"));
-            Assert.That(dbPath, Is.EqualTo(Path.Combine(repoRoot, ".memorycode", "sqlvec.db")));
+            Assert.That(dbPath, Is.EqualTo(Path.Combine(repoRoot, ".codememory", "sqlvec.db")));
             Assert.That(storage, Is.TypeOf<HybridStorageService>());
         }
         finally

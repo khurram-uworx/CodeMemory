@@ -78,7 +78,7 @@ Configure repos in `src/CodeMemory.AspNet/appsettings.json`:
 }
 ```
 
-Storage provider: `"inmemory"` (default, no dependencies), `"sqlite"` (persistent SQLite), `"pgvector"` (PostgreSQL with pgvector), or `"sqlserver"` (SQL Server). In-memory mode uses `InMemoryVectorStore` from the Memori package — data is lost on restart. SQLite stores vectors in `.memorycode/sqlvec.db` per repo. `pgvector` and `sqlserver` providers use `HybridStorageService` — symbols/relationships in EF Core relational tables, chunks in the vector store.
+Storage provider: `"inmemory"` (default, no dependencies), `"sqlite"` (persistent SQLite), `"pgvector"` (PostgreSQL with pgvector), or `"sqlserver"` (SQL Server). In-memory mode uses `InMemoryVectorStore` from the Memori package — data is lost on restart. SQLite stores vectors in `.codememory/sqlvec.db` per repo. `pgvector` and `sqlserver` providers use `HybridStorageService` — symbols/relationships in EF Core relational tables, chunks in the vector store.
 
 Each repo gets its own URL:
 
