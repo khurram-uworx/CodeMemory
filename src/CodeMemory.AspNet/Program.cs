@@ -1,5 +1,6 @@
 using CodeMemory.AspNet.Configuration;
 using CodeMemory.AspNet.Registry;
+using CodeMemory.AspNet.Scheduling;
 using CodeMemory.AspNet.Services;
 using CodeMemory.Indexing;
 using CodeMemory.Indexing.Chunking;
@@ -38,6 +39,8 @@ builder.Services.AddSingleton<IStorageService, StorageServiceRouter>();
 
 builder.Services.AddScoped<IndexingEngine>();
 builder.Services.AddHostedService<IndexingHostedService>();
+builder.Services.Configure<RebuildOptions>(builder.Configuration.GetSection("RebuildIndex"));
+builder.Services.AddHostedService<RebuildIndexHostedService>();
 
 // Query services
 builder.Services.AddSingleton<ISemanticSearchService, SemanticSearchService>();
