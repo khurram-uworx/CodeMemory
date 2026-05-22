@@ -14,7 +14,8 @@ jobs:
         include:
           - os: windows-latest
             rid: win-x64
-          # Future: linux-x64, osx-x64, osx-arm64
+          - os: ubuntu-latest
+            rid: linux-x64
 
     runs-on: ${{ matrix.os }}
 
@@ -35,9 +36,27 @@ jobs:
         $source = Resolve-Path "src/CodeMemory.Mcp/bin/Release/net10.0/${{ matrix.rid }}/publish"
         Compress-Archive -Path @(Get-ChildItem -Path $source | Select-Object -ExpandProperty FullName) -DestinationPath "code-memory-${{ matrix.rid }}.zip" -Force
 
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: code-memory-${{ matrix.rid }}
+        path: code-memory-${{ matrix.rid }}.zip
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: ./release-artifacts
+
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:
         name: CodeMemory ${{ github.ref_name }}
-        files: code-memory-${{ matrix.rid }}.zip
+        files: release-artifacts/**/*.zip
         fail_on_unmatched_files: true
