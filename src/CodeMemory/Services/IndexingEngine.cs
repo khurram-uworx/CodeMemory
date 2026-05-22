@@ -129,11 +129,13 @@ public sealed class IndexingEngine
         this.embeddingGenerator = embeddingGenerator;
     }
 
-    public async Task RunIndexingAsync(string repoRoot, CancellationToken ct)
+    public async Task RunIndexingAsync(string repoRoot, CancellationToken ct,
+        IProgress<double>? progress = null)
     {
         logger.LogInformation("Indexing engine starting — eager indexing of {RepoRoot}",
             repoRoot);
 
+        progress?.Report(0.0);
         await storage.InitializeAsync(ct);
 
         long fileCount = 0;
@@ -149,7 +151,9 @@ public sealed class IndexingEngine
         var parseResults = new List<(ParseResult Result, string FilePath)>();
         var fullNameToGuid = new Dictionary<string, string>();
 
-        await foreach (var entry in crawler.WalkAsync(repoRoot, cancellationToken: ct))
+        progress?.Report(0.01);
+        await foreach (var entry in crawler.WalkAsync(repoRoot,
+            onProgress: p => progress?.Report(0.01 + p * 0.94), cancellationToken: ct))
         {
             logger.LogDebug("Found file: {Path} ({Ext})", entry.RelativePath, entry.Extension);
             fileCount++;
@@ -286,12 +290,15 @@ public sealed class IndexingEngine
             logger.LogInformation("Project file detection: discovered {Count} components", componentMapping.Count);
         }
 
+        progress?.Report(0.95);
+
         var parsedInfo = $"parsed ({parsedCount} code, {textCount} text)";
         if (partialTextCount > 0)
             parsedInfo += $", partially parsed ({partialTextCount} text)";
 
         var relationshipsInfo = allSymbols.Count > 0 ? "extracted" : "0";
 
+        progress?.Report(1.0);
         logger.LogInformation(
             "Indexing complete — {Files} files, {ParsedInfo}, {Symbols} symbols, {Chunks} chunks, {Relationships} relationships",
             fileCount, parsedInfo, symbolCount, chunkCount, relationshipsInfo);

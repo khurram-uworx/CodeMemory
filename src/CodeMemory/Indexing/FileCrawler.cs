@@ -60,6 +60,7 @@ public sealed class FileCrawler
     public async IAsyncEnumerable<FileEntry> WalkAsync(
         string rootPath,
         GitIgnoreParser? ignoreParser = null,
+        Action<double>? onProgress = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         rootPath = Path.GetFullPath(rootPath);
@@ -67,14 +68,15 @@ public sealed class FileCrawler
 
         var rootUri = new Uri(rootPath + Path.DirectorySeparatorChar);
 
-        var directories = new Queue<string>();
-        directories.Enqueue(rootPath);
+        var directories = new Queue<(string Path, double Weight)>();
+        directories.Enqueue((rootPath, 1.0));
+        double completed = 0.0;
 
         while (directories.Count > 0)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var dir = directories.Dequeue();
+            var (dir, weight) = directories.Dequeue();
 
             try
             {
@@ -97,8 +99,13 @@ public sealed class FileCrawler
                     continue;
                 }
 
+                var filteredSubDirs = new List<string>(subDirs.Length);
                 foreach (var subDir in subDirs)
-                    directories.Enqueue(subDir);
+                {
+                    var subRelDir = getRelativePath(rootUri, subDir);
+                    if (!isDirIgnored(subRelDir, ignoreParser))
+                        filteredSubDirs.Add(subDir);
+                }
 
                 string[] files;
                 try
@@ -111,26 +118,30 @@ public sealed class FileCrawler
                     continue;
                 }
 
+                var fileList = new List<string>(files.Length);
                 foreach (var filePath in files)
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
-
                     var ext = Path.GetExtension(filePath);
                     if (allowedExtensions.Count > 0 && !allowedExtensions.Contains(ext))
                         continue;
 
                     var relPath = getRelativePath(rootUri, filePath);
+                    if (!isFileIgnored(relPath, ignoreParser))
+                        fileList.Add(filePath);
+                }
 
-                    if (isFileIgnored(relPath, ignoreParser))
-                    {
-                        logger.LogDebug("Skipping ignored file: {File}", relPath);
-                        continue;
-                    }
+                double childCount = fileList.Count + filteredSubDirs.Count;
+
+                foreach (var filePath in fileList)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
 
                     FileEntry entry;
                     try
                     {
                         var info = new FileInfo(filePath);
+                        var relPath = getRelativePath(rootUri, filePath);
+                        var ext = Path.GetExtension(filePath);
                         entry = new FileEntry(filePath, relPath, ext, info.LastWriteTimeUtc);
                     }
                     catch (Exception ex)
@@ -139,7 +150,17 @@ public sealed class FileCrawler
                         continue;
                     }
 
+                    var fileWeight = childCount > 0 ? weight / childCount : weight;
+                    completed += fileWeight;
+                    onProgress?.Invoke(completed);
+
                     yield return entry;
+                }
+
+                foreach (var subDir in filteredSubDirs)
+                {
+                    var subDirWeight = childCount > 0 ? weight / childCount : weight;
+                    directories.Enqueue((subDir, subDirWeight));
                 }
             }
             finally { }
