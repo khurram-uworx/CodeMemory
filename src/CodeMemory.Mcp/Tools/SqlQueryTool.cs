@@ -70,6 +70,10 @@ EXAMPLES:
   WITH counts AS (SELECT FilePath, COUNT(*) AS cnt FROM SymbolRecord GROUP BY FilePath) SELECT * FROM counts ORDER BY cnt DESC
   SELECT Name, Kind FROM (SELECT * FROM SymbolRecord) AS sub WHERE sub.Kind = 'Method'
   SELECT s.Name, COUNT(*) AS cnt FROM SymbolRecord s JOIN RelationshipRecord r ON s.Id = r.TargetSymbolId GROUP BY s.Name ORDER BY cnt DESC
+  SELECT Name || '::' || Kind AS combined FROM SymbolRecord WHERE Kind IN ('Class', 'Interface') LIMIT 10
+  SELECT Name, FilePath FROM SymbolRecord WHERE Kind = 'Method' AND (LineEnd - LineStart) BETWEEN 5 AND 50 ORDER BY Name
+  SELECT Kind, AVG(LineEnd - LineStart) AS avgLen, COUNT(*) AS cnt FROM SymbolRecord GROUP BY Kind ORDER BY avgLen DESC
+  SELECT c.Name, COUNT(*) AS methodCount FROM SymbolRecord c, SymbolRecord m WHERE m.Kind = 'Method' AND m.FullName LIKE c.FullName || '.%' AND c.Kind = 'Class' GROUP BY c.Name ORDER BY methodCount DESC LIMIT 10
 
 RETURNS JSON: success, rowCount, executionTimeMs, columns, rows, error
 ")]

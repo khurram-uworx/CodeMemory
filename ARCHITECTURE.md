@@ -1,8 +1,4 @@
-# CodeMemory Architecture
-
-## What It Is
-
-A repository intelligence substrate that indexes codebases into a queryable semantic memory layer, exposed entirely via MCP (Model Context Protocol).
+# CodeMemory Architecture — repository intelligence substrate exposed via MCP
 
 ---
 
@@ -276,6 +272,8 @@ Configurable via `Storage:Provider` in appsettings.json:
 
 Relational providers (`sqlite`/`pgvector`/`sqlserver`) use `HybridStorageService` — symbols and relationships in EF Core tables for efficient relational SQL, chunks in the vector store for similarity search. The `Mcp` (stdio) host always uses `InMemoryVectorStore` only.
 
+> **VectorData version pin:** `Microsoft.Extensions.VectorData.Abstractions` is pinned at `10.1.0` — the highest version compatible with `Microsoft.SemanticKernel.Connectors.SqliteVec 1.74.0-preview`. Newer `10.x` versions add members to `VectorSearchOptions<T>` that cause `MissingMethodException` in the SK connector. Bump only when the SK connector's minimum dependency moves past `10.1.0`.
+
 ### Why Memori for Both Embeddings and In-Memory Storage
 
 Memori was chosen as the default for two reasons that together eliminate external dependencies for a smooth out-of-box experience:
@@ -338,33 +336,6 @@ Query methods on `IStorageService`:
 | `CollectionRegistry` | `CodeMemory.Mcp.SqlQuery` | Table name → VectorStore collection mapping (SymbolRecord, ChunkRecord, RelationshipRecord) |
 | `SqlExpressionBuilder` | `CodeMemory.Mcp.SqlQuery` | SQL WHERE AST → `Expression<Func<TRecord, bool>>` via `System.Linq.Expressions` |
 | `TableSchemaProvider` | `CodeMemory.Mcp.SqlQuery` | Reflective column metadata for MCP tool descriptions |
-
----
-
-## MCP Tool Surface
-
-Tools auto-discovered via `AddMcpServer()` from `CodeMemory.AspNet.Program.cs` (registration from both `typeof(McpTools).Assembly` and `typeof(AspNetSqlQueryTool).Assembly`):
-
-| Tool | Description |
-|---|---|
-| `ping` | Returns `{"status":"ok","indexingCompleted":true}` or `{"status":"ok","indexingCompleted":false,"message":"..."}` — agents must back off and retry if `indexingCompleted` is false. Non-blocking indexing means this is the only way to know the index is ready. |
-| `semantic_search` | Natural language code search with optional similarity threshold |
-| `trace_dependency` | Symbol dependency tracing (upstream/downstream/both, configurable depth) |
-| `get_architecture_overview` | Repository structure overview (components, languages, file/symbol counts) |
-| `get_edit_context` | Context-aware editing scope for a symbol (source, deps, related symbols, tests) |
-| `find_related_code` | Find related symbols via dependency graph (breadth-first, filterable by type) |
-| `impact_analysis` | Change impact analysis (downstream deps, affected files, components, test coverage) |
-| `get_component_clusters` | Logical component groupings based on inter-component coupling |
-| `get_symbol_history` | Git commit history for a symbol (commits, authors, dates, recent commits) |
-| `get_hotspots` | Most frequently changed files ranked by commit count |
-| `sql_query` | SQL queries over indexed repo data — symbols/relationships via relational SQL on AspNet (`AspNetSqlQueryTool` → EF Core), or via SqlParserCS → LINQ over InMemoryVectorStore on Mcp (SELECT/WHERE/ORDER BY/GROUP BY/HAVING, CTEs, derived tables, aggregates, vector search via `ORDER BY Similarity DESC`) |
-| `rescan_repository` | Trigger full re-index of the current repository (clear all data, re-scan, re-store) |
-| `get_repository_root` | Returns the root path of the currently active repository |
-
-All tools return structured JSON. Tools with external service dependencies use `GetService<T>` fallback — gracefully degrade when backing services are unavailable.
-
-**AspNet-specific tools** (registered from `CodeMemory.AspNet.Tools` assembly):
-- `AspNetSqlQueryTool` — SQL query execution on relational backends (sqlite/pgvector/sqlserver) via EF Core. Translates logical table names (`SymbolRecord` → `symbols`, `ChunkRecord` → `chunks`, `RelationshipRecord` → `relationships`), wraps column identifiers per provider dialect.
 
 ---
 

@@ -1,6 +1,7 @@
 # CodeMemory
 
-Repository intelligence substrate — a persistent, queryable semantic memory layer for codebases, exposed via the Model Context Protocol (MCP).
+> Local-first repository intelligence engine exposed via the Model Context Protocol (MCP).
+> Build a persistent semantic memory layer over any codebase.
 
 Build architecture-aware AI agents that understand symbols, dependencies, semantics, and git history — without coupling to a specific database, LLM, or embedding provider.
 
@@ -30,8 +31,8 @@ dotnet add package CodeMemory
 
 ```csharp
 // Minimal setup — in-memory storage, offline n-gram embeddings
+services.AddSingleton<IStorageService>(CreateInMemoryStorage(/* repoRoot */));
 services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>, NgramEmbeddingGenerator>();
-services.AddKeyedSingleton("default", (sp, _) => /* configure IStorageService */);
 services.AddSingleton<DependencyGraphService>();
 services.AddSingleton<ArchitectureService>();
 services.AddSingleton<ComponentClusteringService>();
@@ -40,6 +41,8 @@ services.AddSingleton<SemanticSearchService>();
 services.AddSingleton<SqlQueryService>();
 services.AddSingleton<CollectionRegistry>();
 ```
+
+Storage is registered via factory methods (see `CodeMemory.Storage.ServiceCollectionExtensions` or `CreateInMemoryStorage` on `IServiceProvider`). For the ASP.NET multi-repo host, storage is registered at runtime via `IServiceRegistry.Register(name, storage)` and routed through `StorageServiceRouter`.
 
 ## Key Dependencies
 

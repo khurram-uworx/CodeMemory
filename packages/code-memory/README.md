@@ -50,20 +50,20 @@ The `@uworx/code-memory` package is a lightweight CLI wrapper. On `npm install`,
 ## MCP Tools
 
 | Tool | What it gives you |
-|---|---|
-| `semantic_search` | Natural language code search |
-| `trace_dependency` | What depends on what (upstream/downstream) |
-| `get_architecture_overview` | Component structure, language breakdown |
-| `get_edit_context` | Source code + deps + tests for a symbol |
-| `find_related_code` | Related symbols by relationship type |
-| `impact_analysis` | Change impact: affected files, components, tests |
-| `get_component_clusters` | Logical groupings by inter-component coupling |
-| `get_symbol_history` | Git commit history for a symbol |
-| `get_hotspots` | Most frequently changed files |
-| `sql_query` | SQL queries over indexed data (SELECT/WHERE/ORDER BY/GROUP BY/HAVING, CTEs, derived tables, aggregates, vector search via `ORDER BY Similarity DESC`) |
-| `rescan_repository` | Trigger full re-index of the current repository |
-| `get_repository_root` | Returns the root path of the active repository |
+|---|---|---|
 | `ping` | Health check + indexing status (`indexingCompleted`, `fileWatcherActive`) |
+| `semantic_search` | Natural language code search with optional similarity threshold |
+| `trace_dependency` | Symbol dependency tracing (upstream/downstream/both, configurable depth) |
+| `get_architecture_overview` | Component structure, language breakdown, file/symbol counts |
+| `get_edit_context` | Source code, dependency chains, related symbols, and test coverage for a symbol |
+| `find_related_code` | Related symbols via dependency graph (breadth-first, filterable by type) |
+| `impact_analysis` | Change impact — downstream dependencies, affected files, components, test coverage |
+| `get_component_clusters` | Logical groupings based on inter-component coupling density |
+| `get_symbol_history` | Git commit history for a symbol (commits, authors, dates) |
+| `get_hotspots` | Most frequently changed files ranked by commit count |
+| `sql_query` | SQL queries over indexed data — SELECT/WHERE/ORDER BY/GROUP BY/HAVING, CTEs, derived tables, aggregates, vector search via `ORDER BY Similarity DESC` |
+| `rescan_repository` | Trigger full re-index (clear all data, re-scan, re-store) |
+| `get_repository_root` | Returns the root path of the currently active repository |
 
 All tools return structured JSON.
 

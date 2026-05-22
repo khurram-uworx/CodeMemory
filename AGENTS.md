@@ -8,59 +8,29 @@ Engineering constraints and implementation guidance for AI coding agents contrib
 
 ---
 
-## Core Principle
+## Domain Boundaries
 
 Do not reinvent infrastructure. Prefer existing .NET and ecosystem primitives over custom solutions.
 
 Forbidden: custom LLM clients, custom embedding pipelines (use `IEmbeddingGenerator` — reference implementation in Memori NuGet), custom DI, custom vector DBs, custom chat orchestration.
 
-Memori was adopted for both embedding generation (`NgramEmbeddingGenerator`) and in-memory vector storage (`InMemoryVectorStore`) to provide a **zero-dependency out-of-box experience** — no API keys, no model downloads, no database native binaries required for the default configuration.
+CodeMemory is NOT: an IDE, a chat assistant, a code generator, or a standalone AI agent runtime. It IS: a repository intelligence and memory substrate exposed via MCP.
 
 ---
 
-## MCP-First Design
+## Feature Development
 
-MCP is the **only** external interface. Every feature MUST be exposed as an MCP tool.
-
-Tool rules:
-- deterministic where possible, return structured JSON
-- no freeform prompting or unstructured text blobs inside tool logic
-- composable (tools should work independently and together)
-
----
-
-## AI Agent Behavior
-
-- Prefer composition over new frameworks
-- Reuse .NET primitives first
-- Document reasoning for non-standard decisions
-- Default to: `Microsoft.Extensions.AI`, `VectorData` abstractions, MCP exposure, Memori for embedding implementation
-
----
-
-## Extensibility
-
-New features MUST:
-- extend the MCP tool surface
-- reuse existing abstractions
-- not introduce parallel frameworks
-
----
-
-## Non-Goals
-
-CodeMemory is NOT: an IDE, a chat assistant, a code generator, or a standalone AI agent runtime.
-
-It IS: a repository intelligence and memory substrate exposed via MCP. Includes dependency graphs, architecture overviews, component clustering, git history, file watcher auto-reindexing, and SQL query engine — all accessible through MCP tools.
+- **MCP-First** — Every feature MUST be exposed as a deterministic, composable MCP tool returning structured JSON. No freeform prompting or unstructured text blobs inside tool logic.
+- **Defaults** — `Microsoft.Extensions.AI`, `VectorData` abstractions, MCP exposure, Memori for embedding implementation
+- **Reuse** — Prefer .NET and ecosystem primitives over custom solutions; prefer composition over new frameworks
+- **Extensibility** — New features MUST extend the MCP tool surface, reuse existing abstractions, and not introduce parallel frameworks
+- **Document** — Record reasoning for non-standard decisions
 
 ---
 
 ## Long-Term Vision
 
-All contributions must reinforce:
-
 > A persistent, queryable, semantic memory layer for software systems.
-
 Anything that does not improve repository cognition is out of scope.
 
 ---
@@ -73,29 +43,17 @@ Use `docs/TASKS-TEMPLATE.md` for new task breakdowns. Each task must include: Pr
 
 ## Project Structure
 
-Four projects:
-- **`CodeMemory`** — Pure library (`Microsoft.NET.Sdk`, `OutputType Library`). No ASP.NET dependency. Contains all service logic, MCP tool definitions, storage interfaces, and models. Includes `IndexingState` static class tracking per-repo indexing completion.
-- **`CodeMemory.Storage`** — Vector store providers (SQLite + In-memory). References `CodeMemory` for interfaces and model types. Depends on `Memori` NuGet for `InMemoryVectorStore`.
-- **`CodeMemory.Mcp`** — Standalone stdio MCP server for single-repo agent usage. Uses `WithStdioServerTransport`. Takes optional `--repo <path>` argument. Indexing is **non-blocking** — starts in background `Task.Run`, server loop starts immediately. After indexing, `FileWatcherService` auto-reindexes file changes.
-- **`CodeMemory.AspNet`** — ASP.NET Core host. Owns `Program.cs`, DI registration, MCP Streamable HTTP transport, `BackgroundService` lifecycle (`IndexingHostedService`), enterprise portal (Razor Pages), repo registry, and clone/index service.
-
-### Key rules
-
-- Services with `BackgroundService` inheritance MUST live in `CodeMemory.AspNet`. Core indexing logic (`IndexingEngine`) lives in `CodeMemory` and is wrapped by `IndexingHostedService` in `CodeMemory.AspNet`.
-- MCP tool types live in two places: `CodeMemory.Mcp` namespace (core tools — `McpTools`, `AdminTool`, `SemanticSearchTool`, tool services) and `CodeMemory.AspNet.Tools` (AspNet-specific — `AspNetSqlQueryTool`). Registration in `CodeMemory.AspNet.Program.cs` uses both `WithToolsFromAssembly(typeof(McpTools).Assembly)` and `WithToolsFromAssembly(typeof(AspNetSqlQueryTool).Assembly)`.
-- `IStorageService` interface and storage models (`SymbolRecord`, `ChunkRecord`, etc.) live in `CodeMemory.Storage.Services` / `CodeMemory.Storage.Models` namespaces but in the `CodeMemory` assembly.
+See ARCHITECTURE.md §Project Structure. Key rules:
+- `BackgroundService` MUST live in `CodeMemory.AspNet`. Core indexing logic (`IndexingEngine`) lives in `CodeMemory` library.
+- MCP tool types live in `CodeMemory.Mcp` namespace (core tools) and `CodeMemory.AspNet.Tools` (AspNet-specific)
+- `IStorageService` interface and storage models live in `CodeMemory` assembly
 
 ### Multi-Repo Architecture
 
-Multi-repo support uses **`StorageServiceRouter` + `IRepoContextAccessor` + per-repo MCP endpoints** — no keyed DI, no middleware, no `RequestServices` swap.
-
-- **`IServiceRegistry`** / **`ServiceRegistry`** (`CodeMemory.AspNet/Configuration/`) — thread-safe registry of per-repo `IStorageService` instances keyed by repo name. Generalization of the removed `IStorageServiceRegistry` to support future service types beyond storage.
-- **`StorageServiceRouter`** (`CodeMemory.AspNet/Configuration/`) — implements `IStorageService`, delegates to per-repo storage based on `IRepoContextAccessor.CurrentRepoName`. All 15 methods forward with `GetStorage()`.
-- **`IRepoContextAccessor`** / **`RepoContextAccessor`** (`CodeMemory.AspNet/Configuration/`) — `AsyncLocal<string?>` ambient context, singleton-safe, no scoped DI needed.
-- **`ConfigureSessionOptions`** — MCP SDK callback in `Program.cs` that extracts repo name from path `/api/mcp/{repoName}` and sets `IRepoContextAccessor.CurrentRepoName`.
-- **`IStorageService` is the only per-repo concern** — all other services (`DependencyGraphService`, `ArchitectureService`, etc.) stay non-keyed singletons resolving from `StorageServiceRouter`.
-- `Stateless = true` (Streamable HTTP) — no session affinity, no SSE, each request self-contained.
-- `PerSessionExecutionContext = true` preserves `AsyncLocal` flow to tool handlers.
+See ARCHITECTURE.md §Multi-Repo Architecture. Key constraints:
+- `IStorageService` is the **only** per-repo concern — all other services stay non-keyed singletons
+- `Stateless = true` (Streamable HTTP) — no session affinity
+- `PerSessionExecutionContext = true` preserves `AsyncLocal` flow to tool handlers
 
 ## Non-Blocking Indexing & Ping Contract
 
@@ -125,8 +83,47 @@ or when still indexing:
 - **In-memory storage (`Storage:Provider: "inmemory"`)** loses all data on restart — do not use for production persistence. SQLite (`"sqlite"`) persists vectors in `.codememory/sqlvec.db`. For production persistence, use `"pgvector"` or `"sqlserver"` providers with `HybridStorageService`.
 - **Ping before use** — indexing is non-blocking in both hosts; agents MUST poll `ping` until `indexingCompleted: true` (see [Non-Blocking Indexing](#non-blocking-indexing--ping-contract) above).
 - The `IndexingState` static class uses `ConcurrentDictionary` — it is process-scoped. In multi-repo ASP.NET, `IndexingState.IsCompleted()` without a repo name checks all repos are done.
-- **`sql_query` MCP tool parses SQL via SqlParserCS and executes against InMemoryVectorStore** — WHERE clauses become LINQ expression trees via `SqlExpressionBuilder`. Only `SELECT` is supported. The SQL surface maps to three tables (`SymbolRecord`, `ChunkRecord`, `RelationshipRecord`). `InMemoryVectorStore` is the only supported backend; SQLite backend returns a clear error. Vector search is triggered by `ORDER BY Similarity DESC` on `ChunkRecord` queries (requires `Content LIKE '%pattern%'` in WHERE). CTE/derived-table outer queries also support `ORDER BY Similarity DESC` — the results are re-ranked by computing cosine similarity against the store's original embeddings (looked up by `Id`), with no vector data copied. Aggregates (`COUNT`/`SUM`/`AVG`/`MIN`/`MAX`), `GROUP BY`, `DISTINCT`, and `HAVING` are applied client-side after fetching all matching rows. CTEs (non-recursive) and derived tables (`FROM (subquery) AS alias`) are supported — both share the same `executeCteSubqueryAsync` infrastructure and compose together.
+- **`sql_query` MCP tool** requires `InMemoryVectorStore` — `"sqlite"`/`"pgvector"`/`"sqlserver"` returns an error. Full syntax reference in the tool's `[Description]`, discoverable via `tools/list`.
 
-## Summary
+## Error Handling
 
-When uncertain: use `Microsoft.Extensions.AI` abstractions, expose via MCP, avoid reinventing infrastructure, and prioritize repository understanding over feature expansion. Architecture intelligence services (`DependencyGraphService`, `ArchitectureService`, `ComponentClusteringService`, `GitHistoryService`) follow the same patterns — compose existing abstractions, register in `CodeMemory.AspNet/Program.cs`, expose via MCP tools. Embedding implementations come from the `Memori` NuGet package.
+MCP tools use three patterns — follow the one matching your return type:
+
+| Return Type | Error Pattern | Examples |
+|---|---|---|
+| `string` | `try/catch` → `JsonSerializer.Serialize(new { status="error", message=ex.Message })` | `AdminTool`, `McpTools.Ping` |
+| Typed record | Null-service guard → []; sentinel with `Warning` field; exceptions propagate to SDK | All `CodeMemory` library tools |
+| `IDictionary<string, object?>` | `fail()` helper → `{ success: false, error: msg }` | `AspNetSqlQueryTool` |
+
+- Log failures (`logger.LogWarning` for degraded paths, `logger.LogError` for exceptions) — do not rely on exceptions as the communication channel.
+- Tools with external service dependencies use `GetService<T>` fallback — gracefully degrade when backing services are unavailable.
+- MCP SDK serializes typed record returns; unexpected exceptions become JSON-RPC errors automatically.
+
+## Testing
+
+- **Framework:** NUnit 4.x — `[Test]`, `Assert.That(...)`, `Assert.ThrowsAsync`, no `[TestCase]`
+- **Mocking:** Hand-written stubs in `MockServices.cs` — no mocking library dependency
+- **Naming:** `Method_Scenario_ExpectedBehavior` PascalCase
+- **Pattern:** Arrange-Act-Aggregate (AAA, no explicit comments needed)
+- **Organization:** Mirror `src/` layout; one class per file, `*Tests.cs` suffix
+- **Base classes:** `BaseToolTests` (MCP integration), `BaseServicesTests` (service tests with real SQLite)
+- **Shared:** `MockServices.cs`, `TestLogger<T>`, `TestConstants`, `TestRepoHelper`, `fixtures/`
+
+## Code Style
+
+`.editorconfig` at repo root is authoritative. Key conventions not covered there:
+
+- **Primary constructors:** Preferred for service/DI classes over classic constructor with `this.` field assignment
+- **`sealed class`:** Default for non-abstract classes
+- **`readonly` fields:** All DI-injected services
+- **Collection expressions:** `[]` for empty/static, `new List<T>()` for mutable
+- **Private fields:** No underscore prefix (`logger` not `_logger`)
+
+## DI Conventions
+
+- **Prefer `AddSingleton`** for all services. `IndexingEngine` is the sole `AddScoped` exception (AspNet only, per-repo scoping).
+- **Register in `Program.cs`** — no auto-scanning, no shared DI modules.
+- **MCP tools:** `[McpServerToolType]` class → discovered via `WithToolsFromAssembly(...)`. Tool instances resolved through DI (constructor injection of singletons).
+- **Per-repo storage:** Bypasses DI — registered at runtime via `IServiceRegistry.Register(name, storage)` (thread-safe `ConcurrentDictionary` inside `ServiceRegistry`).
+- **Storage providers:** use `IServiceCollection` extension methods (`AddCodeMemoryInMemoryStorage`, etc.) or factory methods (`CreateInMemoryStorage`).
+
