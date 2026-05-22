@@ -75,7 +75,8 @@ All tools return structured JSON.
 ## Supported Platforms
 
 - **Windows**: x64
-- *Linux and macOS: coming soon*
+- **Linux**: x64
+- *macOS: coming soon*
 
 ## Indexing Note
 

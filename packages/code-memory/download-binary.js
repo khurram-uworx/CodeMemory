@@ -11,7 +11,7 @@ const repo = 'khurram-uworx/CodeMemory';
 // Maps Node.js process platform+arch to .NET runtime identifiers (RIDs)
 const ridMap = {
   'win32-x64': 'win-x64',
-  // Future: 'linux-x64': 'linux-x64',
+  'linux-x64': 'linux-x64',
   // Future: 'darwin-x64': 'osx-x64',
   // Future: 'darwin-arm64': 'osx-arm64',
 };
@@ -92,6 +92,14 @@ function handleResponse(originalUrl, res) {
     try {
       const zip = new AdmZip(tmpPath);
       zip.extractAllTo(destDir, true);
+
+      // Ensure executable bit on Linux/macOS — zip may not preserve it
+      if (process.platform !== 'win32') {
+        try {
+          fs.chmodSync(path.join(destDir, 'CodeMemory.Mcp'), 0o755);
+        } catch { /* best effort */ }
+      }
+
       console.log(`  Extracted to ${destDir}`);
       cleanup();
       console.log('Done.');

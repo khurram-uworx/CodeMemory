@@ -1,3 +1,7 @@
+volumes:
+  pgvector_data:
+  cloned_repos:
+
 services:
   postgres:
     image: pgvector/pgvector:pg16
@@ -5,8 +9,8 @@ services:
       POSTGRES_USER: codememory
       POSTGRES_PASSWORD: codememory
       POSTGRES_DB: codememory
-    ports:
-      - "5432:5432"
+    # ports:
+    #   - "5432:5432"
     volumes:
       - pgvector_data:/var/lib/postgresql/data
     healthcheck:
@@ -33,7 +37,3 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-
-volumes:
-  pgvector_data:
-  cloned_repos:
