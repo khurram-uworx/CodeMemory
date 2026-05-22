@@ -39,12 +39,23 @@ CodeMemory/
 │   │       ├── CollectionRegistry.cs
 │   │       └── TableSchemaProvider.cs
 │   ├── CodeMemory.AspNet/        # ASP.NET Core host + BackgroundService
-│   │   ├── Configuration/        # ServiceRegistry, StorageServiceRouter, RepoContextAccessor
-│   │   ├── Services/             # IndexingHostedService (BackgroundService wrapper)
+│   │   ├── Configuration/        # ServiceRegistry, StorageServiceRouter, RepoContextAccessor, StorageBootstrapper
+│   │   ├── Registry/             # RepoRegistryDbContext, RepoRegistryService, RepoRegistryOptions
+│   │   ├── Services/             # IndexingHostedService, CloneIndexService
+│   │   ├── Storage/              # HybridStorageService, CodeMemoryDbContext, EF Core models + mappings
+│   │   │   └── PgVector/         # PgVectorCollection, PgVectorStore, PgVectorOptions
+│   │   ├── Tools/                # AspNetSqlQueryTool (relational SQL via EF Core)
+│   │   ├── Pages/                # Razor Pages UI (enterprise portal: repo management, status)
 │   │   ├── Program.cs            # Host entry point, DI, MCP + HTTP setup
 │   │   └── appsettings.json
-│   └── CodeMemory.Tests/         # NUnit tests
-├── docs/
+│   ├── CodeMemory.Tests/         # NUnit tests (moved from src/ to tests/ root)
+│   └── CodeMemory.Mcp/           # Standalone stdio MCP server
+│       └── SqlQuery/             # SQL query engine: SqlParserCS → LINQ over InMemoryVectorStore
+├── packages/
+│   └── code-memory/              # @uworx/code-memory npm package
+│       ├── bin/code-memory.js    # self-contained .NET binary downloader + launch
+│       └── README.md
+├── docs/                         # Architecture docs, SQL JOINs, TreeSitter, Vectors, releasing
 ├── AGENTS.md                     # Agent engineering guidelines
 └── ARCHITECTURE.md               # This file
 ```
@@ -59,22 +70,30 @@ CodeMemory (library — no ASP.NET dep)
   ├── System.Numerics.Tensors                    (TensorPrimitives.Norm for normalization)
   ├── ModelContextProtocol                       (MCP server types + tool attributes)
   ├── Microsoft.CodeAnalysis.CSharp              (Roslyn parsing for C#)
-  ├── TreeSitter.DotNet                          (Tree-sitter parsing for TS/JS/Java)
+  ├── TreeSitter.DotNet                          (Tree-sitter parsing for TS/JS/Java/Python/Go/Rust/C/C++)
+  ├── SqlParserCS                                (SQL parsing for Mcp + AspNet query paths)
   └── CodeMemory.Storage                         (vector store providers)
         ├── Memori                               (InMemoryVectorStore, NgramEmbeddingGenerator)
-        └── Microsoft.SemanticKernel.Connectors.SqliteVec  (SQLite IVectorStore)
+        ├── Microsoft.SemanticKernel.Connectors.SqliteVec  (SQLite IVectorStore)
+        ├── Microsoft.SemanticKernel.Connectors.PgVector   (PostgreSQL IVectorStore)
+        └── Microsoft.SemanticKernel.Connectors.SqlServer  (SQL Server IVectorStore)
 
 CodeMemory.AspNet (ASP.NET host)
   ├── CodeMemory                                 (core library)
   ├── CodeMemory.Storage                         (vector store provider)
   ├── ModelContextProtocol.AspNetCore            (MCP Streamable HTTP transport)
+  ├── Microsoft.EntityFrameworkCore              (relational storage for symbols/relationships)
   └── Microsoft.Extensions.AI.Abstractions       (embedding generator DI)
+
+CodeMemory.Mcp (stdio MCP host)
+  ├── CodeMemory                                 (core library)
+  └── CodeMemory.Storage                         (vector store providers — InMemoryVectorStore only)
 ```
 
 Rules:
 - `CodeMemory` is a pure library (`Microsoft.NET.Sdk`, `OutputType Library`) with zero ASP.NET dependency
 - `CodeMemory.AspNet` owns all ASP.NET hosting concerns: `Program.cs`, DI registration, MCP HTTP transport, `BackgroundService` lifecycle
-- `CodeMemory.Storage` holds both SQLite (`SqliteVectorStore`) and in-memory (`InMemoryVectorStore`) providers; swappable via `Storage:Provider` config key
+- `CodeMemory.Storage` holds all vector store providers (in-memory, SQLite, PostgreSQL, SQL Server); swappable via `Storage:Provider` config key
 - `IEmbeddingGenerator<string, Embedding<float>>` is provided by the `Memori` NuGet package via DI — optional in `StorageService` constructor (accepts null, no chunk storage), but always registered in the default DI wiring
 - `IndexingEngine` (logic) lives in `CodeMemory.Services`; `IndexingHostedService` (BackgroundService wrapper) lives in `CodeMemory.AspNet.Services`
 - MCP tool types live in two places: `CodeMemory.Mcp` namespace (core tools) and `CodeMemory.AspNet.Tools` (AspNet-specific). Registration in `CodeMemory.AspNet.Program.cs` uses both `WithToolsFromAssembly(typeof(McpTools).Assembly)` and `WithToolsFromAssembly(typeof(AspNetSqlQueryTool).Assembly)`
@@ -105,9 +124,14 @@ Startup
   │         │         └─ accumulate symbols + relationships + chunks
   │         │    │
   │         │    │  Language routing:
-  │         │    │    .cs        → RoslynCSharpParser + RoslynSymbolExtractor + ...
-  │         │    │    .ts/.js    → TreeSitterParser + TreeSitterSymbolExtractor + ...
-  │         │    │    .java      → TreeSitterParser + TreeSitterSymbolExtractor + ...
+  │         │    │    .cs             → RoslynCSharpParser + RoslynSymbolExtractor + ...
+  │         │    │    .ts/.tsx/.js    → TreeSitterParser + TreeSitterSymbolExtractor + ...
+  │         │    │    .java           → TreeSitterParser + TreeSitterSymbolExtractor + ...
+  │         │    │    .py             → TreeSitterParser + TreeSitterSymbolExtractor + ...
+  │         │    │    .go             → TreeSitterParser + TreeSitterSymbolExtractor + ...
+  │         │    │    .rs             → TreeSitterParser + TreeSitterSymbolExtractor + ...
+  │         │    │    .c/.h/.cpp/...  → TreeSitterParser + TreeSitterSymbolExtractor + ...
+  │         │    │    .txt/.md        → ILanguageParser (TextReader only) — no extraction
   │         │    │
   │         │    ├─ storage.StoreSymbolsAsync(allSymbols)
   │         │    ├─ storage.StoreRelationshipsAsync(allRelationships)
@@ -184,6 +208,25 @@ Storage schema metadata via TableSchemaProvider:
   └─ DescribeAll() → formatted text for MCP tool [Description] attribute
 ```
 
+### File Watcher (Post-Indexing Auto-Reindex)
+
+After initial indexing completes, `FileWatcherService` monitors the repo directory via `FileSystemWatcher`:
+
+```
+Indexing completes
+  └─ FileWatcherService.StartAsync()
+       ├─ FileSystemWatcher on repo root (NotifyFilter: LastWrite, FileName)
+       ├─ debounceTimer (1s) — coalesces rapid file change events
+       └─ on debounce tick:
+            ├─ batch-reindex changed files:
+            │    ├─ for each modified file: delete old symbol+chunk, parse, extract, store
+            │    └─ for each created file: parse, extract, store symbols + chunks
+            ├─ for each deleted file: remove symbols + chunks from storage
+            └─ batch complete → next debounce cycle
+```
+
+The `ping` tool includes `"fileWatcherActive":true` once the watcher is running. Only active in the stdio Mcp host; AspNet host uses full re-index on startup.
+
 ### Architecture Intelligence Queries
 
 ```
@@ -218,10 +261,20 @@ get_symbol_history / get_hotspots
 ## Storage Providers
 
 Configurable via `Storage:Provider` in appsettings.json:
+
+| Provider | Vector Store | Relational Store | Symbol/Relationship Query | Chunk Query |
+|---|---|---|---|---|
+| `"inmemory"` | `InMemoryVectorStore` (Memori) | None — all in vector store collections | LINQ over `InMemoryVectorStore` | LINQ over `InMemoryVectorStore` |
+| `"sqlite"` | `SqliteVectorStore` (SK) | EF Core SQLite (`CodeMemoryDbContext`) | SQL via EF Core (`AspNetSqlQueryTool`) | Vector store (`semantic_search`) |
+| `"pgvector"` | `PostgresVectorStore` (SK) | EF Core Npgsql | SQL via EF Core (`AspNetSqlQueryTool`) | Vector store (`semantic_search`) |
+| `"sqlserver"` | `SqlServerVectorStore` (SK) | EF Core SQL Server | SQL via EF Core (`AspNetSqlQueryTool`) | Vector store (`semantic_search`) |
+
 - **`"inmemory"`** (default) — `InMemoryVectorStore` from Memori. No persistence, data lost on restart. No external dependencies. Best for CI/testing/agent sessions.
 - **`"sqlite"`** — `SqliteVectorStore` via `Microsoft.SemanticKernel.Connectors.SqliteVec`. Persistent storage at `.codememory/sqlvec.db` per repo. Uses `HybridStorageService` — symbols/relationships in EF Core SQLite tables, chunks in vector store.
 - **`"pgvector"`** — `PostgresVectorStore` + EF Core PostgreSQL (Npgsql). Per-repo schema isolation. Requires PostgreSQL + pgvector extension.
 - **`"sqlserver"`** — `SqlServerVectorStore` + EF Core SQL Server. Per-repo schema isolation. Requires SQL Server.
+
+Relational providers (`sqlite`/`pgvector`/`sqlserver`) use `HybridStorageService` — symbols and relationships in EF Core tables for efficient relational SQL, chunks in the vector store for similarity search. The `Mcp` (stdio) host always uses `InMemoryVectorStore` only.
 
 ### Why Memori for Both Embeddings and In-Memory Storage
 
@@ -304,9 +357,14 @@ Tools auto-discovered via `AddMcpServer()` from `CodeMemory.AspNet.Program.cs` (
 | `get_component_clusters` | Logical component groupings based on inter-component coupling |
 | `get_symbol_history` | Git commit history for a symbol (commits, authors, dates, recent commits) |
 | `get_hotspots` | Most frequently changed files ranked by commit count |
-| `sql_query` | SQL queries over indexed repo data — symbols/relationships via relational SQL on AspNet, or via SqlParserCS → LINQ over InMemoryVectorStore on Mcp (SELECT/WHERE/ORDER BY/GROUP BY/HAVING, CTEs, derived tables, aggregates, vector search via `ORDER BY Similarity DESC`) |
+| `sql_query` | SQL queries over indexed repo data — symbols/relationships via relational SQL on AspNet (`AspNetSqlQueryTool` → EF Core), or via SqlParserCS → LINQ over InMemoryVectorStore on Mcp (SELECT/WHERE/ORDER BY/GROUP BY/HAVING, CTEs, derived tables, aggregates, vector search via `ORDER BY Similarity DESC`) |
+| `rescan_repository` | Trigger full re-index of the current repository (clear all data, re-scan, re-store) |
+| `get_repository_root` | Returns the root path of the currently active repository |
 
 All tools return structured JSON. Tools with external service dependencies use `GetService<T>` fallback — gracefully degrade when backing services are unavailable.
+
+**AspNet-specific tools** (registered from `CodeMemory.AspNet.Tools` assembly):
+- `AspNetSqlQueryTool` — SQL query execution on relational backends (sqlite/pgvector/sqlserver) via EF Core. Translates logical table names (`SymbolRecord` → `symbols`, `ChunkRecord` → `chunks`, `RelationshipRecord` → `relationships`), wraps column identifiers per provider dialect.
 
 ---
 
@@ -355,6 +413,30 @@ All tools return structured JSON. Tools with external service dependencies use `
 - In-memory `ConcurrentDictionary` cache with 5-minute TTL and periodic cleanup
 - Graceful degradation in non-git repos or when git is unavailable
 - Used by: `get_symbol_history`, `get_hotspots`
+
+## Enterprise Portal (AspNet Razor Pages)
+
+The AspNet host includes a lightweight web UI for managing repositories remotely:
+
+### Features
+- **Add repos** — specify a local path or GitHub URL (auto-cloned to `CloneBasePath`)
+- **Status dashboard** — per-repo indexing status, clone progress, error messages
+- **Registry-backed** — `RepoRegistryDbContext` (SQLite/SQL Server/PostgreSQL) persists repo configurations across restarts
+
+### Architecture
+```
+Razor Pages UI (GET/POST /Repos/Add, GET /)
+  └─ RepoRegistryService
+       ├─ ListAsync / GetAsync — read from RepoRegistryDbContext (EF Core)
+       └─ CreateRepoAsync — insert new repo config
+            └─ CloneIndexService
+                 ├─ git clone (if URL) into CloneBasePath/{repoName}
+                 ├─ create per-repo storage (IStorageService)
+                 ├─ run IndexingEngine → store symbols/chunks/relationships
+                 └─ register in ServiceRegistry for MCP endpoint
+```
+
+REST endpoints (`GET /api/repos`, `GET /api/repos/{name}/status`) expose registry data for external monitoring.
 
 ## Multi-Repo Architecture
 
@@ -421,8 +503,8 @@ foreach (var (name, path) in repositories)
 
 ## Current Constraints & Limitations
 
-- Indexing: full re-index on each startup (incremental planned); non-blocking in both hosts — `ping` reports `indexingCompleted` status
-- C#, TypeScript, JavaScript, Java for symbol extraction and relationships; other languages get file-level crawling only
+- Indexing: full re-index on each startup (incremental planned); non-blocking in both hosts — `ping` reports `indexingCompleted` status. Mcp host supports file-watcher-based incremental reindexing post-startup.
+- C#, TypeScript/TSX, JavaScript/JSX, Java, Python, Go, Rust, C/C++ for full symbol extraction and relationships; text and markdown files indexed as ChunkRecord with Language='Text' (no symbol extraction)
 - Embedding dimension is auto-detected from the registered `IEmbeddingGenerator` metadata (default 1536, provided by Memori's `NgramEmbeddingGenerator`)
 - Relationship extraction is syntax-only — overloaded method references may be imprecise
 - Git analysis uses shell commands (acceptable per design, but slower than native library)
@@ -442,4 +524,6 @@ foreach (var (name, path) in repositories)
 - Structured logging at every pipeline stage (indexing, search, embedding, graph, git)
 - Trace IDs propagated through pipeline
 - Indexing emits file counts, symbol counts, chunk counts, relationship counts, embedding stats
+- **Mcp host** uses `CodeMemoryFileLogger` (writes `Log.*.txt` to `.codememory/` folder) + `StdErrorLogger<T>` (stderr mirror, informational-only on stdout)
+- **AspNet host** uses standard `ILogger<T>` via ASP.NET Core logging infrastructure
 - Root route `GET /` returns storage provider (`storageProvider`), per-repo indexing completion (`indexingCompleted`), repo paths, and DB path (or `null` for in-memory)

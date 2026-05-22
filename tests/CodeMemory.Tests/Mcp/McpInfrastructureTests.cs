@@ -13,7 +13,7 @@ public sealed class McpInfrastructureTests : BaseToolTests
         await using var factory = new WebApplicationFactory<Program>();
         var client = factory.CreateClient();
 
-        var response = await client.GetAsync("/");
+        var response = await client.GetAsync("/health");
 
         Assert.That(response.StatusCode, Is.EqualTo(System.Net.HttpStatusCode.OK));
         var body = await response.Content.ReadFromJsonAsync<JsonObject>();

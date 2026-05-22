@@ -45,8 +45,8 @@ builder.Services.AddSingleton<SymbolQueryService>();
 builder.Services.AddSingleton<RelationshipQueryService>();
 
 // Component resolution (build-file-first, directory fallback)
-builder.Services.AddSingleton<CodeMemory.Services.Architecture.ProjectFileDetector>();
-builder.Services.AddSingleton<CodeMemory.Services.Architecture.IComponentResolver, CodeMemory.Services.Architecture.ComponentResolver>();
+builder.Services.AddSingleton<ProjectFileDetector>();
+builder.Services.AddSingleton<IComponentResolver, ComponentResolver>();
 
 // Architecture intelligence services
 builder.Services.AddSingleton<CodeMemory.Indexing.Graph.IDependencyGraphService, DependencyGraphService>();
@@ -143,8 +143,8 @@ var allRepos = await bootstrapper.BootstrapAsync();
 // Single catch-all MCP route
 app.MapMcp("/api/mcp/{repoName}");
 
-// Status endpoint
-app.MapGet("/", () =>
+// Status/Health endpoint
+app.MapGet("/health", () =>
 {
     var service = "CodeMemory — Repository Intelligence Substrate";
     var repos = allRepos.Select(r =>

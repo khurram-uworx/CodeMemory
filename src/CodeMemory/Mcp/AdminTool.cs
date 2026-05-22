@@ -1,10 +1,10 @@
-using System.ComponentModel;
-using System.Text.Json;
 using CodeMemory.Indexing;
 using CodeMemory.Services;
 using CodeMemory.Storage;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
+using System.ComponentModel;
+using System.Text.Json;
 
 namespace CodeMemory.Mcp;
 

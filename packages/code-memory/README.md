@@ -60,8 +60,10 @@ The `@uworx/code-memory` package is a lightweight CLI wrapper. On `npm install`,
 | `get_component_clusters` | Logical groupings by inter-component coupling |
 | `get_symbol_history` | Git commit history for a symbol |
 | `get_hotspots` | Most frequently changed files |
-| `sql_query` | SQL queries over indexed data (SELECT/WHERE/ORDER BY/GROUP BY, vector search) |
-| `ping` | Health check + indexing status |
+| `sql_query` | SQL queries over indexed data (SELECT/WHERE/ORDER BY/GROUP BY/HAVING, CTEs, derived tables, aggregates, vector search via `ORDER BY Similarity DESC`) |
+| `rescan_repository` | Trigger full re-index of the current repository |
+| `get_repository_root` | Returns the root path of the active repository |
+| `ping` | Health check + indexing status (`indexingCompleted`, `fileWatcherActive`) |
 
 All tools return structured JSON.
 
