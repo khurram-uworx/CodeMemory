@@ -5,6 +5,7 @@ using CodeMemory.Services;
 using CodeMemory.Storage;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Options;
 using System.Diagnostics;
 
 namespace CodeMemory.AspNet.Services;
@@ -14,13 +15,16 @@ public sealed class IndexingHostedService : BackgroundService
     readonly IServiceProvider serviceProvider;
     readonly IRepoContextAccessor repoContext;
     readonly ILogger<IndexingHostedService> logger;
+    readonly IndexingOptions indexingOptions;
 
     public IndexingHostedService(IServiceProvider serviceProvider,
-        IRepoContextAccessor repoContext, ILogger<IndexingHostedService> logger)
+        IRepoContextAccessor repoContext, ILogger<IndexingHostedService> logger,
+        IOptions<IndexingOptions> indexingOptions)
     {
         this.serviceProvider = serviceProvider;
         this.repoContext = repoContext;
         this.logger = logger;
+        this.indexingOptions = indexingOptions.Value;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -49,13 +53,18 @@ public sealed class IndexingHostedService : BackgroundService
         {
             if (stoppingToken.IsCancellationRequested) break;
 
+            var repoTimeout = TimeSpan.FromMinutes(indexingOptions.RepoTimeoutMinutes);
+            using var repoCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+            repoCts.CancelAfter(repoTimeout);
+            var repoCt = repoCts.Token;
+
             try
             {
                 if (repo.CloneStatus == "Pending" && !string.IsNullOrEmpty(repo.GitUrl))
                 {
                     logger.LogInformation("Cloning repository '{Name}' from {Url}", repo.Name, repo.GitUrl);
 
-                    await UpdateCloneStatusAsync(dbFactory, repo.Name, "Cloning", ct: stoppingToken);
+                    await UpdateCloneStatusAsync(dbFactory, repo.Name, "Cloning", ct: repoCt);
 
                     var psi = new ProcessStartInfo("git")
                     {
@@ -70,17 +79,17 @@ public sealed class IndexingHostedService : BackgroundService
                     using var process = Process.Start(psi)
                         ?? throw new InvalidOperationException("Failed to start git process.");
 
-                    await process.WaitForExitAsync(stoppingToken);
+                    await process.WaitForExitAsync(repoCt);
                     if (process.ExitCode != 0)
                     {
-                        var error = await process.StandardError.ReadToEndAsync(stoppingToken);
+                        var error = await process.StandardError.ReadToEndAsync(repoCt);
                         throw new InvalidOperationException($"git clone failed: {error}");
                     }
                 }
 
                 if (repo.CloneStatus != "Cloned")
                 {
-                    await UpdateCloneStatusAsync(dbFactory, repo.Name, "Cloned", localPath: repo.LocalPath, ct: stoppingToken);
+                    await UpdateCloneStatusAsync(dbFactory, repo.Name, "Cloned", localPath: repo.LocalPath, ct: repoCt);
                 }
 
                 // Initialize storage if not already registered
@@ -98,26 +107,26 @@ public sealed class IndexingHostedService : BackgroundService
                     registry.Register(repo.Name, storage);
                 }
 
-                await UpdateIndexStatusAsync(dbFactory, repo.Name, "Indexing", ct: stoppingToken);
+                await UpdateIndexStatusAsync(dbFactory, repo.Name, "Indexing", ct: repoCt);
 
                 repoContext.CurrentRepoName = repo.Name;
                 repoContext.CurrentRepoRoot = repo.LocalPath;
 
-                using var scope = serviceProvider.CreateScope();
-                var engine = scope.ServiceProvider.GetRequiredService<IndexingEngine>();
-                await engine.RunIndexingAsync(repo.LocalPath, stoppingToken);
+                await indexWithRetryAsync(repo.Name, repo.LocalPath, repoCt);
 
                 IndexingState.MarkCompleted(repo.Name);
-                await UpdateIndexStatusAsync(dbFactory, repo.Name, "Indexed", ct: stoppingToken);
+                await UpdateIndexStatusAsync(dbFactory, repo.Name, "Indexed", ct: repoCt);
             }
             catch (OperationCanceledException)
             {
                 logger.LogInformation("Indexing cancelled for repository '{Name}'", repo.Name);
+                IndexingState.ClearProgress(repo.Name);
                 break;
             }
             catch (Exception ex)
             {
                 logger.LogError(ex, "Error processing repository '{Name}'", repo.Name);
+                IndexingState.ClearProgress(repo.Name);
                 var statusField = repo.CloneStatus == "Pending" ? "CloneStatus" : "IndexStatus";
                 if (statusField == "CloneStatus")
                     await UpdateCloneStatusAsync(dbFactory, repo.Name, "Failed", errorMessage: ex.Message, ct: stoppingToken);
@@ -132,6 +141,43 @@ public sealed class IndexingHostedService : BackgroundService
         }
 
         logger.LogInformation("Indexing hosted service completed");
+    }
+
+    async Task indexWithRetryAsync(string repoName, string repoPath, CancellationToken ct)
+    {
+        var maxAttempts = Math.Max(1, indexingOptions.RetryCount + 1);
+        var baseDelay = TimeSpan.FromSeconds(indexingOptions.RetryBaseDelaySeconds);
+
+        for (int attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            try
+            {
+                using var scope = serviceProvider.CreateScope();
+                var engine = scope.ServiceProvider.GetRequiredService<IndexingEngine>();
+
+                var progress = new Progress<double>(p =>
+                {
+                    IndexingState.UpdateProgress(repoName, p);
+                });
+
+                await engine.RunIndexingAsync(repoPath, ct, progress);
+                return;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex) when (attempt < maxAttempts)
+            {
+                var delay = baseDelay * (int)Math.Pow(2, attempt - 1);
+                logger.LogWarning(ex,
+                    "Indexing attempt {Attempt}/{Max} failed for '{Repo}', retrying in {Delay}s",
+                    attempt, maxAttempts, repoName, delay.TotalSeconds);
+                await Task.Delay(delay, ct);
+            }
+        }
     }
 
     static async Task UpdateCloneStatusAsync(IDbContextFactory<RepoRegistryDbContext> dbFactory,

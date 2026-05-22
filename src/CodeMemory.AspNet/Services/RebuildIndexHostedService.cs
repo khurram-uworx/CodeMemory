@@ -16,6 +16,7 @@ public sealed class RebuildIndexHostedService : BackgroundService
     readonly IServiceScopeFactory scopeFactory;
     readonly IRepoContextAccessor repoContext;
     readonly IOptions<RebuildOptions> options;
+    readonly IndexingOptions indexingOptions;
     readonly SemaphoreSlim gate = new(1, 1);
 
     public RebuildIndexHostedService(
@@ -24,7 +25,8 @@ public sealed class RebuildIndexHostedService : BackgroundService
         IServiceRegistry serviceRegistry,
         IServiceScopeFactory scopeFactory,
         IRepoContextAccessor repoContext,
-        IOptions<RebuildOptions> options)
+        IOptions<RebuildOptions> options,
+        IOptions<IndexingOptions> indexingOptions)
     {
         this.logger = logger;
         this.registry = registry;
@@ -32,6 +34,7 @@ public sealed class RebuildIndexHostedService : BackgroundService
         this.scopeFactory = scopeFactory;
         this.repoContext = repoContext;
         this.options = options;
+        this.indexingOptions = indexingOptions.Value;
     }
 
     async Task rebuildAsync(CancellationToken ct)
@@ -54,21 +57,24 @@ public sealed class RebuildIndexHostedService : BackgroundService
 
                 logger.LogInformation("Rebuilding index for '{Repo}'", repo.Name);
 
+                var repoTimeout = TimeSpan.FromMinutes(indexingOptions.RepoTimeoutMinutes);
+                using var repoCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                repoCts.CancelAfter(repoTimeout);
+                var repoCt = repoCts.Token;
+
                 try
                 {
                     if (!string.IsNullOrEmpty(repo.GitUrl))
-                        await gitPullAsync(repo, ct);
+                        await gitPullAsync(repo, repoCt);
 
                     var storage = serviceRegistry.GetStorage(repo.Name);
-                    await storage.ClearAllAsync(ct);
+                    await storage.ClearAllAsync(repoCt);
                     IndexingState.MarkIncomplete(repo.Name);
 
                     repoContext.CurrentRepoName = repo.Name;
                     repoContext.CurrentRepoRoot = repo.LocalPath;
 
-                    using var scope = scopeFactory.CreateScope();
-                    var engine = scope.ServiceProvider.GetRequiredService<IndexingEngine>();
-                    await engine.RunIndexingAsync(repo.LocalPath, ct);
+                    await indexWithRetryAsync(repo.Name, repo.LocalPath, repoCt);
 
                     IndexingState.MarkCompleted(repo.Name);
                     await registry.UpdateIndexStatusAsync(repo.Name, "Indexed");
@@ -82,6 +88,7 @@ public sealed class RebuildIndexHostedService : BackgroundService
                 catch (Exception ex)
                 {
                     logger.LogError(ex, "Rebuild failed for '{Repo}'", repo.Name);
+                    IndexingState.ClearProgress(repo.Name);
                     await registry.UpdateIndexStatusAsync(repo.Name, "Failed", errorMessage: ex.Message);
                 }
                 finally
@@ -96,6 +103,43 @@ public sealed class RebuildIndexHostedService : BackgroundService
         finally
         {
             gate.Release();
+        }
+    }
+
+    async Task indexWithRetryAsync(string repoName, string repoPath, CancellationToken ct)
+    {
+        var maxAttempts = Math.Max(1, indexingOptions.RetryCount + 1);
+        var baseDelay = TimeSpan.FromSeconds(indexingOptions.RetryBaseDelaySeconds);
+
+        for (int attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            try
+            {
+                using var scope = scopeFactory.CreateScope();
+                var engine = scope.ServiceProvider.GetRequiredService<IndexingEngine>();
+
+                var progress = new Progress<double>(p =>
+                {
+                    IndexingState.UpdateProgress(repoName, p);
+                });
+
+                await engine.RunIndexingAsync(repoPath, ct, progress);
+                return;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex) when (attempt < maxAttempts)
+            {
+                var delay = baseDelay * (int)Math.Pow(2, attempt - 1);
+                logger.LogWarning(ex,
+                    "Indexing attempt {Attempt}/{Max} failed for '{Repo}', retrying in {Delay}s",
+                    attempt, maxAttempts, repoName, delay.TotalSeconds);
+                await Task.Delay(delay, ct);
+            }
         }
     }
 

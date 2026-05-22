@@ -16,6 +16,7 @@ using CodeMemory.Storage;
 using Memori.Embeddings;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -40,6 +41,7 @@ builder.Services.AddSingleton<IStorageService, StorageServiceRouter>();
 builder.Services.AddScoped<IndexingEngine>();
 builder.Services.AddHostedService<IndexingHostedService>();
 builder.Services.Configure<RebuildOptions>(builder.Configuration.GetSection("RebuildIndex"));
+builder.Services.Configure<IndexingOptions>(builder.Configuration.GetSection(IndexingOptions.SectionName));
 builder.Services.AddHostedService<RebuildIndexHostedService>();
 
 // Query services
@@ -147,23 +149,35 @@ var allRepos = await bootstrapper.BootstrapAsync();
 app.MapMcp("/api/mcp/{repoName}");
 
 // Status/Health endpoint
-app.MapGet("/health", () =>
+app.MapGet("/health", async (RepoRegistryService registryService) =>
 {
     var service = "CodeMemory — Repository Intelligence Substrate";
     var repos = allRepos.Select(r =>
-        new
+    {
+        var progress = IndexingState.GetProgress(r.Name);
+        return new
         {
             name = r.Name,
             path = r.LocalPath,
-            indexingCompleted = IndexingState.IsCompleted(r.Name)
-        } as object);
+            indexingCompleted = IndexingState.IsCompleted(r.Name),
+            indexingProgress = progress
+        } as object;
+    });
+
+    var allRegistered = await registryService.ListAsync();
+    var failedRepos = allRegistered
+        .Where(r => r.IndexStatus == "Failed" || r.CloneStatus == "Failed")
+        .Select(r => new { name = r.Name, status = r.CloneStatus == "Failed" ? r.CloneStatus : r.IndexStatus, error = r.ErrorMessage })
+        .ToList();
 
     return Results.Ok(new
     {
         service,
         timestamp = DateTimeOffset.UtcNow,
         storageProvider = provider,
-        repositories = repos
+        repositories = repos,
+        failedRepoCount = failedRepos.Count,
+        failedRepos
     });
 });
 
