@@ -1,4 +1,5 @@
 using CodeMemory.AspNet.Registry;
+using CodeMemory.AspNet.Storage;
 using CodeMemory.Indexing;
 using CodeMemory.Storage;
 using Microsoft.Data.Sqlite;
@@ -9,16 +10,32 @@ namespace CodeMemory.AspNet.Configuration;
 
 public sealed class StorageBootstrapper
 {
+    static string sanitizeSchemaName(string name)
+    {
+        var sanitized = new System.Text.StringBuilder(name.Length);
+        foreach (var ch in name)
+        {
+            if (char.IsLetterOrDigit(ch) || ch == '_')
+                sanitized.Append(ch);
+            else
+                sanitized.Append('_');
+        }
+        var result = sanitized.ToString();
+        return string.IsNullOrEmpty(result) ? "default" : result.ToLowerInvariant();
+    }
+
     readonly WebApplication app;
     readonly ILoggerFactory loggerFactory;
     readonly IEmbeddingGenerator<string, Embedding<float>> embeddingGenerator;
     readonly IConfiguration configuration;
     readonly IServiceRegistry storageRegistry;
     readonly RepoRegistryOptions registryOptions;
+    readonly string storageProvider;
 
-    public StorageBootstrapper(WebApplication app)
+    public StorageBootstrapper(WebApplication app, string storageProvider)
     {
         this.app = app;
+        this.storageProvider = storageProvider;
         loggerFactory = app.Services.GetRequiredService<ILoggerFactory>();
         embeddingGenerator = app.Services.GetRequiredService<IEmbeddingGenerator<string, Embedding<float>>>();
         configuration = app.Services.GetRequiredService<IConfiguration>();
@@ -26,14 +43,7 @@ public sealed class StorageBootstrapper
         registryOptions = app.Services.GetRequiredService<RepoRegistryOptions>();
     }
 
-    public async Task<List<RegisteredRepo>> BootstrapAsync()
-    {
-        await EnsureDatabaseAsync();
-        await SeedFromConfigAsync();
-        return await LoadAndRegisterReposAsync();
-    }
-
-    async Task EnsureDatabaseAsync()
+    async Task ensureDatabaseAsync()
     {
         var dbFactory = app.Services.GetRequiredService<IDbContextFactory<RepoRegistryDbContext>>();
         await using var db = await dbFactory.CreateDbContextAsync();
@@ -54,7 +64,7 @@ public sealed class StorageBootstrapper
         await db.Database.EnsureCreatedAsync();
     }
 
-    async Task SeedFromConfigAsync()
+    async Task seedFromConfigAsync()
     {
         var dbFactory = app.Services.GetRequiredService<IDbContextFactory<RepoRegistryDbContext>>();
         await using var db = await dbFactory.CreateDbContextAsync();
@@ -86,7 +96,7 @@ public sealed class StorageBootstrapper
         }
     }
 
-    async Task<List<RegisteredRepo>> LoadAndRegisterReposAsync()
+    async Task<List<RegisteredRepo>> loadAndRegisterReposAsync()
     {
         var dbFactory = app.Services.GetRequiredService<IDbContextFactory<RepoRegistryDbContext>>();
         await using var db = await dbFactory.CreateDbContextAsync();
@@ -97,11 +107,7 @@ public sealed class StorageBootstrapper
 
         foreach (var repo in repos)
         {
-            var storage = app.Services.CreateInMemoryStorage(
-                repo.LocalPath,
-                loggerFactory.CreateLogger<StorageService>(),
-                embeddingGenerator);
-
+            var storage = createStorageForProvider(repo.LocalPath, repo.Name);
             storageRegistry.Register(repo.Name, storage);
 
             if (repo.IndexStatus == "Indexed")
@@ -109,5 +115,59 @@ public sealed class StorageBootstrapper
         }
 
         return repos;
+    }
+
+    IStorageService createStorageForProvider(string repoRoot, string repoName)
+    {
+        if (string.Equals(storageProvider, "inmemory", StringComparison.OrdinalIgnoreCase))
+            return app.Services.CreateInMemoryStorage(
+                repoRoot,
+                loggerFactory.CreateLogger<StorageService>(),
+                embeddingGenerator);
+
+        if (string.Equals(storageProvider, "sqlite", StringComparison.OrdinalIgnoreCase))
+        {
+            var memoryPath = Path.Combine(repoRoot, ".codememory");
+            Directory.CreateDirectory(memoryPath);
+            var connString = $"Data Source={Path.Combine(memoryPath, "sqlvec.db")}";
+            return Storage.ServiceCollectionExtensions.createSqliteStorage(
+                repoRoot, connString,
+                loggerFactory.CreateLogger<HybridStorageService>(),
+                embeddingGenerator);
+        }
+
+        if (string.Equals(storageProvider, "pgvector", StringComparison.OrdinalIgnoreCase))
+        {
+            var connString = configuration.GetConnectionString("PgVector")
+                ?? throw new InvalidOperationException(
+                    "Connection string 'PgVector' is required when Storage:Provider is 'pgvector'");
+            var schema = sanitizeSchemaName(repoName);
+            return Storage.ServiceCollectionExtensions.CreatePgVectorStorage(
+                repoRoot, connString, schema,
+                loggerFactory.CreateLogger<HybridStorageService>(),
+                embeddingGenerator);
+        }
+
+        if (string.Equals(storageProvider, "sqlserver", StringComparison.OrdinalIgnoreCase))
+        {
+            var connString = configuration.GetConnectionString("SqlServer")
+                ?? throw new InvalidOperationException(
+                    "Connection string 'SqlServer' is required when Storage:Provider is 'sqlserver'");
+            var schema = sanitizeSchemaName(repoName);
+            return Storage.ServiceCollectionExtensions.createSqlServerStorage(
+                repoRoot, connString, schema,
+                loggerFactory.CreateLogger<HybridStorageService>(),
+                embeddingGenerator);
+        }
+
+        throw new InvalidOperationException(
+            $"Unsupported storage provider '{storageProvider}'. Supported: inmemory, sqlite, pgvector, sqlserver");
+    }
+
+    public async Task<List<RegisteredRepo>> BootstrapAsync()
+    {
+        await ensureDatabaseAsync();
+        await seedFromConfigAsync();
+        return await loadAndRegisterReposAsync();
     }
 }

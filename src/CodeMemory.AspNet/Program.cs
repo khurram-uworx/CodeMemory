@@ -1,5 +1,6 @@
 using CodeMemory.AspNet.Configuration;
 using CodeMemory.AspNet.Registry;
+using CodeMemory.AspNet.Scheduling;
 using CodeMemory.AspNet.Services;
 using CodeMemory.Indexing;
 using CodeMemory.Indexing.Chunking;
@@ -15,6 +16,7 @@ using CodeMemory.Storage;
 using Memori.Embeddings;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -38,6 +40,9 @@ builder.Services.AddSingleton<IStorageService, StorageServiceRouter>();
 
 builder.Services.AddScoped<IndexingEngine>();
 builder.Services.AddHostedService<IndexingHostedService>();
+builder.Services.Configure<RebuildOptions>(builder.Configuration.GetSection("RebuildIndex"));
+builder.Services.Configure<IndexingOptions>(builder.Configuration.GetSection(IndexingOptions.SectionName));
+builder.Services.AddHostedService<RebuildIndexHostedService>();
 
 // Query services
 builder.Services.AddSingleton<ISemanticSearchService, SemanticSearchService>();
@@ -74,8 +79,8 @@ builder.Services.AddMcpServer()
             return Task.CompletedTask;
         };
     })
-    .WithToolsFromAssembly(typeof(CodeMemory.Mcp.McpTools).Assembly)
-    .WithToolsFromAssembly(typeof(CodeMemory.AspNet.Tools.AspNetSqlQueryTool).Assembly);
+    .WithToolsFromAssembly(typeof(CodeMemory.AspNet.Tools.AspNetMcpTools).Assembly)
+    .WithToolsFromAssembly(typeof(CodeMemory.Mcp.McpTools).Assembly);
 
 // CORS — origins configured in appsettings.json:Cors:AllowedOrigins
 var corsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>();
@@ -137,30 +142,42 @@ app.UseCors();
 app.MapRazorPages();
 
 // Startup bootstrap: seed config → DB, load DB → ServiceRegistry
-var bootstrapper = new StorageBootstrapper(app);
+var bootstrapper = new StorageBootstrapper(app, provider);
 var allRepos = await bootstrapper.BootstrapAsync();
 
 // Single catch-all MCP route
 app.MapMcp("/api/mcp/{repoName}");
 
 // Status/Health endpoint
-app.MapGet("/health", () =>
+app.MapGet("/health", async (RepoRegistryService registryService) =>
 {
     var service = "CodeMemory — Repository Intelligence Substrate";
     var repos = allRepos.Select(r =>
-        new
+    {
+        var progress = IndexingState.GetProgress(r.Name);
+        return new
         {
             name = r.Name,
             path = r.LocalPath,
-            indexingCompleted = IndexingState.IsCompleted(r.Name)
-        } as object);
+            indexingCompleted = IndexingState.IsCompleted(r.Name),
+            indexingProgress = progress
+        } as object;
+    });
+
+    var allRegistered = await registryService.ListAsync();
+    var failedRepos = allRegistered
+        .Where(r => r.IndexStatus == "Failed" || r.CloneStatus == "Failed")
+        .Select(r => new { name = r.Name, status = r.CloneStatus == "Failed" ? r.CloneStatus : r.IndexStatus, error = r.ErrorMessage })
+        .ToList();
 
     return Results.Ok(new
     {
         service,
         timestamp = DateTimeOffset.UtcNow,
         storageProvider = provider,
-        repositories = repos
+        repositories = repos,
+        failedRepoCount = failedRepos.Count,
+        failedRepos
     });
 });
 

@@ -77,4 +77,31 @@ public sealed class McpInfrastructureTests : BaseToolTests
 
         Assert.That(response.Headers.Contains("Access-Control-Allow-Origin"), Is.True);
     }
+
+    [Test]
+    public async Task Ping_ReturnsAspNetVersion()
+    {
+        await using var factory = new WebApplicationFactory<Program>();
+        var client = factory.CreateClient();
+
+        var result = await CallTool(client, "ping", new JsonObject());
+        var content = result["result"]?["content"]?.AsArray();
+        Assert.That(content, Is.Not.Null);
+        var text = content![0]!["text"]?.GetValue<string>();
+        Assert.That(text, Is.Not.Null);
+
+        var body = JsonNode.Parse(text)!.AsObject();
+        Assert.That(body["status"]?.GetValue<string>(), Is.EqualTo("ok"));
+
+        // Per-repo awareness — proves AspNetMcpTools.Ping replaced McpTools.Ping
+        Assert.That(body.ContainsKey("repo"), Is.True);
+        Assert.That(body["repo"]?.GetValue<string>(), Is.EqualTo("codememory"));
+
+        // AspNet-specific fields (present when indexing completed)
+        if (body["indexingCompleted"]?.GetValue<bool>() == true)
+        {
+            Assert.That(body["host"]?.GetValue<string>(), Is.EqualTo("aspnet"));
+            Assert.That(body["transport"]?.GetValue<string>(), Is.EqualTo("streamable-http"));
+        }
+    }
 }

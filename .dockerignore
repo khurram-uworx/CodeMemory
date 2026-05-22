@@ -1,0 +1,15 @@
+**/bin/
+**/obj/
+.antigravitycli/
+.codex/
+.git/
+.github/
+.gitattributes
+.gitignore
+.vs/
+.vscode/
+.idea/
+docs/
+packages/
+scripts/
+tests/
