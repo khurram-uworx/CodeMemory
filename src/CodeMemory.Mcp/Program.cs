@@ -30,22 +30,30 @@ if (args is ["--help"] or ["-h"] or ["--version"] or ["-v"])
     return;
 }
 
+var debugMode = args.Contains("--debug");
+
 var repoRoot = args switch
 {
     ["--repo", var path] => Path.GetFullPath(path),
+    [_, "--repo", var path] when debugMode => Path.GetFullPath(path),
     _ => Environment.CurrentDirectory
 };
 
-Console.Error.WriteLine($"CodeMemory MCP v{version} (stdio) — repo: {repoRoot}");
+var mode = debugMode ? "debug" : "stdio";
+Console.Error.WriteLine($"CodeMemory MCP v{version} ({mode}) — repo: {repoRoot}");
 
 var builder = Host.CreateApplicationBuilder(args);
 
-builder.Logging.ClearProviders();
-builder.Logging.AddConsole(options => options.LogToStandardErrorThreshold = LogLevel.Trace);
-builder.Logging.AddProvider(new CodeMemory.Mcp.CodeMemoryFileLoggerProvider(repoRoot, version));
-
-if (!builder.Environment.IsDevelopment())
-    builder.Logging.SetMinimumLevel(LogLevel.Warning);
+if (debugMode)
+    builder.Logging.SetMinimumLevel(LogLevel.Debug);
+else
+{
+    builder.Logging.ClearProviders();
+    builder.Logging.AddConsole(options => options.LogToStandardErrorThreshold = LogLevel.Trace);
+    builder.Logging.AddProvider(new CodeMemory.Mcp.CodeMemoryFileLoggerProvider(repoRoot, version));
+}
+//else if (!builder.Environment.IsDevelopment())
+//    builder.Logging.SetMinimumLevel(LogLevel.Warning);
 
 // Storage
 builder.Services.AddCodeMemoryInMemoryStorage(repoRoot);
@@ -93,11 +101,14 @@ builder.Services.AddSingleton<CodeMemory.Indexing.Architecture.IComponentCluster
 builder.Services.AddSingleton<CodeMemory.Indexing.Git.IGitHistoryService, GitHistoryService>();
 builder.Services.AddSingleton<CodeMemory.Mcp.Services.IEditContextService, CodeMemory.Mcp.Services.EditContextService>();
 
-// MCP server (stdio transport)
-builder.Services.AddMcpServer()
-    .WithStdioServerTransport()
-    .WithToolsFromAssembly(typeof(CodeMemory.Mcp.McpTools).Assembly)
-    .WithToolsFromAssembly(typeof(CodeMemory.Mcp.Tools.SqlQueryTool).Assembly);
+// MCP server (stdio transport) — only in normal mode, not --debug
+if (!debugMode)
+{
+    builder.Services.AddMcpServer()
+        .WithStdioServerTransport()
+        .WithToolsFromAssembly(typeof(CodeMemory.Mcp.McpTools).Assembly)
+        .WithToolsFromAssembly(typeof(CodeMemory.Mcp.Tools.SqlQueryTool).Assembly);
+}
 
 var app = builder.Build();
 
@@ -105,14 +116,37 @@ var loggerFactory = app.Services.GetRequiredService<ILoggerFactory>();
 var embeddingGenerator = app.Services.GetRequiredService<IEmbeddingGenerator<string, Embedding<float>>>();
 
 
-// Non-blocking: start indexing in background, serve MCP tools immediately
-// Ping tool returns indexingCompleted=false until this finishes.
+if (debugMode)
+{
+    // Debug mode: index synchronously with verbose console logging, then exit
+    try
+    {
+        var engine = app.Services.GetRequiredService<IndexingEngine>();
+        var progress = new Progress<double>(p => IndexingState.UpdateProgress(repoRoot, p));
+        await engine.RunIndexingAsync(repoRoot, CancellationToken.None, progress);
+        IndexingState.MarkCompleted(repoRoot);
+        Console.Out.WriteLine();
+        Console.Out.WriteLine("=== Indexing Complete ===");
+        Console.Out.WriteLine($"  Repo: {repoRoot}");
+        Console.Out.WriteLine($"  Status: success");
+        Console.Out.WriteLine($"  Logs: stderr + .codememory/Log.*.txt");
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"Indexing failed: {ex.Message}");
+    }
+    return;
+}
+
+// Normal MCP mode: non-blocking indexing in background, serve tools immediately
+// Ping tool returns indexingCompleted=false until this finishes, with progress %.
 _ = Task.Run(async () =>
 {
     try
     {
         var engine = app.Services.GetRequiredService<IndexingEngine>();
-        await engine.RunIndexingAsync(repoRoot, CancellationToken.None);
+        var progress = new Progress<double>(p => IndexingState.UpdateProgress(repoRoot, p));
+        await engine.RunIndexingAsync(repoRoot, CancellationToken.None, progress);
         IndexingState.MarkCompleted(repoRoot);
 
         var watcher = app.Services.GetRequiredService<FileWatcherService>();

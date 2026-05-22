@@ -1,6 +1,7 @@
 using CodeMemory.Indexing;
 using ModelContextProtocol.Server;
 using System.ComponentModel;
+using System.Text.Json;
 
 namespace CodeMemory.Mcp;
 
@@ -11,9 +12,25 @@ public sealed class McpTools
     public string Ping()
     {
         if (!IndexingState.IsCompleted())
-            return """{"status":"ok","indexingCompleted":false,"message":"Indexing in progress. Retry tools in a few seconds."}""";
+        {
+            var allProgress = IndexingState.GetAllProgress();
+            var percent = allProgress.Count > 0 ? allProgress.Values.Min() : 0.0;
 
-        var watcherActive = IndexingState.IsFileWatcherActive ? "true" : "false";
-        return $$"""{"status":"ok","indexingCompleted":true,"fileWatcherActive":{{watcherActive}}}""";
+            return JsonSerializer.Serialize(new
+            {
+                status = "ok",
+                indexingCompleted = false,
+                message = percent > 0
+                    ? $"Indexing in progress — {percent * 100:F0}% complete"
+                    : "Indexing in progress. Retry tools in a few seconds."
+            });
+        }
+
+        return JsonSerializer.Serialize(new
+        {
+            status = "ok",
+            indexingCompleted = true,
+            fileWatcherActive = IndexingState.IsFileWatcherActive
+        });
     }
 }
