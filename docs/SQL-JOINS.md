@@ -158,4 +158,4 @@ ExecuteAsync()
 | `src/CodeMemory.Mcp/SqlQuery/SqlQueryService.cs` | New: `TableRef`, `detectMultiTable`, `parseFromClause`, `mergeOnConditions`, `prefixRows`, `cartesianMerge`, `executeJoinQueryAsync`, `rowGetValue`. Modified: `ExecuteAsync`, `applyGroupBy`, `makeSortSelector`, `evaluateExpression` | Refactor merge pipeline for join-type awareness, add NULL generation, add subquery execution |
 | `src/CodeMemory.Mcp/SqlQuery/TableSchemaProvider.cs` | Wired in | Add join-key metadata annotations |
 | `src/CodeMemory.Mcp/Tools/SqlQueryTool.cs` | Wired schema provider, updated `[Description]` | Dynamic schema generation for LLM |
-| `docs/SQL-KNOWNISSUES.md` | Updated status | Update as features land |
+| `docs/KNOWN-ISSUES.md` | Updated status | Update as features land |

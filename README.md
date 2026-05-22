@@ -30,7 +30,7 @@ All tools return structured JSON. No freeform prompts, no chat.
 
 ## Quick Start
 
-### Single repo (stdio — Windows only)
+### STDIO MCP
 
 Define the MCP tool in your agent's configuration:
 
@@ -41,6 +41,11 @@ Define the MCP tool in your agent's configuration:
     "args": ["run", "--project", "src/CodeMemory.Mcp/CodeMemory.Mcp.csproj"]
   }
 ```
+
+> **Tip:** Prefer a zero-install option? Use the npm package (no .NET SDK required):
+> `npx -y @uworx/code-memory`
+>
+> See the [package docs](packages/code-memory/README.md) for multi-repo configuration and all available options.
 
 ### ASP.NET host (Streamable HTTP — experimental)
 
