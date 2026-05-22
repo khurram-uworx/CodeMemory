@@ -1,0 +1,9 @@
+**/bin/
+**/obj/
+.git/
+.gitattributes
+.gitignore
+.vs/
+.vscode/
+.idea/
+tests/

@@ -142,7 +142,7 @@ app.UseCors();
 app.MapRazorPages();
 
 // Startup bootstrap: seed config → DB, load DB → ServiceRegistry
-var bootstrapper = new StorageBootstrapper(app);
+var bootstrapper = new StorageBootstrapper(app, provider);
 var allRepos = await bootstrapper.BootstrapAsync();
 
 // Single catch-all MCP route

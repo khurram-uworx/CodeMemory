@@ -45,7 +45,7 @@ public static class ServiceCollectionExtensions
         return string.IsNullOrEmpty(result) ? "default" : result.ToLowerInvariant();
     }
 
-    static IStorageService createSqliteStorage(
+    internal static IStorageService createSqliteStorage(
         string repoRoot,
         string connectionString,
         ILogger logger,
@@ -62,7 +62,7 @@ public static class ServiceCollectionExtensions
             configuredDimension);
     }
 
-    static IStorageService createSqlServerStorage(
+    internal static IStorageService createSqlServerStorage(
         string repoRoot,
         string connectionString,
         string schema,
@@ -156,8 +156,11 @@ public static class ServiceCollectionExtensions
         var usePgVector = string.Equals(provider, "pgvector", StringComparison.OrdinalIgnoreCase);
         var useSqlServer = string.Equals(provider, "sqlserver", StringComparison.OrdinalIgnoreCase);
 
-        if (!useSqlite && !usePgVector && !useSqlServer)
-            provider = "inmemory";
+        var useInMemory = string.Equals(provider, "inmemory", StringComparison.OrdinalIgnoreCase);
+
+        if (!useInMemory && !useSqlite && !usePgVector && !useSqlServer)
+            throw new InvalidOperationException(
+                $"Unsupported storage provider '{provider}'. Supported: inmemory, sqlite, pgvector, sqlserver");
 
         IStorageService? storageService = null;
         string? dbPath = null;
