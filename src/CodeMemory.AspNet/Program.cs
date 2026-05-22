@@ -74,8 +74,8 @@ builder.Services.AddMcpServer()
             return Task.CompletedTask;
         };
     })
-    .WithToolsFromAssembly(typeof(CodeMemory.Mcp.McpTools).Assembly)
-    .WithToolsFromAssembly(typeof(CodeMemory.AspNet.Tools.AspNetSqlQueryTool).Assembly);
+    .WithToolsFromAssembly(typeof(CodeMemory.AspNet.Tools.AspNetMcpTools).Assembly)
+    .WithToolsFromAssembly(typeof(CodeMemory.Mcp.McpTools).Assembly);
 
 // CORS — origins configured in appsettings.json:Cors:AllowedOrigins
 var corsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>();
