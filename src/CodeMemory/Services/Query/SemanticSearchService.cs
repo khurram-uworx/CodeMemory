@@ -1,7 +1,9 @@
+using CodeMemory.Diagnostics;
 using CodeMemory.Indexing.Search;
 using CodeMemory.Storage;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
+using System.Diagnostics;
 using System.Numerics.Tensors;
 
 namespace CodeMemory.Services.Query;
@@ -28,6 +30,11 @@ public sealed class SemanticSearchService : ISemanticSearchService
     public async Task<IReadOnlyList<ScoredChunk>> SearchByTextAsync(
         string query, int top = 10, double minimumSimilarity = 0, CancellationToken ct = default)
     {
+        using var activity = CodeMemoryActivitySources.Search.StartActivity("SearchByText");
+        activity?.SetTag("query", query);
+        activity?.SetTag("top", top);
+        var sw = Stopwatch.StartNew();
+
         if (embeddingGenerator == null)
         {
             logger.LogWarning("No embedding generator registered — cannot perform semantic search");
@@ -53,6 +60,10 @@ public sealed class SemanticSearchService : ISemanticSearchService
                 .Where(r => r.Score <= 1.0 - minimumSimilarity)
                 .ToList();
         }
+
+        sw.Stop();
+        activity?.SetTag("results.count", results.Count);
+        CodeMemoryMetrics.QueryDuration.Record(sw.Elapsed.TotalMilliseconds);
 
         return results;
     }

@@ -1,3 +1,4 @@
+using CodeMemory.Diagnostics;
 using CodeMemory.Indexing;
 using CodeMemory.Indexing.Chunking;
 using CodeMemory.Indexing.Extraction;
@@ -132,6 +133,10 @@ public sealed class IndexingEngine
     public async Task RunIndexingAsync(string repoRoot, CancellationToken ct,
         IProgress<double>? progress = null)
     {
+        using var activity = CodeMemoryActivitySources.Indexing.StartActivity("RunIndexing");
+        activity?.SetTag("repo.path", repoRoot);
+        var indexingSw = Stopwatch.StartNew();
+
         logger.LogInformation("Indexing engine starting — eager indexing of {RepoRoot}",
             repoRoot);
 
@@ -299,6 +304,16 @@ public sealed class IndexingEngine
         var relationshipsInfo = allSymbols.Count > 0 ? "extracted" : "0";
 
         progress?.Report(1.0);
+        indexingSw.Stop();
+
+        activity?.SetTag("files.count", fileCount);
+        activity?.SetTag("symbols.count", symbolCount);
+        activity?.SetTag("chunks.count", chunkCount);
+
+        CodeMemoryMetrics.IndexingDuration.Record(indexingSw.Elapsed.TotalMilliseconds);
+        CodeMemoryMetrics.FilesIndexed.Add(fileCount);
+        CodeMemoryMetrics.SymbolsStored.Add(symbolCount);
+
         logger.LogInformation(
             "Indexing complete — {Files} files, {ParsedInfo}, {Symbols} symbols, {Chunks} chunks, {Relationships} relationships",
             fileCount, parsedInfo, symbolCount, chunkCount, relationshipsInfo);

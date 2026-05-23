@@ -3,6 +3,14 @@ volumes:
   cloned_repos:
 
 services:
+  aspire-dashboard:
+    image: mcr.microsoft.com/dotnet/aspire-dashboard:10.0
+    ports:
+      - "18888:18888"   # Dashboard UI
+      - "18889:18889"   # OTLP gRPC endpoint
+    environment:
+      DOTNET_DASHBOARD_UNSECURED_ALLOW_ANONYMOUS: "true"
+
   postgres:
     image: pgvector/pgvector:pg16
     environment:
@@ -32,8 +40,12 @@ services:
       RepoRegistry__Provider: postgresql
       RepoRegistry__CloneBasePath: /data/cloned-repos
       ConnectionStrings__Npgsql: Host=postgres;Port=5432;Database=codememory;Username=codememory;Password=codememory
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://aspire-dashboard:18889
+      OTEL_SERVICE_NAME: codememory-aspnet
     volumes:
       - cloned_repos:/data/cloned-repos
     depends_on:
       postgres:
         condition: service_healthy
+      aspire-dashboard:
+        condition: service_started

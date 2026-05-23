@@ -1,3 +1,4 @@
+using CodeMemory.Diagnostics;
 using CodeMemory.Storage;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
@@ -1490,6 +1491,9 @@ public sealed class SqlQueryService
 
     public async Task<SqlQueryResult> ExecuteAsync(VectorStore store, string sql, int maxResults = 100, CancellationToken ct = default)
     {
+        using var activity = CodeMemoryActivitySources.Sql.StartActivity("Execute");
+        activity?.SetTag("sql", sql);
+        activity?.SetTag("maxResults", maxResults);
         var sw = Stopwatch.StartNew();
 
         try
@@ -1684,8 +1688,6 @@ public sealed class SqlQueryService
             if (hasExplicitProjection && !hasGroupBy && !hasAggregates)
                 result = projectRows(result, parsedColumns);
 
-            sw.Stop();
-
             List<string> columns;
             if (hasExplicitProjection)
             {
@@ -1718,10 +1720,17 @@ public sealed class SqlQueryService
                     if (key.StartsWith("__") && !columns.Contains(key))
                         columns.Add(key);
 
+            sw.Stop();
+            activity?.SetTag("rowCount", result.Count);
+            CodeMemoryMetrics.SqlQueryDuration.Record(sw.Elapsed.TotalMilliseconds);
+
             return new SqlQueryResult(true, result.Count, sw.ElapsedMilliseconds, columns, result);
         }
         catch (Exception ex)
         {
+            sw.Stop();
+            CodeMemoryMetrics.SqlQueryDuration.Record(sw.Elapsed.TotalMilliseconds);
+
             logger.LogError(ex, "SQL query execution failed: {Sql}", sql);
             return fail($"Execution error at stage '{sw.Elapsed}' for SQL '{sql}': {ex.Message}", sw);
         }

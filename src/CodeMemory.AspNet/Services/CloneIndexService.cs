@@ -1,5 +1,6 @@
 using CodeMemory.AspNet.Configuration;
 using CodeMemory.AspNet.Registry;
+using CodeMemory.Diagnostics;
 using CodeMemory.Indexing;
 using CodeMemory.Services;
 using CodeMemory.Storage;
@@ -60,6 +61,11 @@ public sealed class CloneIndexService
             {
                 if (isUrl)
                 {
+                    using var cloneActivity = CodeMemoryActivitySources.Git.StartActivity("Clone");
+                    cloneActivity?.SetTag("repo.name", repoName);
+                    cloneActivity?.SetTag("repo.url", source);
+                    var cloneSw = Stopwatch.StartNew();
+
                     await UpdateCloneStatusAsync(repoName, "Cloning");
 
                     using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(registryOptions.CloneTimeoutSeconds));
@@ -83,6 +89,10 @@ public sealed class CloneIndexService
                         var error = await process.StandardError.ReadToEndAsync();
                         throw new InvalidOperationException($"git clone failed: {error}");
                     }
+
+                    cloneSw.Stop();
+                    CodeMemoryMetrics.CloneDuration.Record(cloneSw.Elapsed.TotalMilliseconds,
+                        new("repo.name", repoName), new("repo.url", source));
 
                     await UpdateCloneStatusAsync(repoName, "Cloned", localPath: clonePath);
                 }
@@ -113,6 +123,10 @@ public sealed class CloneIndexService
 
     async Task InitializeAndIndexAsync(string repoName, string repoPath)
     {
+        using var activity = CodeMemoryActivitySources.Indexing.StartActivity("InitializeAndIndex");
+        activity?.SetTag("repo.name", repoName);
+        activity?.SetTag("repo.path", repoPath);
+
         var logger = loggerFactory.CreateLogger<StorageService>();
         var storage = new StorageService(repoPath, logger,
             new Memori.Storage.InMemoryVectorStore(), embeddingGenerator);

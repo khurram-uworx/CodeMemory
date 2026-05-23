@@ -1,5 +1,6 @@
 using CodeMemory.AspNet.Configuration;
 using CodeMemory.AspNet.Registry;
+using CodeMemory.Diagnostics;
 using CodeMemory.Indexing;
 using CodeMemory.Services;
 using CodeMemory.Storage;
@@ -62,6 +63,11 @@ public sealed class IndexingHostedService : BackgroundService
             {
                 if (repo.CloneStatus == "Pending" && !string.IsNullOrEmpty(repo.GitUrl))
                 {
+                    using var cloneActivity = CodeMemoryActivitySources.Git.StartActivity("Clone");
+                    cloneActivity?.SetTag("repo.name", repo.Name);
+                    cloneActivity?.SetTag("repo.url", repo.GitUrl);
+                    var cloneSw = Stopwatch.StartNew();
+
                     logger.LogInformation("Cloning repository '{Name}' from {Url}", repo.Name, repo.GitUrl);
 
                     await UpdateCloneStatusAsync(dbFactory, repo.Name, "Cloning", ct: repoCt);
@@ -85,6 +91,10 @@ public sealed class IndexingHostedService : BackgroundService
                         var error = await process.StandardError.ReadToEndAsync(repoCt);
                         throw new InvalidOperationException($"git clone failed: {error}");
                     }
+
+                    cloneSw.Stop();
+                    CodeMemoryMetrics.CloneDuration.Record(cloneSw.Elapsed.TotalMilliseconds,
+                        new("repo.name", repo.Name), new("repo.url", repo.GitUrl));
                 }
 
                 if (repo.CloneStatus != "Cloned")
