@@ -331,5 +331,8 @@ packages/code-memory/bin/*
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
 /.codememory
+
 /src/CodeMemory.AspNet/appsettings.Development.json
+/src/CodeMemory.AspNet/App_Data

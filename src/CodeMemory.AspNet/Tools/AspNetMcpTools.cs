@@ -2,6 +2,7 @@ using CodeMemory.AspNet.Configuration;
 using CodeMemory.Indexing;
 using ModelContextProtocol.Server;
 using System.ComponentModel;
+using System.Text.Json;
 
 namespace CodeMemory.AspNet.Tools;
 
@@ -18,11 +19,32 @@ public sealed class AspNetMcpTools
     {
         var repoName = repoContext.CurrentRepoName;
         if (repoName is null)
-            return """{"status":"ok","indexingCompleted":false,"message":"No repo context available."}""";
+            return JsonSerializer.Serialize(new
+            {
+                status = "ok",
+                indexingCompleted = false,
+                message = "No repo context available."
+            });
 
         if (!IndexingState.IsCompleted(repoName))
-            return $$"""{"status":"ok","indexingCompleted":false,"repo":"{{repoName}}","message":"Indexing in progress. Retry tools in a few seconds."}""";
+        {
+            var percent = IndexingState.GetProgress(repoName);
+            return JsonSerializer.Serialize(new
+            {
+                status = "ok",
+                indexingCompleted = false,
+                repo = repoName,
+                message = percent is > 0
+                    ? $"Indexing in progress — {percent * 100:F0}% complete"
+                    : "Indexing in progress. Retry tools in a few seconds."
+            });
+        }
 
-        return $$"""{"status":"ok","indexingCompleted":true,"repo":"{{repoName}}","host":"aspnet","transport":"streamable-http"}""";
+        return JsonSerializer.Serialize(new
+        {
+            status = "ok",
+            indexingCompleted = true,
+            repo = repoName
+        });
     }
 }

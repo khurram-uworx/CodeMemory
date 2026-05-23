@@ -177,7 +177,7 @@ public sealed partial class SqlExpressionBuilder
 
     System.Linq.Expressions.Expression visitLike(AstExpr.Like like, ParameterExpression param, Type recordType)
     {
-        var lhs = resolveColumn(like.Expression, param, recordType);
+        var lhs = resolveColumn(like.Expression!, param, recordType);
         var patternExpr = resolveValue(like.Pattern, param, recordType, typeof(string));
         var pattern = getConstantString(patternExpr, "LIKE pattern");
 

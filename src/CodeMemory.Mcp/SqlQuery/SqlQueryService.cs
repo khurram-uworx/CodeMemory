@@ -254,12 +254,12 @@ public sealed class SqlQueryService
                 {
                     if (col.AggregateArg is null)
                         return (long)group.Count();
-                    return (long)group.Count(r => r.GetValueOrDefault(col.AggregateArg) is not null);
+                    return (long)group.Count(r => r.GetValueOrDefault(col.AggregateArg!) is not null);
                 }
             case "SUM":
                 {
                     var vals = group
-                        .Select(r => safeToDouble(r.GetValueOrDefault(col.AggregateArg)))
+                        .Select(r => safeToDouble(r.GetValueOrDefault(col.AggregateArg!)))
                         .Where(v => v is not null)
                         .Select(v => v!.Value)
                         .ToList();
@@ -268,7 +268,7 @@ public sealed class SqlQueryService
             case "AVG":
                 {
                     var vals = group
-                        .Select(r => safeToDouble(r.GetValueOrDefault(col.AggregateArg)))
+                        .Select(r => safeToDouble(r.GetValueOrDefault(col.AggregateArg!)))
                         .Where(v => v is not null)
                         .Select(v => v!.Value)
                         .ToList();
@@ -277,7 +277,7 @@ public sealed class SqlQueryService
             case "MIN":
                 {
                     var vals = group
-                        .Select(r => safeToDouble(r.GetValueOrDefault(col.AggregateArg)))
+                        .Select(r => safeToDouble(r.GetValueOrDefault(col.AggregateArg!)))
                         .Where(v => v is not null)
                         .Select(v => v!.Value)
                         .ToList();
@@ -286,7 +286,7 @@ public sealed class SqlQueryService
             case "MAX":
                 {
                     var vals = group
-                        .Select(r => safeToDouble(r.GetValueOrDefault(col.AggregateArg)))
+                        .Select(r => safeToDouble(r.GetValueOrDefault(col.AggregateArg!)))
                         .Where(v => v is not null)
                         .Select(v => v!.Value)
                         .ToList();
@@ -604,8 +604,8 @@ public sealed class SqlQueryService
 
             case AstExpr.Like like:
                 {
-                    var lhs = evaluateExpression(like.Expression, row)?.ToString();
-                    var pattern = evaluateExpression(like.Pattern, row)?.ToString();
+                    var lhs = evaluateExpression(like.Expression!, row)?.ToString();
+                    var pattern = evaluateExpression(like.Pattern!, row)?.ToString();
                     if (lhs is null || pattern is null) return null;
 
                     var result = matchLike(lhs, pattern);
@@ -1229,7 +1229,7 @@ public sealed class SqlQueryService
         if (selectBody.From is null || selectBody.From.Count == 0)
             throw new InvalidOperationException("CTE subquery SELECT must have a FROM clause");
 
-        var (tableName, isCteSource) = await resolveFromSourceAsync(store, selectBody.From[0].Relation, cteResults, defaultMaxResults, ct);
+        var (tableName, isCteSource) = await resolveFromSourceAsync(store, selectBody.From[0].Relation!, cteResults, defaultMaxResults, ct);
         if (tableName is null)
             throw new InvalidOperationException("Could not determine table name from CTE subquery FROM clause");
 
@@ -1296,7 +1296,7 @@ public sealed class SqlQueryService
                 result = await queryVectorAsync(store, entry, whereExpr, cteLimit, ct);
             }
             else
-                result = await queryFilteredAsync(store, entry, whereExpr, fetchTop, ct);
+                result = await queryFilteredAsync(store, entry!, whereExpr, fetchTop, ct);
         }
 
         // Apply DISTINCT — same logic as main query
@@ -1594,7 +1594,7 @@ public sealed class SqlQueryService
             }
             else
             {
-                (singleTableName, isCte) = await resolveFromSourceAsync(store, selectBody.From[0].Relation, cteResults, maxResults, ct);
+                (singleTableName, isCte) = await resolveFromSourceAsync(store, selectBody.From[0].Relation!, cteResults, maxResults, ct);
                 entry = isCte ? null : registry.GetEntry(singleTableName ?? "");
 
                 if (singleTableName is null)

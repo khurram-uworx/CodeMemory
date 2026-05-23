@@ -35,9 +35,9 @@ public sealed class SqlQueryServiceJoinTests
         Assert.That(result.RowCount, Is.EqualTo(2));
         Assert.That(result.Columns, Does.Contain("s.Name"));
         Assert.That(result.Columns, Does.Contain("cnt"));
-        Assert.That((long)result.Rows![0]["cnt"], Is.EqualTo(2));
+        Assert.That((long)result.Rows![0]["cnt"]!, Is.EqualTo(2));
         Assert.That(result.Rows[0]["s.Name"], Is.EqualTo("MyClass"));
-        Assert.That((long)result.Rows[1]["cnt"], Is.EqualTo(1));
+        Assert.That((long)result.Rows[1]["cnt"]!, Is.EqualTo(1));
         Assert.That(result.Rows[1]["s.Name"], Is.EqualTo("Helper"));
     }
 
@@ -54,9 +54,9 @@ public sealed class SqlQueryServiceJoinTests
         Assert.That(result.Success, Is.True);
         Assert.That(result.RowCount, Is.EqualTo(2));
         Assert.That(result.Rows![0]["s.Name"], Is.EqualTo("MyClass"));
-        Assert.That((long)result.Rows[0]["cnt"], Is.EqualTo(2));
+        Assert.That((long)result.Rows[0]["cnt"]!, Is.EqualTo(2));
         Assert.That(result.Rows[1]["s.Name"], Is.EqualTo("Helper"));
-        Assert.That((long)result.Rows[1]["cnt"], Is.EqualTo(1));
+        Assert.That((long)result.Rows[1]["cnt"]!, Is.EqualTo(1));
     }
 
     [Test]
@@ -73,9 +73,9 @@ public sealed class SqlQueryServiceJoinTests
         Assert.That(result.Success, Is.True);
         Assert.That(result.RowCount, Is.EqualTo(2));
         Assert.That(result.Rows![0]["c.Name"], Is.EqualTo("MyClass"));
-        Assert.That((long)result.Rows[0]["cnt"], Is.EqualTo(2));
+        Assert.That((long)result.Rows[0]["cnt"]!, Is.EqualTo(2));
         Assert.That(result.Rows[1]["c.Name"], Is.EqualTo("Helper"));
-        Assert.That((long)result.Rows[1]["cnt"], Is.EqualTo(1));
+        Assert.That((long)result.Rows[1]["cnt"]!, Is.EqualTo(1));
     }
 
     [Test]
@@ -93,7 +93,7 @@ public sealed class SqlQueryServiceJoinTests
         Assert.That(result.Success, Is.True);
         Assert.That(result.RowCount, Is.EqualTo(2));
         Assert.That(result.Rows![0]["c.Name"], Is.EqualTo("MyClass"));
-        Assert.That((long)result.Rows[0]["cnt"], Is.EqualTo(2));
+        Assert.That((long)result.Rows[0]["cnt"]!, Is.EqualTo(2));
     }
 
     [Test]
@@ -110,7 +110,7 @@ public sealed class SqlQueryServiceJoinTests
         Assert.That(result.Success, Is.True);
         Assert.That(result.RowCount, Is.EqualTo(2));
         Assert.That(result.Rows![0]["s.Name"], Is.EqualTo("MyClass"));
-        Assert.That((long)result.Rows[0]["cnt"], Is.EqualTo(2));
+        Assert.That((long)result.Rows[0]["cnt"]!, Is.EqualTo(2));
     }
 
     [Test]
@@ -157,7 +157,7 @@ public sealed class SqlQueryServiceJoinTests
         Assert.That(result.Success, Is.True);
         Assert.That(result.RowCount, Is.EqualTo(1));
         Assert.That(result.Rows![0]["s.Name"], Is.EqualTo("MyClass"));
-        Assert.That((long)result.Rows[0]["cnt"], Is.EqualTo(2));
+        Assert.That((long)result.Rows[0]["cnt"]!, Is.EqualTo(2));
     }
 
     [Test]
@@ -208,8 +208,8 @@ public sealed class SqlQueryServiceJoinTests
         Assert.That(result.Success, Is.True);
         Assert.That(result.RowCount, Is.EqualTo(3));
         Assert.That(result.Rows!.Any(r => r["a.Name"]!.ToString() == "MyClass" && r["b.Name"]!.ToString() == "IOld"), Is.True);
-        Assert.That(result.Rows.Any(r => r["a.Name"]!.ToString() == "MyClass" && r["b.Name"]!.ToString() == "Helper"), Is.True);
-        Assert.That(result.Rows.Any(r => r["a.Name"]!.ToString() == "Helper" && r["b.Name"]!.ToString() == "IOld"), Is.True);
+        Assert.That(result.Rows!.Any(r => r["a.Name"]!.ToString() == "MyClass" && r["b.Name"]!.ToString() == "Helper"), Is.True);
+        Assert.That(result.Rows!.Any(r => r["a.Name"]!.ToString() == "Helper" && r["b.Name"]!.ToString() == "IOld"), Is.True);
     }
 
     [Test]

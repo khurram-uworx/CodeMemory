@@ -177,7 +177,7 @@ public sealed class SqlQueryServiceTests
 
         Assert.That(result.Success, Is.True);
         Assert.That(result.RowCount, Is.GreaterThanOrEqualTo(1));
-        Assert.That(result.Rows![0]["FilePath"], Is.EqualTo("/src/Auth.cs"));
+        Assert.That(result.Rows![0]["FilePath"]!, Is.EqualTo("/src/Auth.cs"));
         Assert.That(result.Rows![0], Contains.Key("__score"));
     }
 
@@ -273,9 +273,9 @@ public sealed class SqlQueryServiceTests
         Assert.That(result.Columns, Is.EquivalentTo(["FilePath", "SymbolCount"]));
 
         var byPath = result.Rows!.ToDictionary(r => (string)r["FilePath"]!);
-        Assert.That((long)byPath["/src/MyClass.cs"]["SymbolCount"], Is.EqualTo(1));
-        Assert.That((long)byPath["/src/Helper.cs"]["SymbolCount"], Is.EqualTo(1));
-        Assert.That((long)byPath["/src/IOld.cs"]["SymbolCount"], Is.EqualTo(1));
+        Assert.That((long)byPath["/src/MyClass.cs"]["SymbolCount"]!, Is.EqualTo(1));
+        Assert.That((long)byPath["/src/Helper.cs"]["SymbolCount"]!, Is.EqualTo(1));
+        Assert.That((long)byPath["/src/IOld.cs"]["SymbolCount"]!, Is.EqualTo(1));
     }
 
     [Test]
@@ -292,8 +292,8 @@ public sealed class SqlQueryServiceTests
         Assert.That(result.Success, Is.True);
         Assert.That(result.RowCount, Is.EqualTo(1));
         Assert.That(result.Columns, Is.EquivalentTo(["FilePath", "MethodCount"]));
-        Assert.That((long)result.Rows![0]["MethodCount"], Is.EqualTo(1));
-        Assert.That(result.Rows[0]["FilePath"], Is.EqualTo("/src/MyClass.cs"));
+        Assert.That((long)result.Rows![0]["MethodCount"]!, Is.EqualTo(1));
+        Assert.That(result.Rows[0]["FilePath"]!, Is.EqualTo("/src/MyClass.cs"));
     }
 
     [Test]
@@ -310,9 +310,9 @@ public sealed class SqlQueryServiceTests
         Assert.That(result.RowCount, Is.EqualTo(3));
 
         var byPath = result.Rows!.ToDictionary(r => (string)r["FilePath"]!);
-        Assert.That((long)byPath["/src/MyClass.cs"]["TotalSymbols"], Is.EqualTo(3));
-        Assert.That((long)byPath["/src/Helper.cs"]["TotalSymbols"], Is.EqualTo(1));
-        Assert.That((long)byPath["/src/IOld.cs"]["TotalSymbols"], Is.EqualTo(1));
+        Assert.That((long)byPath["/src/MyClass.cs"]["TotalSymbols"]!, Is.EqualTo(3));
+        Assert.That((long)byPath["/src/Helper.cs"]["TotalSymbols"]!, Is.EqualTo(1));
+        Assert.That((long)byPath["/src/IOld.cs"]["TotalSymbols"]!, Is.EqualTo(1));
     }
 
     [Test]
@@ -330,9 +330,9 @@ public sealed class SqlQueryServiceTests
         Assert.That(result.Columns, Is.EquivalentTo(["FilePath", "cnt"]));
 
         var byPath = result.Rows!.ToDictionary(r => (string)r["FilePath"]!);
-        Assert.That((long)byPath["/src/MyClass.cs"]["cnt"], Is.EqualTo(3));
-        Assert.That((long)byPath["/src/Helper.cs"]["cnt"], Is.EqualTo(1));
-        Assert.That((long)byPath["/src/IOld.cs"]["cnt"], Is.EqualTo(1));
+        Assert.That((long)byPath["/src/MyClass.cs"]["cnt"]!, Is.EqualTo(3));
+        Assert.That((long)byPath["/src/Helper.cs"]["cnt"]!, Is.EqualTo(1));
+        Assert.That((long)byPath["/src/IOld.cs"]["cnt"]!, Is.EqualTo(1));
     }
 
     // ----- Feature: explicit column projection (non-GROUP BY) -----
@@ -385,7 +385,7 @@ public sealed class SqlQueryServiceTests
         Assert.That(result.Success, Is.True);
         Assert.That(result.RowCount, Is.EqualTo(1));
         var row = result.Rows![0];
-        Assert.That((long)row["cnt"], Is.EqualTo(5));
+        Assert.That((long)row["cnt"]!, Is.EqualTo(5));
         Assert.That(Convert.ToDouble(row["total"]), Is.EqualTo(150.0));
         Assert.That(Convert.ToDouble(row["avg"]), Is.EqualTo(30.0));
         Assert.That(Convert.ToDouble(row["min"]), Is.EqualTo(10.0));
@@ -422,8 +422,8 @@ public sealed class SqlQueryServiceTests
         Assert.That(result.Success, Is.True);
         Assert.That(result.RowCount, Is.EqualTo(2));
         var byPath = result.Rows!.ToDictionary(r => (string)r["FilePath"]!);
-        Assert.That((long)byPath["/src/a.cs"]["cnt"], Is.EqualTo(1));
-        Assert.That((long)byPath["/src/b.cs"]["cnt"], Is.EqualTo(0));
+        Assert.That((long)byPath["/src/a.cs"]["cnt"]!, Is.EqualTo(1));
+        Assert.That((long)byPath["/src/b.cs"]["cnt"]!, Is.EqualTo(0));
     }
 
     // ----- Feature: HAVING -----
@@ -440,8 +440,8 @@ public sealed class SqlQueryServiceTests
 
         Assert.That(result.Success, Is.True);
         Assert.That(result.RowCount, Is.EqualTo(1));
-        Assert.That((string)result.Rows![0]["FilePath"], Is.EqualTo("/src/MyClass.cs"));
-        Assert.That((long)result.Rows[0]["cnt"], Is.EqualTo(3));
+        Assert.That((string)result.Rows![0]["FilePath"]!, Is.EqualTo("/src/MyClass.cs"));
+        Assert.That((long)result.Rows[0]["cnt"]!, Is.EqualTo(3));
     }
 
     [Test]
@@ -456,7 +456,7 @@ public sealed class SqlQueryServiceTests
 
         Assert.That(result.Success, Is.True);
         Assert.That(result.RowCount, Is.EqualTo(1));
-        Assert.That((string)result.Rows![0]["FilePath"], Is.EqualTo("/src/MyClass.cs"));
+        Assert.That((string)result.Rows![0]["FilePath"]!, Is.EqualTo("/src/MyClass.cs"));
     }
 
     // ----- Feature: DISTINCT -----
@@ -520,8 +520,8 @@ public sealed class SqlQueryServiceTests
 
         Assert.That(result.Success, Is.True);
         var rows = result.Rows!;
-        Assert.That((long)rows[0]["cnt"], Is.EqualTo(3));
-        Assert.That((string)rows[0]["FilePath"], Is.EqualTo("/src/MyClass.cs"));
+        Assert.That((long)rows[0]["cnt"]!, Is.EqualTo(3));
+        Assert.That((string)rows[0]["FilePath"]!, Is.EqualTo("/src/MyClass.cs"));
     }
 
     // ----- Feature: multi-column ORDER BY -----
@@ -735,9 +735,9 @@ public sealed class SqlQueryServiceTests
         Assert.That(result.Success, Is.True);
         Assert.That(result.RowCount, Is.EqualTo(3));
         var rows = result.Rows!;
-        Assert.That((long)rows[0]["cnt"], Is.EqualTo(3));
-        Assert.That((string)rows[0]["FilePath"], Is.EqualTo("/src/MyClass.cs"));
-        Assert.That((long)rows[1]["cnt"], Is.EqualTo(1));
+        Assert.That((long)rows[0]["cnt"]!, Is.EqualTo(3));
+        Assert.That((string)rows[0]["FilePath"]!, Is.EqualTo("/src/MyClass.cs"));
+        Assert.That((long)rows[1]["cnt"]!, Is.EqualTo(1));
     }
 
     [Test]
@@ -752,9 +752,9 @@ public sealed class SqlQueryServiceTests
 
         Assert.That(result.Success, Is.True);
         var rows = result.Rows!;
-        Assert.That((long)rows[0]["cnt"], Is.EqualTo(2));
-        Assert.That((string)rows[0]["Kind"], Is.EqualTo("Class"));
-        Assert.That((long)rows[1]["cnt"], Is.EqualTo(1));
+        Assert.That((long)rows[0]["cnt"]!, Is.EqualTo(2));
+        Assert.That((string)rows[0]["Kind"]!, Is.EqualTo("Class"));
+        Assert.That((long)rows[1]["cnt"]!, Is.EqualTo(1));
     }
 
     [Test]
@@ -1048,7 +1048,7 @@ public sealed class SqlQueryServiceTests
         Assert.That(result.Success, Is.True);
         Assert.That(result.RowCount, Is.EqualTo(1));
         // Empty string is included, null is excluded
-        Assert.That((long)result.Rows![0]["cnt"], Is.EqualTo(1));
+        Assert.That((long)result.Rows![0]["cnt"]!, Is.EqualTo(1));
     }
 
     [Test]
@@ -1266,9 +1266,9 @@ public sealed class SqlQueryServiceTests
         Assert.That(result.Success, Is.True);
         Assert.That(result.RowCount, Is.EqualTo(3));
         var byPath = result.Rows!.ToDictionary(r => (string)r["FilePath"]!);
-        Assert.That((long)byPath["/src/MyClass.cs"]["cnt"], Is.EqualTo(1));
-        Assert.That((long)byPath["/src/Helper.cs"]["cnt"], Is.EqualTo(1));
-        Assert.That((long)byPath["/src/IOld.cs"]["cnt"], Is.EqualTo(1));
+        Assert.That((long)byPath["/src/MyClass.cs"]["cnt"]!, Is.EqualTo(1));
+        Assert.That((long)byPath["/src/Helper.cs"]["cnt"]!, Is.EqualTo(1));
+        Assert.That((long)byPath["/src/IOld.cs"]["cnt"]!, Is.EqualTo(1));
     }
 
     [Test]
@@ -1299,7 +1299,7 @@ public sealed class SqlQueryServiceTests
 
         Assert.That(result.Success, Is.True);
         Assert.That(result.RowCount, Is.EqualTo(1));
-        Assert.That(result.Rows![0]["Kind"], Is.EqualTo("Interface"));
+        Assert.That(result.Rows![0]["Kind"]!, Is.EqualTo("Interface"));
     }
 
     [Test]
@@ -1392,7 +1392,7 @@ public sealed class SqlQueryServiceTests
 
         Assert.That(result.Success, Is.True);
         Assert.That(result.RowCount, Is.GreaterThanOrEqualTo(1));
-        Assert.That(result.Rows![0]["FilePath"], Is.EqualTo("/src/Auth.cs"));
+        Assert.That(result.Rows![0]["FilePath"]!, Is.EqualTo("/src/Auth.cs"));
         Assert.That(result.Rows[0], Contains.Key("__score"));
     }
 
