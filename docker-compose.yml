@@ -4,10 +4,10 @@ volumes:
 
 services:
   aspire-dashboard:
-    image: mcr.microsoft.com/dotnet/aspire-dashboard:10.0
+    image: mcr.microsoft.com/dotnet/aspire-dashboard:13.3
     ports:
       - "18888:18888"   # Dashboard UI
-      - "18889:18889"   # OTLP gRPC endpoint
+      - "4317:18889"    # OTLP gRPC endpoint
     environment:
       DOTNET_DASHBOARD_UNSECURED_ALLOW_ANONYMOUS: "true"
 

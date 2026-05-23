@@ -7,7 +7,6 @@ using CodeMemory.Indexing.Chunking;
 using CodeMemory.Indexing.Extraction;
 using CodeMemory.Indexing.Parsing;
 using CodeMemory.Indexing.Search;
-using CodeMemory.ServiceDefaults;
 using CodeMemory.Services;
 using CodeMemory.Services.Architecture;
 using CodeMemory.Services.Git;
@@ -17,9 +16,10 @@ using CodeMemory.Storage;
 using Memori.Embeddings;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
-using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.AddServiceDefaults();
 
 // Indexing services
 builder.Services.AddSingleton<FileCrawler>();
@@ -137,11 +137,13 @@ builder.Services.AddSingleton<RepoRegistryService>();
 builder.Services.AddSingleton<CloneIndexService>();
 
 // OpenTelemetry — structured logs, distributed tracing, and metrics via OTLP
-builder.Services.AddCodeMemoryOpenTelemetry();
+//builder.Services.AddCodeMemoryOpenTelemetry();
 
 var provider = builder.Configuration.GetValue<string>("Storage:Provider") ?? "inmemory";
 
 var app = builder.Build();
+
+app.MapDefaultEndpoints();
 app.UseCors();
 app.MapRazorPages();
 

@@ -16,10 +16,10 @@
     <File Path="scripts/pg-stop.ps1" />
   </Folder>
   <Folder Name="/src/">
-    <Project Path="src/CodeMemory.AppHost/CodeMemory.AppHost.csproj" />
+    <Project Path="src/CodeMemory.AppHost/CodeMemory.AppHost.csproj" Id="d2399944-5866-4829-8ec2-e85b806cfed5" />
     <Project Path="src/CodeMemory.AspNet/CodeMemory.AspNet.csproj" />
-    <Project Path="src/CodeMemory.ServiceDefaults/CodeMemory.ServiceDefaults.csproj" />
     <Project Path="src/CodeMemory.Mcp/CodeMemory.Mcp.csproj" />
+    <Project Path="src/CodeMemory.ServiceDefaults/CodeMemory.ServiceDefaults.csproj" />
     <Project Path="src/CodeMemory/CodeMemory.csproj" />
   </Folder>
   <Folder Name="/tests/">
