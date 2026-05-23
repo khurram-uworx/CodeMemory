@@ -12,6 +12,15 @@ using System.Text;
 
 namespace CodeMemory.AspNet.Tools;
 
+public sealed record AspNetSqlQueryResult(
+    bool Success,
+    long RowCount,
+    long ExecutionTimeMs,
+    List<string>? Columns,
+    List<Dictionary<string, object?>>? Rows,
+    string? Error
+);
+
 [McpServerToolType]
 public sealed class AspNetSqlQueryTool
 {
@@ -36,21 +45,6 @@ public sealed class AspNetSqlQueryTool
         => providerName.Contains("SqlServer", StringComparison.OrdinalIgnoreCase)
             ? quoteSqlServerIdentifier(columnName)
             : quoteDoubleQuotedIdentifier(columnName);
-
-    static IDictionary<string, object?> fail(string error, Stopwatch sw)
-    {
-        sw.Stop();
-
-        return new Dictionary<string, object?>
-        {
-            ["success"] = false,
-            ["rowCount"] = 0,
-            ["executionTimeMs"] = sw.ElapsedMilliseconds,
-            ["columns"] = null,
-            ["rows"] = null,
-            ["error"] = error
-        };
-    }
 
     static string translateLogicalTableNames(string sql, CodeMemoryDbContext db)
     {
@@ -223,65 +217,112 @@ public sealed class AspNetSqlQueryTool
         return actualStorage as HybridStorageService;
     }
 
-    (bool Success, string TableName, string? Error) validateQuery(string query)
+    (string? Error, bool IsValid) validateQuery(string query)
     {
-        Sequence<Statement> statements;
-
         try
         {
-            statements = parser.Parse(query.AsSpan(), Dialect);
+            var statements = parser.Parse(query.AsSpan(), Dialect);
+
+            if (statements.Count != 1)
+                return ("Only single-statement queries are supported", false);
+
+            if (statements[0] is not Statement.Select)
+                return ("Only SELECT statements are supported", false);
+
+            return (null, true);
         }
         catch (Exception ex)
         {
-            return (false, string.Empty, $"Parse error: {ex.Message}");
+            return ($"Parse error: {ex.Message}", false);
         }
+    }
 
-        if (statements.Count != 1)
-            return (false, string.Empty, "Only single-statement queries are supported");
-
-        if (statements[0] is not Statement.Select select)
-            return (false, string.Empty, "Only SELECT statements are supported");
-
-        if (select.Query.Body is not SetExpression.SelectExpression selectExpression)
-            return (false, string.Empty, "Only simple SELECT queries are supported");
-
-        var selectBody = selectExpression.Select;
-        if (selectBody.From is null || selectBody.From.Count == 0)
-            return (false, string.Empty, "SELECT must have a FROM clause with a table name");
-
-        if (selectBody.From.Count > 1 || selectBody.From[0].Joins is { Count: > 0 })
-            return (false, string.Empty, "JOINs and multiple FROM tables are not supported by this tool");
-
-        var tableName = extractTableName(selectBody.From[0].Relation);
-        if (tableName is null)
-            return (false, string.Empty, "Could not determine table name from FROM clause");
-
-        if (!tableName.Equals("SymbolRecord", StringComparison.OrdinalIgnoreCase)
-            && !tableName.Equals("RelationshipRecord", StringComparison.OrdinalIgnoreCase)
-            && !tableName.Equals("ChunkRecord", StringComparison.OrdinalIgnoreCase))
+    static bool containsTableReference(string sql, string tableName)
+    {
+        for (var i = 0; i < sql.Length;)
         {
-            return (false, string.Empty,
-                "Unknown table. Available tables: SymbolRecord, RelationshipRecord. ChunkRecord is queried via semantic_search.");
+            var ch = sql[i];
+
+            if (ch is '\'' or '"')
+            {
+                i++;
+                while (i < sql.Length && sql[i] != ch)
+                {
+                    if (sql[i] == '\\')
+                        i++;
+                    i++;
+                }
+
+                if (i < sql.Length)
+                    i++;
+                continue;
+            }
+
+            if (isIdentifierStart(ch))
+            {
+                var start = i;
+                i++;
+                while (i < sql.Length && isIdentifierPart(sql[i]))
+                    i++;
+
+                if (sql[start..i].Equals(tableName, StringComparison.OrdinalIgnoreCase))
+                    return true;
+                continue;
+            }
+
+            i++;
         }
 
-        return (true, tableName, null);
+        return false;
     }
 
     [McpServerTool, Description(@"
 Execute SELECT-only SQL queries against the relational storage backend.
+The query is forwarded to the underlying database engine (PostgreSQL or SQL Server)
+after translating logical table/column names to physical names.
+
+Only SELECT is supported. No INSERT/UPDATE/DELETE/CREATE.
 
 TABLES:
   - SymbolRecord: Id, Name, Kind, FilePath, LineStart, LineEnd, FullName, Modifiers, Documentation
   - RelationshipRecord: Id, SourceSymbolId, TargetSymbolId, RelationshipType
 
-ChunkRecord queries are not supported via SQL in this backend. Use semantic_search instead.
+ChunkRecord queries are not supported via SQL — chunks live in the vector store.
+Use semantic_search instead.
 
-The tool validates that the statement is a single SELECT query, translates SymbolRecord/RelationshipRecord
-to the provider tables, executes on the current repo database, and returns JSON:
-success, rowCount, executionTimeMs, columns, rows, error.
+SYNTAX:
+  [WITH cte AS (SELECT ...)] SELECT [DISTINCT] cols|*|aggr FROM t [[AS] a]
+    [JOIN t [[AS] a] ON c] [WHERE c [AND|OR ...]] [GROUP BY c]
+    [HAVING c] [ORDER BY c [ASC|DESC]] [OFFSET m ROWS] [FETCH NEXT n ROWS ONLY]
+  Strings use single quotes (''). Use double-quoted aliases: AS ""Alias"".
+  Column names in results default to physical snake_case names (e.g., ""full_name"")
+  unless aliased with AS.
+  CTEs (non-recursive, chained), derived tables FROM (subquery) AS alias,
+  self-joins, table aliases, and numeric ORDER BY (1-based positions) — all supported.
+
+OPERATORS: =, <>, <, >, <=, >=, LIKE, CONCAT, IN(...), IS NULL, IS NOT NULL, BETWEEN
+AND, OR, NOT, +, -, *, /
+
+AGGREGATES: COUNT(*|col), SUM, AVG, MIN, MAX — use AS alias
+
+EXAMPLES:
+  SELECT * FROM SymbolRecord WHERE Kind = 'Class' ORDER BY Name OFFSET 0 ROWS FETCH NEXT 10 ROWS ONLY
+  SELECT DISTINCT Kind FROM SymbolRecord
+  SELECT FilePath, COUNT(*) AS cnt FROM SymbolRecord GROUP BY FilePath HAVING cnt > 1 ORDER BY cnt DESC
+  SELECT Name, LineEnd - LineStart AS Length FROM SymbolRecord ORDER BY Length DESC OFFSET 0 ROWS FETCH NEXT 10 ROWS ONLY
+  SELECT Id AS ""Id"", Name AS ""Name"", Kind AS ""Kind"" FROM SymbolRecord WHERE Kind = 'Class'
+  SELECT s.Name, r.RelationshipType FROM SymbolRecord s JOIN RelationshipRecord r ON s.Id = r.SourceSymbolId
+  SELECT Kind, AVG(LineEnd - LineStart) AS avgLen, COUNT(*) AS cnt FROM SymbolRecord GROUP BY Kind ORDER BY avgLen DESC
+  SELECT Name, LineEnd - LineStart AS Length FROM SymbolRecord WHERE LineEnd - LineStart BETWEEN 5 AND 50 ORDER BY Length DESC
+  SELECT * FROM SymbolRecord WHERE Id IN (SELECT SourceSymbolId FROM RelationshipRecord WHERE RelationshipType = 'References')
+  SELECT CONCAT(Name, '::', Kind) AS combined FROM SymbolRecord WHERE Kind IN ('Class', 'Interface') ORDER BY Name OFFSET 0 ROWS FETCH NEXT 10 ROWS ONLY
+  SELECT s.Name, COUNT(*) AS cnt FROM SymbolRecord s JOIN RelationshipRecord r ON s.Id = r.TargetSymbolId GROUP BY s.Name ORDER BY cnt DESC
+  SELECT c.Name, COUNT(*) AS cnt FROM SymbolRecord c, SymbolRecord m WHERE m.Kind = 'Method' AND m.FullName LIKE CONCAT(c.FullName, '.%') AND c.Kind = 'Class' GROUP BY c.Name ORDER BY cnt DESC
+
+RETURNS JSON: success, rowCount, executionTimeMs, columns, rows, error
 ")]
-    public async Task<IDictionary<string, object?>> SqlQueryAsync(
-        [Description("SQL query string, e.g. SELECT * FROM SymbolRecord WHERE Kind = 'Class' LIMIT 10")]
+    public async Task<AspNetSqlQueryResult> SqlQueryAsync(
+        [Description(@"SQL query string (e.g. SELECT * FROM SymbolRecord WHERE Kind = 'Class' ORDER BY Name OFFSET 0 ROWS FETCH NEXT 10 ROWS ONLY). Use single quotes for strings, double quotes for aliases. Logical table/column names are auto-translated to physical names.")]
         string query,
         [Description("Maximum number of rows to return from the result stream (1-10000, default 100)")]
         int maxResults = 100)
@@ -291,37 +332,40 @@ success, rowCount, executionTimeMs, columns, rows, error.
 
         try
         {
-            var validation = validateQuery(query);
-            if (!validation.Success)
-                return fail(validation.Error!, sw);
+            var (error, isValid) = validateQuery(query);
+            if (!isValid)
+            {
+                sw.Stop();
+                return new AspNetSqlQueryResult(false, 0, sw.ElapsedMilliseconds, null, null, error);
+            }
 
-            if (validation.TableName.Equals("ChunkRecord", StringComparison.OrdinalIgnoreCase))
-                return fail("ChunkRecord queries not supported via SQL in this backend. Use semantic_search tool instead.", sw);
+            if (containsTableReference(query, "ChunkRecord"))
+            {
+                sw.Stop();
+                return new AspNetSqlQueryResult(false, 0, sw.ElapsedMilliseconds, null, null,
+                    "ChunkRecord queries not supported via SQL in this backend. Use semantic_search tool instead.");
+            }
 
             var hybridStorage = resolveHybridStorage();
             if (hybridStorage is null)
-                return fail("sql_query requires HybridStorageService. The current storage provider does not expose relational SQL storage.", sw);
+            {
+                sw.Stop();
+                return new AspNetSqlQueryResult(false, 0, sw.ElapsedMilliseconds, null, null,
+                    "sql_query requires HybridStorageService. The current storage provider does not expose relational SQL storage.");
+            }
 
             await using var db = hybridStorage.CreateDbContext();
             var translatedSql = translateLogicalTableNames(query, db);
-            var rows = await executeQueryAsync(db, translatedSql, cappedMaxResults, CancellationToken.None);
+            var (columns, rows) = await executeQueryAsync(db, translatedSql, cappedMaxResults, CancellationToken.None);
 
             sw.Stop();
-
-            return new Dictionary<string, object?>
-            {
-                ["success"] = true,
-                ["rowCount"] = rows.Rows.Count,
-                ["executionTimeMs"] = sw.ElapsedMilliseconds,
-                ["columns"] = rows.Columns,
-                ["rows"] = rows.Rows,
-                ["error"] = null
-            };
+            return new AspNetSqlQueryResult(true, rows.Count, sw.ElapsedMilliseconds, columns, rows, null);
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "SQL query execution failed: {Query}", query);
-            return fail($"Query execution failed: {ex.Message}", sw);
+            sw.Stop();
+            return new AspNetSqlQueryResult(false, 0, sw.ElapsedMilliseconds, null, null, $"Query execution failed: {ex.Message}");
         }
     }
 }

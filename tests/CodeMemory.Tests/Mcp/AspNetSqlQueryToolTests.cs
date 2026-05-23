@@ -86,7 +86,6 @@ public sealed class AspNetSqlQueryToolTests : BaseToolTests
     }
 
     [TestCase("SELECT * FROM ChunkRecord", "ChunkRecord queries not supported")]
-    [TestCase("SELECT * FROM SymbolRecord s JOIN RelationshipRecord r ON s.Id = r.SourceSymbolId", "JOINs and multiple FROM tables are not supported")]
     [TestCase("DELETE FROM SymbolRecord", "Only SELECT statements are supported")]
     public async Task SqlQueryAsync_RejectsUnsupportedQueryShapes(string sql, string expectedError)
     {
@@ -96,8 +95,54 @@ public sealed class AspNetSqlQueryToolTests : BaseToolTests
         {
             var result = await tool.SqlQueryAsync(sql);
 
-            Assert.That(result["success"], Is.False);
-            Assert.That(result["error"]?.ToString(), Does.Contain(expectedError));
+            Assert.That(result.Success, Is.False);
+            Assert.That(result.Error, Does.Contain(expectedError));
+        }
+        finally
+        {
+            storage.Dispose();
+            Cleanup(tempDir);
+        }
+    }
+
+    [Test]
+    public async Task SqlQueryAsync_JoinQuery_ReturnsRows()
+    {
+        var (tool, storage, tempDir) = await CreateToolWithData();
+
+        try
+        {
+            var result = await tool.SqlQueryAsync(
+                """SELECT s.Name AS "Name", r.RelationshipType AS "RelationshipType" FROM SymbolRecord s JOIN RelationshipRecord r ON s.Id = r.SourceSymbolId ORDER BY s.Name""",
+                maxResults: 10);
+
+            AssertSuccess(result, expectedRowCount: 1);
+            var rows = GetRows(result);
+            Assert.That(rows[0]["Name"], Is.EqualTo("TestClass"));
+            Assert.That(rows[0]["RelationshipType"], Is.EqualTo("References"));
+        }
+        finally
+        {
+            storage.Dispose();
+            Cleanup(tempDir);
+        }
+    }
+
+    [Test]
+    public async Task SqlQueryAsync_Subquery_ReturnsRows()
+    {
+        var (tool, storage, tempDir) = await CreateToolWithData();
+
+        try
+        {
+            var result = await tool.SqlQueryAsync(
+                """SELECT * FROM SymbolRecord WHERE Id IN (SELECT SourceSymbolId FROM RelationshipRecord WHERE RelationshipType = 'References')""",
+                maxResults: 10);
+
+            AssertSuccess(result, expectedRowCount: 1);
+            var rows = GetRows(result);
+            Assert.That(rows[0]["Id"], Is.EqualTo("symbol-1"));
+            Assert.That(rows[0]["Name"], Is.EqualTo("TestClass"));
         }
         finally
         {
@@ -162,15 +207,15 @@ public sealed class AspNetSqlQueryToolTests : BaseToolTests
             configuredDimension: TestConstants.EmbeddingDimension);
     }
 
-    static void AssertSuccess(IDictionary<string, object?> result, int expectedRowCount)
+    static void AssertSuccess(AspNetSqlQueryResult result, int expectedRowCount)
     {
-        Assert.That(result["success"], Is.True);
-        Assert.That(result["rowCount"], Is.EqualTo(expectedRowCount));
-        Assert.That(result["error"], Is.Null);
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(expectedRowCount));
+        Assert.That(result.Error, Is.Null);
     }
 
-    static List<Dictionary<string, object?>> GetRows(IDictionary<string, object?> result)
-        => (List<Dictionary<string, object?>>)result["rows"]!;
+    static List<Dictionary<string, object?>> GetRows(AspNetSqlQueryResult result)
+        => result.Rows!;
 
     static void Cleanup(string tempDir)
     {
