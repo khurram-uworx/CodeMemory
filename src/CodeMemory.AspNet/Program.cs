@@ -7,6 +7,7 @@ using CodeMemory.Indexing.Chunking;
 using CodeMemory.Indexing.Extraction;
 using CodeMemory.Indexing.Parsing;
 using CodeMemory.Indexing.Search;
+using CodeMemory.ServiceDefaults;
 using CodeMemory.Services;
 using CodeMemory.Services.Architecture;
 using CodeMemory.Services.Git;
@@ -134,6 +135,9 @@ builder.Services.AddDbContextFactory<RepoRegistryDbContext>(options =>
 builder.Services.AddRazorPages();
 builder.Services.AddSingleton<RepoRegistryService>();
 builder.Services.AddSingleton<CloneIndexService>();
+
+// OpenTelemetry — structured logs, distributed tracing, and metrics via OTLP
+builder.Services.AddCodeMemoryOpenTelemetry();
 
 var provider = builder.Configuration.GetValue<string>("Storage:Provider") ?? "inmemory";
 

@@ -15,8 +15,14 @@
     <File Path="scripts/pg-start.ps1" />
     <File Path="scripts/pg-stop.ps1" />
   </Folder>
-  <Project Path="src/CodeMemory.AspNet/CodeMemory.AspNet.csproj" />
-  <Project Path="src/CodeMemory.Mcp/CodeMemory.Mcp.csproj" />
-  <Project Path="src/CodeMemory/CodeMemory.csproj" />
-  <Project Path="tests/CodeMemory.Tests/CodeMemory.Tests.csproj" />
+  <Folder Name="/src/">
+    <Project Path="src/CodeMemory.AppHost/CodeMemory.AppHost.csproj" />
+    <Project Path="src/CodeMemory.AspNet/CodeMemory.AspNet.csproj" />
+    <Project Path="src/CodeMemory.ServiceDefaults/CodeMemory.ServiceDefaults.csproj" />
+    <Project Path="src/CodeMemory.Mcp/CodeMemory.Mcp.csproj" />
+    <Project Path="src/CodeMemory/CodeMemory.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/CodeMemory.Tests/CodeMemory.Tests.csproj" />
+  </Folder>
 </Solution>

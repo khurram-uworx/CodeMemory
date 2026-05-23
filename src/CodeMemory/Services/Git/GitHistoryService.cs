@@ -1,3 +1,4 @@
+using CodeMemory.Diagnostics;
 using CodeMemory.Indexing.Git;
 using CodeMemory.Storage;
 using Microsoft.Extensions.Logging;
@@ -66,6 +67,10 @@ public sealed class GitHistoryService : IGitHistoryService, IDisposable
 
     async Task<IReadOnlyList<HotspotInfo>?> runGitHotspotsAsync(int top, int maxCommits, CancellationToken ct)
     {
+        using var activity = CodeMemoryActivitySources.Git.StartActivity("GetHotspots");
+        activity?.SetTag("top", top);
+        activity?.SetTag("maxCommits", maxCommits);
+
         var logArgs = $"--no-pager log --format=\"%H|%an|%ad\" --date=short --diff-filter=AM --max-count={maxCommits * 10} --name-only";
         var (exitCode, stdout) = await runGitAsync(logArgs, ct);
 
@@ -112,6 +117,9 @@ public sealed class GitHistoryService : IGitHistoryService, IDisposable
 
     async Task<(int ExitCode, string Stdout)> runGitAsync(string arguments, CancellationToken ct)
     {
+        using var activity = CodeMemoryActivitySources.Git.StartActivity("GitCommand");
+        activity?.SetTag("git.args", arguments);
+
         try
         {
             var psi = new ProcessStartInfo("git", arguments)

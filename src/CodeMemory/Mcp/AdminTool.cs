@@ -1,3 +1,4 @@
+using CodeMemory.Diagnostics;
 using CodeMemory.Indexing;
 using CodeMemory.Services;
 using CodeMemory.Storage;
@@ -27,6 +28,8 @@ public sealed class AdminTool
         [Description("Optional: skip files matching these patterns (e.g., '**/*.generated.cs,**/bin/**')")] string? excludePatterns = null,
         CancellationToken ct = default)
     {
+        CodeMemoryMetrics.ToolInvocations.Add(1, new("tool", "rescan"), new("host", "mcp"));
+
         try
         {
             var repoRoot = storage.RepoRoot;
@@ -59,6 +62,8 @@ public sealed class AdminTool
     [McpServerTool, Description("Returns the root path of the currently active repository being indexed and queried.")]
     public string GetRepositoryRoot()
     {
+        CodeMemoryMetrics.ToolInvocations.Add(1, new("tool", "get_repository_root"), new("host", "mcp"));
+
         try
         {
             return JsonSerializer.Serialize(new

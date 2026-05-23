@@ -1,4 +1,5 @@
 using CodeMemory.AspNet.Configuration;
+using CodeMemory.Diagnostics;
 using CodeMemory.Indexing;
 using ModelContextProtocol.Server;
 using System.ComponentModel;
@@ -17,6 +18,7 @@ public sealed class AspNetMcpTools
     [McpServerTool, Description("Ping the server. Returns indexing status — agents should back off and retry if still building the index.")]
     public string Ping()
     {
+        CodeMemoryMetrics.ToolInvocations.Add(1, new("tool", "ping"), new("host", "aspnet"));
         var repoName = repoContext.CurrentRepoName;
         if (repoName is null)
             return JsonSerializer.Serialize(new
