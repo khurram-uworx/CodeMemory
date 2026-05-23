@@ -4,17 +4,16 @@ Items identified by AI agent analysis of the codebase — patterns that add fric
 
 ---
 
-## 1. Three Error-Handling Patterns for MCP Tools
+## 1. Two Error-Handling Patterns Remain for MCP Tools
 
 | Return Type | Pattern | Where Used |
 |---|---|---|
 | `string` | `try/catch` → `JsonSerializer.Serialize(new { status="error", message })` | `AdminTool`, `McpTools.Ping` |
-| Typed record | Null-service guard → `[]` / sentinel with `Warning` field | All `CodeMemory` library tools |
-| `IDictionary<string, object?>` | `fail()` helper → `{ success: false, error }` | `AspNetSqlQueryTool` |
+| Typed record | Null-service guard → `[]` / sentinel with `Warning` field | All `CodeMemory` library tools, `AspNetSqlQueryTool` |
 
-Writing a new tool requires deciding which pattern fits the return type. The typed-record pattern is strictly better — the MCP SDK handles serialization, null-service guards produce clear signals, and unexpected exceptions become proper JSON-RPC errors. The other two add no value that typed records don't already provide.
+Writing a new tool requires deciding which pattern fits the return type. The typed-record pattern is strictly better — the MCP SDK handles serialization, null-service guards produce clear signals, and unexpected exceptions become proper JSON-RPC errors. The string pattern adds no value that typed records don't already provide.
 
-**Fix:** Converge to typed records everywhere. Replace `AdminTool` string returns with a record type. Replace `AspNetSqlQueryTool` dictionary returns with a typed result record.
+**Fix:** Converge to typed records everywhere. Replace `AdminTool` string returns with a record type. (`AspNetSqlQueryTool` migrated to typed `AspNetSqlQueryResult` record.)
 
 ## 2. `MockServices.cs` Will Not Scale
 
@@ -62,7 +61,7 @@ Vector search re-ranking cannot operate on unfiltered data — a `Content LIKE '
 | # | Item | Effort | Why |
 |---|---|---|---|---|
 | 3 | Error-path test coverage | Low | Fills actual test gap, prevents drift |
-| 1 | Single error pattern | Medium | Requires touching 3 files, but removes a decision point |
+| 1 | Single error pattern | Low | Only `AdminTool`/`McpTools.Ping` remain; `AspNetSqlQueryTool` already migrated |
 | 7 | Vector search LIKE requirement | Medium | Usability gap in sql_query |
 | 6 | Empty RelationshipRecord feedback | Low | Simple developer experience fix |
 | 2 | Adopt NSubstitute | Medium | Replaces `MockServices.cs`, adds call verification |
