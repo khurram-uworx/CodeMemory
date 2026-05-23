@@ -1,5 +1,6 @@
 using CodeMemory.AspNet.Registry;
 using CodeMemory.AspNet.Services;
+using CodeMemory.Indexing;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 
@@ -9,14 +10,22 @@ public sealed class IndexModel : PageModel
 {
     readonly RepoRegistryService registry;
     readonly CloneIndexService cloneIndex;
+    readonly NotificationService notifications;
 
     public List<RegisteredRepo> Repos { get; private set; } = [];
+    public Dictionary<string, double?> Progress { get; private set; } = [];
 
-    public IndexModel(RepoRegistryService registry, CloneIndexService cloneIndex)
-        => (this.registry, this.cloneIndex) = (registry, cloneIndex);
+    public IndexModel(RepoRegistryService registry, CloneIndexService cloneIndex, NotificationService notifications)
+        => (this.registry, this.cloneIndex, this.notifications) = (registry, cloneIndex, notifications);
 
     public async Task OnGetAsync()
-        => Repos = await registry.ListAsync();
+    {
+        Repos = await registry.ListAsync();
+        Progress = Repos.ToDictionary(r => r.Name, r => IndexingState.GetProgress(r.Name));
+
+        if (Repos.Count == 0)
+            notifications.PublishInfo("No repositories registered. Click \"Add Repo\" to get started.");
+    }
 
     public async Task<IActionResult> OnPostDeleteAsync(string name)
     {
@@ -25,7 +34,12 @@ public sealed class IndexModel : PageModel
 
         await cloneIndex.DeleteRepoAsync(name);
 
-        TempData["Message"] = $"Repo '{name}' deleted.";
+        notifications.PublishInfo($"Repo '{name}' deleted.");
+
+        var remaining = await registry.ListAsync();
+        if (remaining.Count == 0)
+            notifications.PublishInfo("No repositories registered. Click \"Add Repo\" to get started.");
+
         return RedirectToPage();
     }
 
@@ -37,7 +51,7 @@ public sealed class IndexModel : PageModel
         var source = repo.GitUrl ?? repo.LocalPath;
         await cloneIndex.EnqueueRepoAsync(name, source, repo.Branch);
 
-        TempData["Message"] = $"Re-index triggered for '{name}'.";
+        notifications.PublishInfo($"Re-index triggered for '{name}'.");
         return RedirectToPage();
     }
 }

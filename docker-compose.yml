@@ -35,9 +35,8 @@ services:
       - "8080:8080"
     environment:
       ASPNETCORE_ENVIRONMENT: Production
-      Storage__Provider: pgvector
       ConnectionStrings__PgVector: Host=postgres;Port=5432;Database=codememory;Username=codememory;Password=codememory
-      RepoRegistry__Provider: postgresql
+      Storage__Provider: pgvector
       RepoRegistry__CloneBasePath: /data/cloned-repos
       ConnectionStrings__Npgsql: Host=postgres;Port=5432;Database=codememory;Username=codememory;Password=codememory
       OTEL_EXPORTER_OTLP_ENDPOINT: http://aspire-dashboard:18889

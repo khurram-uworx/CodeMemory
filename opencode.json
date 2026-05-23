@@ -5,10 +5,15 @@
       "type": "remote",
       "url": "https://learn.microsoft.com/api/mcp"
     },
-    //"memori": {
-    //  "type": "remote",
-    //  "url": "http://localhost:4792/api/mcp/memori"
-    //},
+    "memori": {
+      "type": "local",
+      "command": [
+        "npx",
+        "-y",
+        "@uworx/memori",
+        "--long"
+      ]
+    },
     //"tree-sitter": {
     //  "type": "remote",
     //  "url": "http://localhost:4792/api/mcp/treesitter"

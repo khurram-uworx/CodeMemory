@@ -153,7 +153,7 @@ sealed class CodeMemoryFileLogger : ILogger
     readonly CodeMemoryFileLogWriter writer;
 
     internal CodeMemoryFileLogger(string categoryName, CodeMemoryFileLogWriter writer)
-        => (this.categoryName, this.writer) = (categoryName, writer); 
+        => (this.categoryName, this.writer) = (categoryName, writer);
 
     public IDisposable? BeginScope<TState>(TState state) where TState : notnull
         => NullScope.Instance;

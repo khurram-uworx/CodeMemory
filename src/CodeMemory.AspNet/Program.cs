@@ -16,6 +16,7 @@ using CodeMemory.Storage;
 using Memori.Embeddings;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
+using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -97,28 +98,35 @@ builder.Services.AddCors(options =>
 });
 
 // RepoRegistry — EF Core registry DB for dynamic repo registration
+// Provider is derived from Storage:Provider to simplify configuration
 var registryOptions = builder.Configuration
     .GetSection(RepoRegistryOptions.SectionName)
     .Get<RepoRegistryOptions>() ?? new();
 builder.Services.AddSingleton(registryOptions);
 
-var registryConnString = registryOptions.Provider.ToLowerInvariant() switch
+var provider = builder.Configuration.GetValue<string>("Storage:Provider") ?? "inmemory";
+
+(string? registryConnString, string registryProvider) = provider.ToLowerInvariant() switch
 {
-    "sqlite" => builder.Configuration.GetConnectionString("Sqlite")
-        ?? "Data Source=App_Data/registry.db",
-    "sqlserver" => builder.Configuration.GetConnectionString("SqlServer")
-        ?? throw new InvalidOperationException("Connection string 'SqlServer' is required for RepoRegistry SqlServer provider."),
-    "npgsql" or "postgresql" => builder.Configuration.GetConnectionString("Npgsql")
+    "inmemory" => (null, "inmemory"),
+    "sqlite" => (builder.Configuration.GetConnectionString("Sqlite")
+        ?? "Data Source=App_Data/registry.db", "sqlite"),
+    "pgvector" => (builder.Configuration.GetConnectionString("Npgsql")
         ?? builder.Configuration.GetConnectionString("PgVector")
-        ?? throw new InvalidOperationException("Connection string 'Npgsql'/'PgVector' is required for RepoRegistry Npgsql provider."),
+        ?? throw new InvalidOperationException("Connection string 'Npgsql'/'PgVector' is required when Storage:Provider is 'pgvector'"), "npgsql"),
+    "sqlserver" => (builder.Configuration.GetConnectionString("SqlServer")
+        ?? throw new InvalidOperationException("Connection string 'SqlServer' is required when Storage:Provider is 'sqlserver'"), "sqlserver"),
     var p => throw new InvalidOperationException(
-        $"Unsupported RepoRegistry provider '{p}'. Supported: sqlite, sqlserver, npgsql")
+        $"Unsupported storage provider '{p}'. Supported: inmemory, sqlite, pgvector, sqlserver")
 };
 
 builder.Services.AddDbContextFactory<RepoRegistryDbContext>(options =>
 {
-    switch (registryOptions.Provider.ToLowerInvariant())
+    switch (registryProvider)
     {
+        case "inmemory":
+            options.UseInMemoryDatabase("codememory-registry");
+            break;
         case "sqlite":
             options.UseSqlite(registryConnString);
             break;
@@ -126,7 +134,6 @@ builder.Services.AddDbContextFactory<RepoRegistryDbContext>(options =>
             options.UseSqlServer(registryConnString);
             break;
         case "npgsql":
-        case "postgresql":
             options.UseNpgsql(registryConnString);
             break;
     }
@@ -135,11 +142,7 @@ builder.Services.AddDbContextFactory<RepoRegistryDbContext>(options =>
 builder.Services.AddRazorPages();
 builder.Services.AddSingleton<RepoRegistryService>();
 builder.Services.AddSingleton<CloneIndexService>();
-
-// OpenTelemetry — structured logs, distributed tracing, and metrics via OTLP
-//builder.Services.AddCodeMemoryOpenTelemetry();
-
-var provider = builder.Configuration.GetValue<string>("Storage:Provider") ?? "inmemory";
+builder.Services.AddSingleton<NotificationService>();
 
 var app = builder.Build();
 
@@ -203,6 +206,37 @@ app.MapGet("/api/repos", async (RepoRegistryService registry) =>
     });
 
     return Results.Ok(new { repositories = result });
+});
+
+// SSE stream — live repo status for the dashboard
+app.MapGet("/api/repos/stream", async (HttpContext context, RepoRegistryService registry, NotificationService notifications) =>
+{
+    context.Response.ContentType = "text/event-stream";
+    context.Response.Headers["Cache-Control"] = "no-cache";
+    context.Response.Headers["X-Accel-Buffering"] = "no";
+
+    while (!context.RequestAborted.IsCancellationRequested)
+    {
+        var repos = await registry.ListAsync();
+        var data = repos.Select(r => new
+        {
+            name = r.Name,
+            source = r.GitUrl ?? r.LocalPath,
+            cloneStatus = r.CloneStatus,
+            indexStatus = r.IndexStatus,
+            lastIndexedAt = r.LastIndexedAt,
+            errorMessage = r.ErrorMessage,
+            indexingCompleted = IndexingState.IsCompleted(r.Name),
+            indexingProgress = IndexingState.GetProgress(r.Name)
+        });
+
+        var message = notifications.TryDequeue();
+
+        var json = JsonSerializer.Serialize(new { repositories = data, message });
+        await context.Response.WriteAsync($"data: {json}\n\n", context.RequestAborted);
+        await context.Response.Body.FlushAsync(context.RequestAborted);
+        await Task.Delay(2000, context.RequestAborted);
+    }
 });
 
 // Registry status API — single repo

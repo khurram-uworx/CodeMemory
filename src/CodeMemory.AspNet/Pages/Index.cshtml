@@ -11,86 +11,193 @@
     </a>
 </div>
 
-@if (TempData["Message"] is string message)
-{
-    <div class="alert alert-success alert-dismissible fade show">@message</div>
-}
+<div id="notification-area"></div>
 
-@if (Model.Repos.Count == 0)
-{
-    <div class="alert alert-info">No repositories registered. Click "Add Repo" to get started.</div>
-}
-else
-{
-    <div class="table-responsive">
-        <table class="table table-hover align-middle">
-            <thead class="table-dark">
-                <tr>
-                    <th>Name</th>
-                    <th>Status</th>
-                    <th>Source</th>
-                    <th>Last Indexed</th>
-                    <th>MCP Endpoint</th>
-                    <th>Actions</th>
+<div class="table-responsive">
+    <table class="table table-hover align-middle" id="repo-table">
+        <thead class="table-dark">
+            <tr>
+                <th>Name</th>
+                <th>Status</th>
+                <th>Source</th>
+                <th>Last Indexed</th>
+                <th>MCP Endpoint</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var repo in Model.Repos)
+            {
+                var progress = Model.Progress.GetValueOrDefault(repo.Name);
+                var status = repo.CloneStatus == "Failed" || repo.IndexStatus == "Failed" ? "Failed"
+                    : repo.CloneStatus == "Pending" ? "Pending"
+                    : repo.CloneStatus == "Cloning" ? "Cloning"
+                    : repo.CloneStatus == "Cloned" && repo.IndexStatus == "Pending" ? "Pending Clone"
+                    : repo.IndexStatus == "Indexing" ? "Indexing"
+                    : repo.IndexStatus == "Indexed" ? "Indexed"
+                    : repo.CloneStatus;
+                var isActive = status == "Indexing" || status == "Cloning";
+
+                <tr data-repo-name="@repo.Name">
+                    <td><strong>@repo.Name</strong></td>
+                    <td class="repo-status">
+                        @if (isActive && progress is not null)
+                        {
+                            var pct = (int)(progress.Value * 100);
+                            <div class="d-flex align-items-center gap-2">
+                                <div class="progress flex-grow-1" style="height: 20px; min-width: 120px;" role="progressbar" aria-valuenow="@pct" aria-valuemin="0" aria-valuemax="100">
+                                    <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: @pct%">
+                                        @pct%
+                                    </div>
+                                </div>
+                                <small class="text-muted">@status</small>
+                            </div>
+                        }
+                        else if (isActive)
+                        {
+                            <span class="badge bg-warning text-dark">@status</span>
+                        }
+                        else
+                        {
+                            var badgeClass = status switch
+                            {
+                                "Indexed" => "bg-success",
+                                "Failed" => "bg-danger",
+                                _ => "bg-secondary"
+                            };
+                            <span class="badge @badgeClass">@status</span>
+                        }
+                    </td>
+                    <td>
+                        @if (!string.IsNullOrEmpty(repo.GitUrl))
+                        {
+                            <a href="@repo.GitUrl" target="_blank" class="text-break">@repo.GitUrl</a>
+                        }
+                        else
+                        {
+                            <code class="text-break">@repo.LocalPath</code>
+                        }
+                    </td>
+                    <td class="repo-last-indexed">@repo.LastIndexedAt?.ToString("g") ?? "—"</td>
+                    <td><code>/api/mcp/@repo.Name</code></td>
+                    <td>
+                        <form method="post" asp-page-handler="Reindex" class="d-inline">
+                            <input type="hidden" name="name" value="@repo.Name" />
+                            <button type="submit" class="btn btn-sm btn-outline-primary" title="Re-index">
+                                <i class="bi bi-arrow-clockwise"></i>
+                            </button>
+                        </form>
+                        <form method="post" asp-page-handler="Delete" class="d-inline"
+                              onsubmit="return confirm('Delete repo @repo.Name? This will remove all indexed data.')">
+                            <input type="hidden" name="name" value="@repo.Name" />
+                            <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </form>
+                    </td>
                 </tr>
-            </thead>
-            <tbody>
-                @foreach (var repo in Model.Repos)
+                @if (!string.IsNullOrEmpty(repo.ErrorMessage))
                 {
-                    var status = repo.CloneStatus == "Failed" || repo.IndexStatus == "Failed" ? "Failed"
-                        : repo.CloneStatus == "Pending" ? "Pending"
-                        : repo.CloneStatus == "Cloning" ? "Cloning"
-                        : repo.CloneStatus == "Cloned" && repo.IndexStatus == "Pending" ? "Pending Clone"
-                        : repo.IndexStatus == "Indexing" ? "Indexing"
-                        : repo.IndexStatus == "Indexed" ? "Indexed"
-                        : repo.CloneStatus;
-                    var badgeClass = status switch
-                    {
-                        "Indexed" => "bg-success",
-                        "Failed" => "bg-danger",
-                        "Indexing" or "Cloning" => "bg-warning text-dark",
-                        _ => "bg-secondary"
-                    };
-
-                    <tr>
-                        <td><strong>@repo.Name</strong></td>
-                        <td><span class="badge @badgeClass">@status</span></td>
-                        <td>
-                            @if (!string.IsNullOrEmpty(repo.GitUrl))
-                            {
-                                <a href="@repo.GitUrl" target="_blank" class="text-break">@repo.GitUrl</a>
-                            }
-                            else
-                            {
-                                <code class="text-break">@repo.LocalPath</code>
-                            }
-                        </td>
-                        <td>@repo.LastIndexedAt?.ToString("g") ?? "—"</td>
-                        <td><code>/api/mcp/@repo.Name</code></td>
-                        <td>
-                            <form method="post" asp-page-handler="Reindex" class="d-inline">
-                                <input type="hidden" name="name" value="@repo.Name" />
-                                <button type="submit" class="btn btn-sm btn-outline-primary" title="Re-index">
-                                    <i class="bi bi-arrow-clockwise"></i>
-                                </button>
-                            </form>
-                            <form method="post" asp-page-handler="Delete" class="d-inline"
-                                  onsubmit="return confirm('Delete repo @repo.Name? This will remove all indexed data.')">
-                                <input type="hidden" name="name" value="@repo.Name" />
-                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete">
-                                    <i class="bi bi-trash"></i>
-                                </button>
-                            </form>
-                        </td>
+                    <tr class="repo-error table-danger" data-repo-name="@repo.Name">
+                        <td colspan="6"><small>@repo.ErrorMessage</small></td>
                     </tr>
-                    @if (!string.IsNullOrEmpty(repo.ErrorMessage))
-                    {
-                        <tr class="table-danger">
-                            <td colspan="6"><small>@repo.ErrorMessage</small></td>
-                        </tr>
+                }
+            }
+        </tbody>
+    </table>
+</div>
+
+@section Scripts {
+    <script>
+        const source = new EventSource('/api/repos/stream');
+        const notificationArea = document.getElementById('notification-area');
+        let messageTimeout = null;
+
+        source.onmessage = function (event) {
+            try {
+                const data = JSON.parse(event.data);
+                if (!data.repositories) return;
+
+                // Show one message per tick, auto-hide when queue is empty
+                if (data.message) {
+                    const cls = data.message.type === 'error' ? 'alert-danger'
+                        : data.message.type === 'warning' ? 'alert-warning'
+                        : data.message.type === 'success' ? 'alert-success'
+                        : 'alert-info';
+                    notificationArea.innerHTML =
+                        `<div class="alert ${cls} alert-dismissible fade show">${escapeHtml(data.message.text)}</div>`;
+                    if (messageTimeout) clearTimeout(messageTimeout);
+                    messageTimeout = null;
+                } else if (notificationArea.children.length > 0 && !messageTimeout) {
+                    notificationArea.innerHTML = '';
+                }
+
+                for (const repo of data.repositories) {
+                    const row = document.querySelector(`tr[data-repo-name="${repo.name}"]`);
+                    if (!row) continue;
+
+                    const statusCell = row.querySelector('.repo-status');
+                    const indexedCell = row.querySelector('.repo-last-indexed');
+                    const isActive = repo.cloneStatus === 'Cloning' || repo.indexStatus === 'Indexing';
+
+                    // Update status cell
+                    if (isActive && repo.indexingProgress != null) {
+                        const pct = Math.round(repo.indexingProgress * 100);
+                        statusCell.innerHTML =
+                            `<div class="d-flex align-items-center gap-2">
+                                <div class="progress flex-grow-1" style="height: 20px; min-width: 120px;" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100">
+                                    <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: ${pct}%">
+                                        ${pct}%
+                                    </div>
+                                </div>
+                                <small class="text-muted">${repo.indexStatus === 'Indexing' ? 'Indexing' : 'Cloning'}</small>
+                            </div>`;
+                    } else if (isActive) {
+                        statusCell.innerHTML = `<span class="badge bg-warning text-dark">${repo.cloneStatus === 'Cloning' ? 'Cloning' : 'Indexing'}</span>`;
+                    } else {
+                        const status = repo.cloneStatus === 'Failed' || repo.indexStatus === 'Failed' ? 'Failed'
+                            : repo.indexStatus === 'Indexed' ? 'Indexed'
+                            : repo.cloneStatus;
+                        const cls = status === 'Indexed' ? 'bg-success'
+                            : status === 'Failed' ? 'bg-danger'
+                            : 'bg-secondary';
+                        statusCell.innerHTML = `<span class="badge ${cls}">${status}</span>`;
+                    }
+
+                    // Update last indexed
+                    if (repo.lastIndexedAt) {
+                        indexedCell.textContent = new Date(repo.lastIndexedAt).toLocaleString();
+                    }
+
+                    // Update error row
+                    let errRow = document.querySelector(`tr.repo-error[data-repo-name="${repo.name}"]`);
+                    if (repo.errorMessage) {
+                        if (!errRow) {
+                            errRow = document.createElement('tr');
+                            errRow.className = 'repo-error table-danger';
+                            errRow.setAttribute('data-repo-name', repo.name);
+                            const td = document.createElement('td');
+                            td.setAttribute('colspan', '6');
+                            td.innerHTML = `<small>${escapeHtml(repo.errorMessage)}</small>`;
+                            errRow.appendChild(td);
+                            row.parentNode.insertBefore(errRow, row.nextSibling);
+                        } else {
+                            const td = errRow.querySelector('td');
+                            if (td) td.innerHTML = `<small>${escapeHtml(repo.errorMessage)}</small>`;
+                        }
+                    } else if (errRow) {
+                        errRow.remove();
                     }
                 }
-            </tbody>
-        </table>
-    </div>
+            } catch (e) {
+                // ignore parse errors
+            }
+        };
+
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+    </script>
 }

@@ -48,16 +48,20 @@ public sealed class StorageBootstrapper
         var dbFactory = app.Services.GetRequiredService<IDbContextFactory<RepoRegistryDbContext>>();
         await using var db = await dbFactory.CreateDbContextAsync();
 
-        var connString = db.Database.GetConnectionString();
-        if (connString is not null && registryOptions.Provider.Equals("sqlite", StringComparison.OrdinalIgnoreCase))
+        // SQLite directory creation is only needed when using SQLite provider
+        if (storageProvider.Equals("sqlite", StringComparison.OrdinalIgnoreCase))
         {
-            var builder = new SqliteConnectionStringBuilder(connString);
-            var dataSource = builder.DataSource;
-            if (!string.IsNullOrEmpty(dataSource) && dataSource != ":memory:")
+            var connString = db.Database.GetConnectionString();
+            if (connString is not null)
             {
-                var dir = Path.GetDirectoryName(Path.GetFullPath(dataSource));
-                if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
-                    Directory.CreateDirectory(dir);
+                var builder = new SqliteConnectionStringBuilder(connString);
+                var dataSource = builder.DataSource;
+                if (!string.IsNullOrEmpty(dataSource) && dataSource != ":memory:")
+                {
+                    var dir = Path.GetDirectoryName(Path.GetFullPath(dataSource));
+                    if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+                        Directory.CreateDirectory(dir);
+                }
             }
         }
 

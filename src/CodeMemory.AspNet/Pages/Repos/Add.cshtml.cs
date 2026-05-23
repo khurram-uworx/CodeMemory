@@ -25,16 +25,13 @@ public sealed class AddModel : PageModel
 
     readonly RepoRegistryService registry;
     readonly CloneIndexService cloneIndex;
+    readonly RepoRegistryOptions registryOptions;
 
     string getCloneBasePath()
-    {
-        var config = (IConfiguration)HttpContext.RequestServices.GetRequiredService(typeof(IConfiguration));
-        return config.GetSection("RepoRegistry:CloneBasePath")?.Value
-            ?? Path.Combine(Environment.CurrentDirectory, "cloned-repos");
-    }
+        => registryOptions.CloneBasePath;
 
-    public AddModel(RepoRegistryService registry, CloneIndexService cloneIndex)
-        => (this.registry, this.cloneIndex) = (registry, cloneIndex);
+    public AddModel(RepoRegistryService registry, CloneIndexService cloneIndex, RepoRegistryOptions registryOptions)
+        => (this.registry, this.cloneIndex, this.registryOptions) = (registry, cloneIndex, registryOptions);
 
     [BindProperty]
     public InputModel Input { get; set; } = new();
