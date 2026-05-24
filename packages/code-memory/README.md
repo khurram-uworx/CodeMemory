@@ -50,7 +50,7 @@ The `@uworx/code-memory` package is a lightweight CLI wrapper. On `npm install`,
 ## MCP Tools
 
 | Tool | What it gives you |
-|---|---|---|
+|---|---|
 | `ping` | Health check + indexing status (`indexingCompleted`, `fileWatcherActive`) |
 | `semantic_search` | Natural language code search with optional similarity threshold |
 | `trace_dependency` | Symbol dependency tracing (upstream/downstream/both, configurable depth) |
