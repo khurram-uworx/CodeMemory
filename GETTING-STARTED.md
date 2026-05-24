@@ -17,7 +17,7 @@ Indexing is non-blocking. **Poll `ping` until `indexingCompleted: true`** before
 
 ## `sql_query` — Query Code Like a Database
 
-Indexed code is exposed as three tables: `SymbolRecord`, `ChunkRecord`, `RelationshipRecord`. Full SQL surface: SELECT, WHERE, ORDER BY, GROUP BY, HAVING, DISTINCT, aggregates (COUNT/SUM/AVG/MIN/MAX), CTEs (non-recursive, chained), derived tables, INNER/LEFT/CROSS JOINs, vector search (`ORDER BY Similarity DESC`).
+Indexed code is exposed as three tables: `SymbolRecord`, `ChunkRecord`, `RelationshipRecord`. Full SQL surface: SELECT, WHERE (including `IN (SELECT ...)` subqueries), ORDER BY, GROUP BY, HAVING, DISTINCT, aggregates (COUNT/SUM/AVG/MIN/MAX), CTEs (non-recursive, chained), derived tables, INNER/LEFT/RIGHT/FULL OUTER/CROSS JOINs, `USING(col)` shorthand, `UNION`/`INTERSECT`/`EXCEPT`, vector search (`ORDER BY Similarity DESC`).
 
 ### Repository Exploration
 

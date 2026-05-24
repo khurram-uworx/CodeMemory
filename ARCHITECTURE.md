@@ -172,24 +172,37 @@ SemanticSearchService.SearchByTextAsync(query)
 SqlQueryTool.SqlQueryAsync("SELECT Name FROM SymbolRecord WHERE Kind = 'Class' LIMIT 10")
   └─ SqlQueryService.ExecuteAsync(store, sql)
        ├─ SqlParserCS.Parse(sql) → AST
-       ├─ validate: single SELECT, known table, no JOINs/UNION
-       ├─ Materialize CTEs (if present):
-       │    └─ executeCteSubqueryAsync per CTE → store in cteResults dict
-       ├─ Resolve table source:
-       │    ├─ TableFactor.Table → collection via CollectionRegistry
-       │    ├─ TableFactor.Derived → executeCteSubqueryAsync → add to cteResults
-       │    └─ CTE name shadows collection (checked before registry lookup)
-       ├─ Fetch data:
-       │    ├─ CTE/derived path: filterCteRows(cteResults[name], whereExpr)
-       │    ├─ Standard path: collection.GetAsync(filter, top) → IAsyncEnumerable<TRecord>
-       │    │    └─ SqlExpressionBuilder.BuildFilter<TRecord>(where) → Expression<Func<TRecord, bool>>
-       │    └─ Vector search path (ORDER BY Similarity DESC):
-       │         ├─ extract search text from Content LIKE '%pattern%' in WHERE
-       │         ├─ NgramEmbeddingGenerator.GenerateAsync([text]) → embedding vector
-       │         ├─ collection.SearchAsync(vector, top, options with remaining Filter)
-       │         └─ return results with __score (0-1) per row
+       ├─ detect: single SELECT, known table(s), JOINs, UNION, subqueries
+       ├─ UNION/INTERSECT/EXCEPT path (SetExpression.SetOperation):
+       │    └─ executeSetOperationAsync()
+       │         ├─ Materialize CTEs (if present)
+       │         ├─ evaluateSetExpressionForUnionAsync(left) + (right)
+       │         └─ applySetOperation() → concat/intersect/except with dedup
        │
-       ├─ Client-side post-processing:
+       ├─ Multi-table path (detectMultiTable):
+       │    └─ executeJoinQueryAsync(from, cteResults, whereExpr)
+       │         ├─ evaluateGroupAsync() per TableWithJoins:
+       │         │    ├─ evaluate relation (Table/Derived/NestedJoin)
+       │         │    ├─ for each JOIN step: extractJoinInfo → (JoinType, ON)
+       │         │    ├─ generateUsingCondition() for USING(col)
+       │         │    └─ mergeWithJoinType(INNER/LEFT/RIGHT/FULL/CROSS)
+       │         ├─ cross-join groups (comma-separated items)
+       │         └─ materializeSubqueriesAsync() → filterCteRows()
+       │
+       ├─ Single-table path:
+       │    ├─ Resolve table source (Table/Derived/CTE)
+       │    ├─ Fetch data:
+       │    │    ├─ CTE/derived: filterCteRows(cteResults[name], whereExpr)
+       │    │    ├─ Standard: collection.GetAsync(filter, top) → IAsyncEnumerable<TRecord>
+       │    │    │    └─ SqlExpressionBuilder.BuildFilter<TRecord>(where) → Expression
+       │    │    └─ Vector search (ORDER BY Similarity DESC):
+       │    │         ├─ extract text from Content LIKE '%pattern%'
+       │    │         ├─ NgramEmbeddingGenerator → embedding vector
+       │    │         ├─ collection.SearchAsync(vector, top, options)
+       │    │         └─ return rows with __score (0-1)
+       │    └─ materializeSubqueriesAsync() in WHERE for all paths
+       │
+       ├─ Client-side post-processing (shared):
        │    ├─ GROUP BY / aggregates (COUNT/SUM/AVG/MIN/MAX)
        │    ├─ DISTINCT dedup
        │    ├─ HAVING filter
@@ -201,7 +214,8 @@ SqlQueryTool.SqlQueryAsync("SELECT Name FROM SymbolRecord WHERE Kind = 'Class' L
 
 Storage schema metadata via TableSchemaProvider:
   └─ GetColumns<T>() → ColumnInfo[] (name, type, nullable, key, vector flag)
-  └─ DescribeAll() → formatted text for MCP tool [Description] attribute
+  └─ GetJoinKeys() → JoinKeyInfo[] (7 known foreign-key pairs)
+  └─ DescribeAll() → formatted text including join keys
 ```
 
 ### File Watcher (Post-Indexing Auto-Reindex)

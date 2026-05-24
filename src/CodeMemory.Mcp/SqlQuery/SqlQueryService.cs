@@ -1282,7 +1282,10 @@ public sealed class SqlQueryService
             if (isVectorSearch)
                 throw new NotSupportedException("ORDER BY Similarity DESC is not supported when querying a CTE");
 
-            result = filterCteRows(cteResults[tableName], whereExpr);
+            var materializedWhere = whereExpr is not null
+                ? await materializeSubqueriesAsync(whereExpr, store, cteResults, defaultMaxResults, ct)
+                : null;
+            result = filterCteRows(cteResults[tableName], materializedWhere);
         }
         else
         {
@@ -1359,58 +1362,8 @@ public sealed class SqlQueryService
         return result;
     }
 
-    sealed record TableRef(string TableName, string? Alias);
-
     static bool detectMultiTable(Sequence<TableWithJoins>? from)
         => from is not null && (from.Count > 1 || (from.Count == 1 && from[0].Joins is { Count: > 0 }));
-
-    static AstExpr? mergeOnConditions(Sequence<TableWithJoins> from, AstExpr? existing)
-    {
-        AstExpr? result = existing;
-
-        foreach (var twj in from)
-            if (twj.Joins is not null)
-                foreach (var join in twj.Joins)
-                    if (join.JoinOperator is JoinOperator.ConstrainedJoinOperator constrained
-                        && constrained.JoinConstraint is JoinConstraint.On onExpr)
-                    {
-                        if (result is null)
-                            result = onExpr.Expression;
-                        else
-                            result = new AstExpr.BinaryOp(result, BinaryOperator.And, onExpr.Expression);
-                    }
-
-        return result;
-    }
-
-    static List<TableRef> parseFromClause(Sequence<TableWithJoins> from)
-    {
-        var tables = new List<TableRef>();
-
-        foreach (var twj in from)
-        {
-            if (twj.Relation is TableFactor.Table baseTable)
-            {
-                var baseName = baseTable.Name.Values.Last().Value;
-                var baseAlias = baseTable.Alias?.Name?.Value;
-                tables.Add(new TableRef(baseName, baseAlias));
-            }
-
-            if (twj.Joins is not null)
-                foreach (var join in twj.Joins)
-                    if (join.Relation is TableFactor.Table joinTable)
-                    {
-                        var joinName = joinTable.Name.Values.Last().Value;
-                        var joinAlias = joinTable.Alias?.Name?.Value;
-                        tables.Add(new TableRef(joinName, joinAlias));
-                    }
-        }
-
-        return tables;
-    }
-
-    static string getPrefix(TableRef table)
-        => table.Alias ?? table.TableName;
 
     static void prefixRows(List<Dictionary<string, object?>> rows, string prefix)
     {
@@ -1429,64 +1382,564 @@ public sealed class SqlQueryService
         }
     }
 
-    static List<Dictionary<string, object?>> cartesianMerge(List<List<Dictionary<string, object?>>> allData)
+    // ── Join type-aware infrastructure (Phase 2) ──
+
+    static AstExpr? generateUsingCondition(Sequence<Ident> idents, string leftPrefix, string rightPrefix)
     {
-        if (allData.Count == 0) return [];
-
-        IEnumerable<Dictionary<string, object?>> result = allData[0];
-
-        for (int i = 1; i < allData.Count; i++)
+        if (idents.Count == 0) return null;
+        AstExpr? result = null;
+        foreach (var ident in idents)
         {
-            var next = allData[i];
-            var current = result;
-            result = current.SelectMany(left => next.Select(right =>
+            var leftExpr = new AstExpr.CompoundIdentifier(
+                new Sequence<Ident>([new Ident(leftPrefix), ident]));
+            var rightExpr = new AstExpr.CompoundIdentifier(
+                new Sequence<Ident>([new Ident(rightPrefix), ident]));
+            var eq = new AstExpr.BinaryOp(leftExpr, BinaryOperator.Eq, rightExpr);
+            result = result is null ? eq : new AstExpr.BinaryOp(result, BinaryOperator.And, eq);
+        }
+        return result;
+    }
+
+    enum JoinType { Inner, LeftOuter, RightOuter, FullOuter, Cross }
+
+    static (JoinType joinType, AstExpr? onCondition, bool handled) extractJoinInfo(Join join)
+    {
+        if (join.JoinOperator is JoinOperator.ConstrainedJoinOperator constrained)
+        {
+            var type = constrained switch
             {
-                var merged = new Dictionary<string, object?>(left);
-                foreach (var kvp in right)
-                    merged[kvp.Key] = kvp.Value;
-                return merged;
-            }));
+                JoinOperator.Inner => JoinType.Inner,
+                JoinOperator.LeftOuter => JoinType.LeftOuter,
+                JoinOperator.RightOuter => JoinType.RightOuter,
+                JoinOperator.FullOuter => JoinType.FullOuter,
+                _ => JoinType.Inner
+            };
+
+            if (constrained.JoinConstraint is JoinConstraint.On onExpr)
+                return (type, onExpr.Expression, true);
+
+            if (constrained.JoinConstraint is JoinConstraint.Using)
+                return (type, null, false); // callers handle USING
+
+            return (type, null, true); // Natural/None — no condition
         }
 
-        return result.ToList();
+        if (join.JoinOperator is JoinOperator.CrossJoin)
+            return (JoinType.Cross, null, true);
+
+        return (JoinType.Cross, null, true);
+    }
+
+    static Dictionary<string, object?> mergePair(Dictionary<string, object?> left, Dictionary<string, object?> right)
+    {
+        var merged = new Dictionary<string, object?>(left);
+        foreach (var kvp in right)
+            merged[kvp.Key] = kvp.Value;
+        return merged;
+    }
+
+    static List<Dictionary<string, object?>> crossJoin(List<Dictionary<string, object?>> left, List<Dictionary<string, object?>> right)
+        => left.SelectMany(l => right.Select(r => mergePair(l, r))).ToList();
+
+    static List<Dictionary<string, object?>> innerJoin(List<Dictionary<string, object?>> left, List<Dictionary<string, object?>> right, AstExpr? onCondition)
+    {
+        if (onCondition is null) return crossJoin(left, right);
+
+        var result = new List<Dictionary<string, object?>>();
+        foreach (var l in left)
+            foreach (var r in right)
+            {
+                var merged = mergePair(l, r);
+                if (isTruthy(evaluateExpression(onCondition, merged)))
+                    result.Add(merged);
+            }
+        return result;
+    }
+
+    static List<Dictionary<string, object?>> leftJoin(List<Dictionary<string, object?>> left, List<Dictionary<string, object?>> right, AstExpr? onCondition)
+    {
+        var result = new List<Dictionary<string, object?>>();
+        var rightKeys = right.Count > 0 ? right[0].Keys.Where(k => !k.StartsWith("__")).ToList() : [];
+
+        foreach (var l in left)
+        {
+            bool matched = false;
+            foreach (var r in right)
+            {
+                var merged = mergePair(l, r);
+                if (onCondition is null || isTruthy(evaluateExpression(onCondition, merged)))
+                {
+                    result.Add(merged);
+                    matched = true;
+                }
+            }
+            if (!matched)
+            {
+                var nullRow = new Dictionary<string, object?>(l);
+                foreach (var k in rightKeys)
+                    nullRow.TryAdd(k, null);
+                result.Add(nullRow);
+            }
+        }
+        return result;
+    }
+
+    static List<Dictionary<string, object?>> fullOuterJoin(List<Dictionary<string, object?>> left, List<Dictionary<string, object?>> right, AstExpr? onCondition)
+    {
+        var lr = leftJoin(left, right, onCondition);
+        var rr = leftJoin(right, left, onCondition);
+
+        var seen = new HashSet<string>();
+        var result = new List<Dictionary<string, object?>>();
+        foreach (var row in lr.Concat(rr))
+        {
+            var key = string.Join('\0', row.Values.Select(v => v?.ToString() ?? "NULL"));
+            if (seen.Add(key))
+                result.Add(row);
+        }
+        return result;
+    }
+
+    static List<Dictionary<string, object?>> mergeWithJoinType(
+        List<Dictionary<string, object?>> left, List<Dictionary<string, object?>> right,
+        JoinType joinType, AstExpr? onCondition)
+    {
+        return joinType switch
+        {
+            JoinType.Cross => crossJoin(left, right),
+            JoinType.Inner => innerJoin(left, right, onCondition),
+            JoinType.LeftOuter => leftJoin(left, right, onCondition),
+            JoinType.RightOuter => leftJoin(right, left, onCondition),
+            JoinType.FullOuter => fullOuterJoin(left, right, onCondition),
+            _ => crossJoin(left, right)
+        };
+    }
+
+    static string? findLeftPrefixForUsing(Dictionary<string, object?> sampleRow, string colName)
+    {
+        foreach (var key in sampleRow.Keys)
+        {
+            var dotIndex = key.IndexOf('.');
+            if (dotIndex > 0 && !key.StartsWith("__") && key[(dotIndex + 1)..] == colName)
+                return key[..dotIndex];
+        }
+        return null;
+    }
+
+    static Value convertToValue(object? val)
+    {
+        if (val is null) return new Value.Null();
+        if (val is string s) return new Value.SingleQuotedString(s);
+        if (val is long l) return new Value.Number(l.ToString());
+        if (val is int i) return new Value.Number(i.ToString());
+        if (val is double d) return new Value.Number(d.ToString("G"));
+        if (val is bool b) return new Value.Boolean(b);
+        return new Value.SingleQuotedString(val.ToString() ?? "");
+    }
+
+    async Task<AstExpr> materializeSubqueriesAsync(AstExpr expr,
+        VectorStore store,
+        Dictionary<string, List<Dictionary<string, object?>>> cteResults,
+        int defaultMaxResults,
+        CancellationToken ct)
+    {
+        switch (expr)
+        {
+            case AstExpr.InSubquery inSub:
+                {
+                    var values = await executeSubqueryForInAsync(inSub.SubQuery, store, cteResults, defaultMaxResults, ct);
+                    var list = values.Select(v => (AstExpr)new AstExpr.LiteralValue(v)).ToList();
+                    return new AstExpr.InList(
+                        inSub.Expression ?? new AstExpr.LiteralValue(new Value.Null()),
+                        new Sequence<AstExpr>(list), inSub.Negated);
+                }
+
+            case AstExpr.BinaryOp bop:
+                {
+                    var left = await materializeSubqueriesAsync(bop.Left, store, cteResults, defaultMaxResults, ct);
+                    var right = await materializeSubqueriesAsync(bop.Right, store, cteResults, defaultMaxResults, ct);
+                    if (!ReferenceEquals(left, bop.Left) || !ReferenceEquals(right, bop.Right))
+                        return new AstExpr.BinaryOp(left, bop.Op, right);
+                    return expr;
+                }
+
+            case AstExpr.Nested nested:
+                {
+                    var inner = await materializeSubqueriesAsync(nested.Expression, store, cteResults, defaultMaxResults, ct);
+                    if (!ReferenceEquals(inner, nested.Expression))
+                        return new AstExpr.Nested(inner);
+                    return expr;
+                }
+
+            case AstExpr.UnaryOp uop:
+                {
+                    var inner = await materializeSubqueriesAsync(uop.Expression, store, cteResults, defaultMaxResults, ct);
+                    if (!ReferenceEquals(inner, uop.Expression))
+                        return new AstExpr.UnaryOp(inner, uop.Op);
+                    return expr;
+                }
+
+            default:
+                return expr;
+        }
+    }
+
+    async Task<List<Value>> executeSubqueryForInAsync(Query subQuery,
+        VectorStore store,
+        Dictionary<string, List<Dictionary<string, object?>>> cteResults,
+        int defaultMaxResults,
+        CancellationToken ct)
+    {
+        var rows = await executeCteSubqueryAsync(store, subQuery, cteResults, defaultMaxResults, ct);
+        var result = new List<Value>();
+        if (rows.Count == 0) return result;
+
+        var firstCol = rows[0].Keys.FirstOrDefault(k => !k.StartsWith("__"));
+        if (firstCol is null) return result;
+
+        foreach (var row in rows)
+        {
+            var val = row.GetValueOrDefault(firstCol);
+            result.Add(convertToValue(val));
+        }
+        return result;
+    }
+
+    async Task<List<Dictionary<string, object?>>> evaluateGroupAsync(
+        VectorStore store,
+        TableWithJoins twj,
+        Dictionary<string, List<Dictionary<string, object?>>> cteResults,
+        int defaultMaxResults,
+        CancellationToken ct)
+    {
+        List<Dictionary<string, object?>> current;
+        string? basePrefix = null;
+
+        switch (twj.Relation)
+        {
+            case TableFactor.Table baseTable:
+                {
+                    var baseName = baseTable.Name.Values.Last().Value;
+                    var baseAlias = baseTable.Alias?.Name?.Value;
+                    basePrefix = baseAlias ?? baseName;
+
+                    if (cteResults.TryGetValue(baseName, out var cteData) ||
+                        (baseAlias is not null && cteResults.TryGetValue(baseAlias, out cteData)))
+                    {
+                        current = cteData.Select(r => new Dictionary<string, object?>(r)).ToList();
+                    }
+                    else
+                    {
+                        var entry = registry.GetEntry(baseName);
+                        if (entry is null)
+                            throw new InvalidOperationException($"Unknown table '{baseName}'");
+                        current = await queryFilteredAsync(store, entry, null, int.MaxValue, ct);
+                    }
+                    prefixRows(current, basePrefix);
+                    break;
+                }
+
+            case TableFactor.Derived derived:
+                {
+                    var alias = derived.Alias?.Name?.Value;
+                    if (string.IsNullOrEmpty(alias))
+                        throw new InvalidOperationException("Derived table (subquery in FROM) must have an alias");
+                    basePrefix = alias;
+                    current = await executeCteSubqueryAsync(store, derived.SubQuery, cteResults, defaultMaxResults, ct);
+                    prefixRows(current, alias!);
+                    break;
+                }
+
+            case TableFactor.NestedJoin nested:
+                current = await evaluateGroupAsync(store, nested.TableWithJoins!, cteResults, defaultMaxResults, ct);
+                break;
+
+            default:
+                throw new NotSupportedException($"Table factor '{twj.Relation?.GetType().Name ?? "null"}' not supported");
+        }
+
+        if (twj.Joins is not null)
+        {
+            foreach (var join in twj.Joins)
+            {
+                var (joinType, onCondition, handled) = extractJoinInfo(join);
+
+                List<Dictionary<string, object?>> rightRows;
+                string? rightPrefix = null;
+
+                switch (join.Relation)
+                {
+                    case TableFactor.Table joinTable:
+                        {
+                            var joinName = joinTable.Name.Values.Last().Value;
+                            var joinAlias = joinTable.Alias?.Name?.Value;
+                            rightPrefix = joinAlias ?? joinName;
+
+                            if (cteResults.TryGetValue(joinName, out var cteData) ||
+                                (joinAlias is not null && cteResults.TryGetValue(joinAlias, out cteData)))
+                            {
+                                rightRows = cteData.Select(r => new Dictionary<string, object?>(r)).ToList();
+                            }
+                            else
+                            {
+                                var entry = registry.GetEntry(joinName);
+                                if (entry is null)
+                                    throw new InvalidOperationException($"Unknown table '{joinName}'");
+                                rightRows = await queryFilteredAsync(store, entry, null, int.MaxValue, ct);
+                            }
+                            prefixRows(rightRows, rightPrefix);
+                            break;
+                        }
+
+                    case TableFactor.Derived derived:
+                        {
+                            var alias = derived.Alias?.Name?.Value;
+                            if (string.IsNullOrEmpty(alias))
+                                throw new InvalidOperationException("Derived table in JOIN must have an alias");
+                            rightPrefix = alias;
+                            rightRows = await executeCteSubqueryAsync(store, derived.SubQuery, cteResults, defaultMaxResults, ct);
+                            prefixRows(rightRows, alias!);
+                            break;
+                        }
+
+                    case TableFactor.NestedJoin nested:
+                        rightRows = await evaluateGroupAsync(store, nested.TableWithJoins!, cteResults, defaultMaxResults, ct);
+                        break;
+
+                    default:
+                        throw new NotSupportedException($"JOIN target '{join.Relation?.GetType().Name ?? "null"}' not supported");
+                }
+
+                // Handle USING(col1, col2) by generating ON condition
+                if (!handled && join.JoinOperator is JoinOperator.ConstrainedJoinOperator constrained
+                    && constrained.JoinConstraint is JoinConstraint.Using usingCols)
+                {
+                    var leftPrefix = basePrefix;
+                    if (current.Count > 0 && usingCols.Idents.Count > 0)
+                    {
+                        var foundPrefix = findLeftPrefixForUsing(current[0], usingCols.Idents[0].Value);
+                        if (foundPrefix is not null)
+                            leftPrefix = foundPrefix;
+                    }
+                    if (rightPrefix is not null && leftPrefix is not null)
+                        onCondition = generateUsingCondition(usingCols.Idents, leftPrefix, rightPrefix);
+                }
+
+                current = mergeWithJoinType(current, rightRows, joinType, onCondition);
+            }
+        }
+
+        return current;
     }
 
     async Task<List<Dictionary<string, object?>>> executeJoinQueryAsync(
         VectorStore store,
-        List<TableRef> tables,
+        Sequence<TableWithJoins> from,
         Dictionary<string, List<Dictionary<string, object?>>> cteResults,
         AstExpr? whereExpr,
         int defaultMaxResults,
         CancellationToken ct)
     {
-        var allData = new List<List<Dictionary<string, object?>>>();
-
-        foreach (var table in tables)
+        var groupResults = new List<List<Dictionary<string, object?>>>();
+        foreach (var twj in from)
         {
-            if (cteResults.TryGetValue(table.TableName, out var cteData) ||
-                (table.Alias is not null && cteResults.TryGetValue(table.Alias, out cteData)))
-            {
-                var prefixed = cteData.Select(r => new Dictionary<string, object?>(r)).ToList();
-                prefixRows(prefixed, getPrefix(table));
-                allData.Add(prefixed);
-                continue;
-            }
-
-            var entry = registry.GetEntry(table.TableName);
-            if (entry is null)
-                throw new InvalidOperationException($"Unknown table '{table.TableName}' in multi-table query");
-
-            var rows = await queryFilteredAsync(store, entry, null, int.MaxValue, ct);
-            prefixRows(rows, getPrefix(table));
-            allData.Add(rows);
+            var group = await evaluateGroupAsync(store, twj, cteResults, defaultMaxResults, ct);
+            groupResults.Add(group);
         }
 
-        var merged = cartesianMerge(allData);
+        if (groupResults.Count == 0) return [];
+        var result = groupResults[0];
+        for (int i = 1; i < groupResults.Count; i++)
+            result = crossJoin(result, groupResults[i]);
 
         if (whereExpr is not null)
-            merged = filterCteRows(merged, whereExpr);
+        {
+            var materialized = await materializeSubqueriesAsync(whereExpr, store, cteResults, defaultMaxResults, ct);
+            result = filterCteRows(result, materialized);
+        }
 
-        return merged;
+        return result;
+    }
+
+    // ── UNION / INTERSECT / EXCEPT (Phase 2) ──
+
+    static string rowToKey(Dictionary<string, object?> row)
+        => string.Join('\0', row.Values.Select(v => v?.ToString() ?? "NULL"));
+
+    static List<Dictionary<string, object?>> applySetOperation(
+        List<Dictionary<string, object?>> left, List<Dictionary<string, object?>> right,
+        SetOperator op, SetQuantifier quantifier)
+    {
+        if (left.Count == 0) return op is SetOperator.Except ? [] : right;
+        if (right.Count == 0) return left;
+
+        // Ensure compatible column count
+        var leftCols = left[0].Keys.Where(k => !k.StartsWith("__")).ToList();
+        var rightCols = right[0].Keys.Where(k => !k.StartsWith("__")).ToList();
+
+        // Normalize: copy right columns same as left (positional pairing)
+        List<Dictionary<string, object?>> normalizedRight;
+        if (leftCols.Count == rightCols.Count)
+        {
+            normalizedRight = right.Select(r =>
+            {
+                var row = new Dictionary<string, object?>();
+                for (int i = 0; i < leftCols.Count; i++)
+                    row[leftCols[i]] = r.GetValueOrDefault(rightCols[i]);
+                foreach (var k in r.Keys)
+                    if (k.StartsWith("__"))
+                        row[k] = r[k];
+                return row;
+            }).ToList();
+        }
+        else
+            normalizedRight = right;
+
+        return (op, quantifier) switch
+        {
+            (SetOperator.Union, SetQuantifier.All) => [.. left, .. normalizedRight],
+            (SetOperator.Union, _) => left.Concat(normalizedRight).DistinctBy(rowToKey).ToList(),
+            (SetOperator.Intersect, _) => left.Where(l => normalizedRight.Any(r => rowToKey(l) == rowToKey(r))).ToList(),
+            (SetOperator.Except, _) => left.Where(l => !normalizedRight.Any(r => rowToKey(l) == rowToKey(r))).ToList(),
+            _ => [.. left, .. normalizedRight]
+        };
+    }
+
+    async Task<List<Dictionary<string, object?>>> evaluateSetExpressionForUnionAsync(
+        VectorStore store, SetExpression setExpr,
+        Dictionary<string, List<Dictionary<string, object?>>> cteResults,
+        int defaultMaxResults, CancellationToken ct)
+    {
+        switch (setExpr)
+        {
+            case SetExpression.SelectExpression selectExpr:
+                {
+                    var body = selectExpr.Select;
+                    if (body.From is null || body.From.Count == 0)
+                        throw new InvalidOperationException("Each UNION side SELECT must have a FROM clause");
+
+                    // Wrap in a synthetic Query to reuse executeCteSubqueryAsync
+                    var fakeQuery = new Query(new SetExpression.SelectExpression(body));
+                    return await executeCteSubqueryAsync(store, fakeQuery, cteResults, defaultMaxResults, ct);
+                }
+
+            case SetExpression.SetOperation setOp:
+                {
+                    var left = await evaluateSetExpressionForUnionAsync(store, setOp.Left, cteResults, defaultMaxResults, ct);
+                    var right = await evaluateSetExpressionForUnionAsync(store, setOp.Right, cteResults, defaultMaxResults, ct);
+                    return applySetOperation(left, right, setOp.Op, setOp.SetQuantifier);
+                }
+
+            default:
+                throw new NotSupportedException($"UNION side expression type '{setExpr.GetType().Name}' not supported");
+        }
+    }
+
+    async Task<SqlQueryResult> executeSetOperationAsync(
+        VectorStore store, SetExpression.SetOperation setOp,
+        With? withClause, OrderBy? orderBy, AstExpr? limitExpr,
+        int maxResults, CancellationToken ct, Stopwatch sw,
+        System.Diagnostics.Activity? activity = null)
+    {
+        try
+        {
+            // Materialize CTEs
+            Dictionary<string, List<Dictionary<string, object?>>> cteResults;
+            if (withClause is not null)
+            {
+                try
+                {
+                    cteResults = await materializeCtesAsync(store, withClause, maxResults, ct);
+                }
+                catch (Exception ex)
+                {
+                    return fail(ex.Message, sw);
+                }
+            }
+            else
+            {
+                cteResults = new Dictionary<string, List<Dictionary<string, object?>>>(StringComparer.OrdinalIgnoreCase);
+            }
+
+            // Evaluate both sides
+            var leftRows = await evaluateSetExpressionForUnionAsync(store, setOp.Left, cteResults, maxResults, ct);
+            var rightRows = await evaluateSetExpressionForUnionAsync(store, setOp.Right, cteResults, maxResults, ct);
+
+            // Combine
+            var result = applySetOperation(leftRows, rightRows, setOp.Op, setOp.SetQuantifier);
+
+            // Apply ORDER BY from outer query
+            bool hasExplicitProjection = false;
+            List<SelectColumnInfo> parsedColumns = [];
+            if (leftRows.Count > 0)
+            {
+                var leftCols = leftRows[0].Keys.Where(k => !k.StartsWith("__")).ToList();
+                hasExplicitProjection = leftCols.Count > 0;
+                parsedColumns = leftCols.Select(c => new SelectColumnInfo(c, null, false, null)).ToList();
+            }
+
+            // Apply LIMIT
+            if (limitExpr is AstExpr.LiteralValue lv && lv.Value is Value.Number num)
+            {
+                var top = int.Parse(num.Value);
+                if (top < result.Count)
+                    result = result.Take(top).ToList();
+            }
+
+            if (maxResults < result.Count)
+                result = result.Take(maxResults).ToList();
+
+            // Apply ORDER BY (simple positional — numeric positions for UNION)
+            if (orderBy?.Expressions is { Count: > 0 })
+            {
+                var orderCol = extractOrderByColumn(orderBy.Expressions[0].Expression, orderBy.Expressions[0].Asc ?? true);
+                if (orderCol is not null)
+                {
+                    if (int.TryParse(orderCol.Name, out int pos) && pos >= 1 && pos <= (leftRows.Count > 0 ? leftRows[0].Count : 0))
+                    {
+                        var key = leftRows.Count > 0 ? leftRows[0].Keys.ElementAt(pos - 1) : "";
+                        result = orderCol.Ascending
+                            ? [.. result.OrderBy(r => r.GetValueOrDefault(key))]
+                            : [.. result.OrderByDescending(r => r.GetValueOrDefault(key))];
+                    }
+                    else
+                    {
+                        // Try column name lookup
+                        var resolved = resolveSortColumn(orderCol.Name, parsedColumns) ?? orderCol.Name;
+                        result = orderCol.Ascending
+                            ? [.. result.OrderBy(r => r.GetValueOrDefault(resolved))]
+                            : [.. result.OrderByDescending(r => r.GetValueOrDefault(resolved))];
+                    }
+                }
+            }
+
+            // Build columns list
+            List<string> columns;
+            if (leftRows.Count > 0)
+                columns = leftRows[0].Keys.Where(k => !k.StartsWith("__")).ToList();
+            else
+                columns = [];
+
+            // Append runtime meta-columns
+            if (result.Count > 0)
+                foreach (var key in result[0].Keys)
+                    if (key.StartsWith("__") && !columns.Contains(key))
+                        columns.Add(key);
+
+            sw.Stop();
+            activity?.SetTag("rowCount", result.Count);
+            CodeMemoryMetrics.SqlQueryDuration.Record(sw.Elapsed.TotalMilliseconds);
+
+            return new SqlQueryResult(true, result.Count, sw.ElapsedMilliseconds, columns, result);
+        }
+        catch (Exception ex)
+        {
+            sw.Stop();
+            CodeMemoryMetrics.SqlQueryDuration.Record(sw.Elapsed.TotalMilliseconds);
+
+            logger.LogError(ex, "SQL UNION query execution failed");
+            return fail($"UNION execution error: {ex.Message}", sw);
+        }
     }
 
     public async Task<SqlQueryResult> ExecuteAsync(VectorStore store, string sql, int maxResults = 100, CancellationToken ct = default)
@@ -1519,8 +1972,15 @@ public sealed class SqlQueryService
 
             var query = select.Query;
             var setExpr = query.Body;
+
+            // Handle UNION / INTERSECT / EXCEPT
+            if (setExpr is SetExpression.SetOperation setOp)
+            {
+                return await executeSetOperationAsync(store, setOp, query.With, query.OrderBy, query.Limit, maxResults, ct, sw, activity);
+            }
+
             if (setExpr is not SetExpression.SelectExpression selectExpr)
-                return fail("Only simple SELECT queries are supported (no UNION, VALUES, etc.)", sw);
+                return fail("Only SELECT and UNION queries are supported (no VALUES, etc.)", sw);
 
             var selectBody = selectExpr.Select;
             if (selectBody.From is null || selectBody.From.Count == 0)
@@ -1592,9 +2052,7 @@ public sealed class SqlQueryService
                 if (isVectorSearch)
                     return fail("Vector search (ORDER BY Similarity DESC) is not supported with multi-table queries", sw);
 
-                var mergedWhere = mergeOnConditions(selectBody.From, whereExpr);
-                var tables = parseFromClause(selectBody.From);
-                result = await executeJoinQueryAsync(store, tables, cteResults, mergedWhere, maxResults, ct);
+                result = await executeJoinQueryAsync(store, selectBody.From, cteResults, whereExpr, maxResults, ct);
             }
             else
             {
@@ -1617,7 +2075,12 @@ public sealed class SqlQueryService
                         result = await reRankBySimilarityAsync(store, cteResults![singleTableName], whereExpr, top, ct);
                     }
                     else
-                        result = filterCteRows(cteResults![singleTableName], whereExpr);
+                    {
+                        var materializedWhere = whereExpr is not null
+                            ? await materializeSubqueriesAsync(whereExpr, store, cteResults!, maxResults, ct)
+                            : null;
+                        result = filterCteRows(cteResults![singleTableName], materializedWhere);
+                    }
                 }
                 else if (isVectorSearch)
                 {
@@ -1630,7 +2093,12 @@ public sealed class SqlQueryService
                     result = await queryVectorAsync(store, entry, whereExpr, top, ct);
                 }
                 else
-                    result = await queryFilteredAsync(store, entry!, whereExpr, fetchTop, ct);
+                {
+                    var materializedWhere = whereExpr is not null
+                        ? await materializeSubqueriesAsync(whereExpr, store, cteResults, fetchTop, ct)
+                        : null;
+                    result = await queryFilteredAsync(store, entry!, materializedWhere, fetchTop, ct);
+                }
             }
 
             // Apply DISTINCT — evaluates computed expressions inline so aliased/math columns work

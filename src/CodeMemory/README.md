@@ -21,7 +21,7 @@ dotnet add package CodeMemory
 - **Symbol history** — per-symbol git commit history with authors and timestamps
 - **Hotspot detection** — most frequently changed files ranked by commit count
 - **Edit context** — comprehensive context for a symbol: source code, dependency chains, related symbols, and test coverage
-- **SQL queries** — compose arbitrary filters across indexed fields using SQL (`SELECT`, `WHERE`, `ORDER BY`, `GROUP BY`, `HAVING`, CTEs, derived tables, aggregates, vector search via `ORDER BY Similarity DESC`) — parsed by SqlParserCS, executed as LINQ over InMemoryVectorStore
+- **SQL queries** — compose arbitrary filters across indexed fields using SQL (`SELECT`, `WHERE`, `ORDER BY`, `GROUP BY`, `HAVING`, CTEs, derived tables, aggregates, INNER/LEFT/RIGHT/FULL OUTER/CROSS JOINs, `USING(col)`, `UNION`/`INTERSECT`/`EXCEPT`, `IN (SELECT ...)` subqueries, vector search via `ORDER BY Similarity DESC`) — parsed by SqlParserCS, executed as LINQ over InMemoryVectorStore
 - **Multi-repo support** — per-repository storage isolation via `ServiceRegistry` + `IRepoContextAccessor`
 - **Pluggable storage** — in-memory (`InMemoryVectorStore`, default, zero-dependency), SQLite (`Microsoft.SemanticKernel.Connectors.SqliteVec`), PostgreSQL with pgvector (`Microsoft.SemanticKernel.Connectors.PgVector`), or SQL Server (`Microsoft.SemanticKernel.Connectors.SqlServer`)
 - **File watcher** — post-indexing `FileWatcherService` auto-reindexes changed/created/deleted files via `FileSystemWatcher` with debounce coalescing

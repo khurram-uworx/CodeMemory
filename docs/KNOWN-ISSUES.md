@@ -2,7 +2,7 @@
 
 | # | Issue | Effort | Impact | Status |
 |---|-------|--------|--------|--------|
-| 3 | JOINs, UNION, WHERE subqueries | Large | High | Phase 1 — cross-join + WHERE-as-join-condition + explicit JOIN ON supported (in-memory cartesian merge + filter). Self-joins, CTE+JOIN, comma-separated FROM, and explicit JOIN syntax all work. UNION and WHERE subqueries remain unsupported. See "Runtime / Execution Gaps" section below for implementation details. |
+| 3 | JOINs, UNION, WHERE subqueries | Large | High | Phase 1+2 — full join-type-aware pipeline with INNER/LEFT/RIGHT/FULL OUTER JOIN, USING(col), nested joins, WHERE subqueries (`IN (SELECT ...)`), and UNION/INTERSECT/EXCEPT all implemented. See "Runtime / Execution Gaps" section below for implementation details. |
 | 6 | `materializeAsync` / `toAsyncEnumerable` deep reflection (~80 lines) | Medium | Medium | Won't Do — generic bridge applied |
 | 9 | ORDER BY boxes via `GetValueOrDefault` | Small | Low | Won't Do — see note |
 | 10 | `getConstantString` compiles throwaway expression | Small | Low | Won't Do — interpreted fallback applied |
@@ -32,18 +32,22 @@ JOINs (including explicit `JOIN ... ON`) are now supported via an in-memory cart
 
 **Architecture:** `SqlQueryService.cs` detects multi-table queries via `detectMultiTable()`, dispatches to `executeJoinQueryAsync()` which: (1) flattens all `TableWithJoins` + `Joins` into a `TableRef` list via `parseFromClause()`, (2) fetches all rows from each collection (or CTE) with `alias.`-prefixed column names, (3) computes the cartesian product via `cartesianMerge()`, (4) applies the combined WHERE + ON filter via in-memory `evaluateExpression()` on merged dictionaries. `ON` conditions are extracted from `JoinConstraint` and merged via `mergeOnConditions()`. The `rowGetValue()` helper provides qualified→unqualified column fallback in `applyGroupBy`, `makeSortSelector`, and `projectRows`.
 
-**Not yet implemented (Phase 2):**
-- Proper INNER JOIN optimization (early-filter instead of cartesian + filter)
-- LEFT/RIGHT/FULL OUTER JOIN semantics (preserving unmatched rows)
-- `USING(col)` shorthand
-- Nested joins (parenthesized joins)
-- Subqueries in WHERE clause (`WHERE col IN (SELECT ...)`)
-- UNION / INTERSECT / EXCEPT
+**Phase 2 Complete — All items implemented:**
+- Proper INNER JOIN optimization (filter-while-merging instead of full cartesian)
+- LEFT/RIGHT/FULL OUTER JOIN semantics (preserving unmatched rows with NULL filling)
+- `USING(col)` shorthand (auto-generates `left.col = right.col` conditions)
+- Nested joins (parenthesized joins via `TableFactor.NestedJoin` recursion)
+- Subqueries in WHERE clause (`WHERE col IN (SELECT ...)` via `InSubquery` materialization)
+- UNION / INTERSECT / EXCEPT (recursive `SetOperation` evaluation with dedup)
 - `TableSchemaProvider` join-key metadata annotations
 
-See [docs/SQL-JOINS.md](SQL-JOINS.md) for the full Phase 2 plan with implementation priorities and technical notes.
-
-**UNION and WHERE subqueries** remain structurally rejected (`SetExpression` check).
+**Architecture refactored:** Flat `cartesianMerge` replaced with join-type-aware pipeline:
+1. `evaluateGroupAsync` processes each `TableWithJoins` as a group with sequential join application
+2. `mergeWithJoinType` dispatches to `crossJoin`/`innerJoin`/`leftJoin`/`fullOuterJoin` with ON-evaluation during merge
+3. `extractJoinInfo` handles `ConstrainedJoinOperator` (INNER/LEFT/RIGHT/FULL) and `CrossJoin`
+4. `generateUsingCondition` converts `USING(col)` to equality expressions
+5. `materializeSubqueriesAsync` executes `InSubquery` nodes before synchronous filter
+6. `executeSetOperationAsync` recursively evaluates `SetOperation` for UNION/INTERSECT/EXCEPT
 
 ---
 
@@ -97,13 +101,9 @@ No further action warranted. The only path worth optimizing is the `ConstantExpr
 
 ## Dead Code / Architectural Drift
 
-### 11 `TableSchemaProvider` not wired in — will be needed for JOINs
+### 11 `TableSchemaProvider` — revived with join-key metadata for Phase 2 JOINs
 
-`TableSchemaProvider.cs` provides runtime column metadata for SymbolRecord, ChunkRecord, and RelationshipRecord via reflection. It is commented out in `Program.cs` (DI registration) and in `SqlQueryTool.cs` (injection). Currently the schema info is inlined as static text in the tool's `[Description]` attribute.
-
-This is fine today (single-table queries, static schema is sufficient). But when JOINs arrive, an LLM needs to know which columns are join-compatible across tables (e.g., `SymbolRecord.Id` ↔ `ChunkRecord.SymbolId`). That info must be generated dynamically or at least maintained alongside the record types — the inlined description will be a maintenance burden and will lack join-key metadata.
-
-`TableSchemaProvider` should be revived as part of any JOINs feature and extended with join-key annotations or a foreign-key map.
+`TableSchemaProvider.cs` provides runtime column metadata for SymbolRecord, ChunkRecord, and RelationshipRecord via reflection. It is wired into DI and now includes `JoinKeyInfo` records that document foreign-key relationships between tables (`SymbolRecord.Id` ↔ `RelationshipRecord.SourceSymbolId`/`TargetSymbolId`, `ChunkRecord.SymbolId` ↔ `SymbolRecord.Id`, and the self-join pattern). `DescribeAll()` automatically includes join-key annotations in its output, and `DescribeJoinKeys()` exposes them separately for programmatic use.
 
 ---
 
