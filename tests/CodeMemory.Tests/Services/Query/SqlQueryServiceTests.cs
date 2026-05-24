@@ -1616,4 +1616,155 @@ public sealed class SqlQueryServiceTests
         Assert.That(result.Rows!.Select(r => r["Name"]), Is.EqualTo(["Helper", "MyClass"]));
     }
 
+    // ----- Feature: expression inside aggregate functions (e.g., AVG(LineEnd - LineStart)) -----
+
+    // seedSymbolsAsync data:
+    //   MyClass  (Class):     LineStart=1,   LineEnd=50   diff=49
+    //   MyMethod (Method):    LineStart=10,  LineEnd=20   diff=10
+    //   Helper   (Class):     LineStart=1,   LineEnd=30   diff=29
+    //   IOld     (Interface): LineStart=1,   LineEnd=10   diff=9
+    //   _private (Field):     LineStart=5,   LineEnd=5    diff=0
+
+    [Test]
+    public async Task Aggregate_Avg_WithExpression_ReturnsCorrectValues()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT Kind, AVG(LineEnd - LineStart) AS avgDiff FROM SymbolRecord " +
+            "GROUP BY Kind ORDER BY Kind");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(4));
+        var byKind = result.Rows!.ToDictionary(r => (string)r["Kind"]!);
+        Assert.That(Convert.ToDouble(byKind["Class"]["avgDiff"]), Is.EqualTo(39.0));
+        Assert.That(Convert.ToDouble(byKind["Method"]["avgDiff"]), Is.EqualTo(10.0));
+        Assert.That(Convert.ToDouble(byKind["Interface"]["avgDiff"]), Is.EqualTo(9.0));
+        Assert.That(Convert.ToDouble(byKind["Field"]["avgDiff"]), Is.EqualTo(0.0));
+    }
+
+    [Test]
+    public async Task Aggregate_Sum_WithExpression_ReturnsCorrectValues()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT Kind, SUM(LineEnd - LineStart) AS totalDiff FROM SymbolRecord " +
+            "GROUP BY Kind ORDER BY Kind");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(4));
+        var byKind = result.Rows!.ToDictionary(r => (string)r["Kind"]!);
+        Assert.That(Convert.ToDouble(byKind["Class"]["totalDiff"]), Is.EqualTo(78.0));
+        Assert.That(Convert.ToDouble(byKind["Method"]["totalDiff"]), Is.EqualTo(10.0));
+        Assert.That(Convert.ToDouble(byKind["Interface"]["totalDiff"]), Is.EqualTo(9.0));
+        Assert.That(Convert.ToDouble(byKind["Field"]["totalDiff"]), Is.EqualTo(0.0));
+    }
+
+    [Test]
+    public async Task Aggregate_MinMax_WithExpression_ReturnsCorrectValues()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT Kind, MIN(LineEnd - LineStart) AS minDiff, MAX(LineEnd - LineStart) AS maxDiff " +
+            "FROM SymbolRecord GROUP BY Kind ORDER BY Kind");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(4));
+        var byKind = result.Rows!.ToDictionary(r => (string)r["Kind"]!);
+        Assert.That(Convert.ToDouble(byKind["Class"]["minDiff"]), Is.EqualTo(29.0));
+        Assert.That(Convert.ToDouble(byKind["Class"]["maxDiff"]), Is.EqualTo(49.0));
+        Assert.That(Convert.ToDouble(byKind["Method"]["minDiff"]), Is.EqualTo(10.0));
+        Assert.That(Convert.ToDouble(byKind["Method"]["maxDiff"]), Is.EqualTo(10.0));
+    }
+
+    [Test]
+    public async Task Aggregate_MultipleExpressions_AllComputeCorrectly()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT Kind, COUNT(*) AS cnt, AVG(LineEnd - LineStart) AS avgDiff, " +
+            "SUM(LineEnd - LineStart) AS totalDiff FROM SymbolRecord " +
+            "GROUP BY Kind ORDER BY Kind");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(4));
+        var byKind = result.Rows!.ToDictionary(r => (string)r["Kind"]!);
+        Assert.That((long)byKind["Class"]["cnt"]!, Is.EqualTo(2));
+        Assert.That(Convert.ToDouble(byKind["Class"]["avgDiff"]), Is.EqualTo(39.0));
+        Assert.That(Convert.ToDouble(byKind["Class"]["totalDiff"]), Is.EqualTo(78.0));
+        Assert.That((long)byKind["Method"]["cnt"]!, Is.EqualTo(1));
+        Assert.That(Convert.ToDouble(byKind["Method"]["avgDiff"]), Is.EqualTo(10.0));
+    }
+
+    [Test]
+    public async Task Aggregate_ExpressionWithAlias_ReturnsCorrectColumnName()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT Kind, AVG(LineEnd - LineStart) AS length FROM SymbolRecord " +
+            "GROUP BY Kind ORDER BY Kind");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.Columns, Does.Contain("length"));
+        Assert.That(result.Columns, Does.Not.Contain("AVG(LineEnd - LineStart)"));
+    }
+
+    [Test]
+    public async Task Aggregate_ExpressionGlobal_NoGroupBy_ReturnsCorrectValue()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT AVG(LineEnd - LineStart) AS overall FROM SymbolRecord");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(1));
+        Assert.That(Convert.ToDouble(result.Rows![0]["overall"]), Is.EqualTo(19.4));
+    }
+
+    [Test]
+    public async Task Aggregate_SimpleColumns_StillWork_Regression()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT Kind, COUNT(*) AS cnt, AVG(LineStart) AS avgStart " +
+            "FROM SymbolRecord GROUP BY Kind ORDER BY Kind");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(4));
+        var byKind = result.Rows!.ToDictionary(r => (string)r["Kind"]!);
+        Assert.That((long)byKind["Class"]["cnt"]!, Is.EqualTo(2));
+        Assert.That(Convert.ToDouble(byKind["Class"]["avgStart"]), Is.EqualTo(1.0));
+        Assert.That((long)byKind["Method"]["cnt"]!, Is.EqualTo(1));
+        Assert.That(Convert.ToDouble(byKind["Method"]["avgStart"]), Is.EqualTo(10.0));
+    }
+
+    [Test]
+    public async Task Aggregate_ExpressionWithArithmeticOperators_AllOperatorsWork()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT Kind, AVG((LineEnd - LineStart) * 2) AS doubled, " +
+            "AVG((LineEnd - LineStart) / 2) AS halved FROM SymbolRecord " +
+            "WHERE Kind = 'Method' GROUP BY Kind");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(1));
+        Assert.That(Convert.ToDouble(result.Rows![0]["doubled"]), Is.EqualTo(20.0));
+        Assert.That(Convert.ToDouble(result.Rows[0]["halved"]), Is.EqualTo(5.0));
+    }
 }

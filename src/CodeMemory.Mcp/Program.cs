@@ -49,11 +49,9 @@ if (debugMode)
 else
 {
     builder.Logging.ClearProviders();
-    builder.Logging.AddConsole(options => options.LogToStandardErrorThreshold = LogLevel.Trace);
+    //builder.Logging.AddConsole(options => options.LogToStandardErrorThreshold = LogLevel.Trace);
     builder.Logging.AddProvider(new CodeMemory.Mcp.CodeMemoryFileLoggerProvider(repoRoot, version));
 }
-//else if (!builder.Environment.IsDevelopment())
-//    builder.Logging.SetMinimumLevel(LogLevel.Warning);
 
 // Storage
 builder.Services.AddCodeMemoryInMemoryStorage(repoRoot);

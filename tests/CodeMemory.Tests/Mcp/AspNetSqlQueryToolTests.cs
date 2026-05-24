@@ -217,6 +217,163 @@ public sealed class AspNetSqlQueryToolTests : BaseToolTests
     static List<Dictionary<string, object?>> GetRows(AspNetSqlQueryResult result)
         => result.Rows!;
 
+    // ── Expression-inside-aggregate integration tests ──
+
+    static async Task<(AspNetSqlQueryTool Tool, HybridStorageService Storage, string TempDir)> CreateToolWithLineData()
+    {
+        var storage = CreateStorage(out var tempDir);
+        await storage.InitializeAsync();
+        await storage.StoreSymbolsAsync([
+            new SymbolRecord
+            {
+                Id = "sym-a",
+                Name = "ClassA",
+                Kind = "Class",
+                FilePath = "/src/A.cs",
+                FullName = "ClassA",
+                LineStart = 1,
+                LineEnd = 50
+            },
+            new SymbolRecord
+            {
+                Id = "sym-b",
+                Name = "ClassB",
+                Kind = "Class",
+                FilePath = "/src/B.cs",
+                FullName = "ClassB",
+                LineStart = 10,
+                LineEnd = 40
+            },
+            new SymbolRecord
+            {
+                Id = "sym-c",
+                Name = "MyMethod",
+                Kind = "Method",
+                FilePath = "/src/A.cs",
+                FullName = "ClassA.MyMethod",
+                LineStart = 5,
+                LineEnd = 15
+            }
+        ]);
+
+        return (new AspNetSqlQueryTool(storage, NullLogger<AspNetSqlQueryTool>.Instance), storage, tempDir);
+    }
+
+    [Test]
+    public async Task SqlQueryAsync_AggregateExpression_AvgWithArithmetic_ReturnsCorrectValue()
+    {
+        var (tool, storage, tempDir) = await CreateToolWithLineData();
+
+        try
+        {
+            var result = await tool.SqlQueryAsync(
+                """SELECT Kind, AVG(LineEnd - LineStart) AS avgLen FROM SymbolRecord GROUP BY Kind ORDER BY Kind""",
+                maxResults: 10);
+
+            AssertSuccess(result, expectedRowCount: 2);
+            var byKind = GetRows(result).ToDictionary(r => (string)r["Kind"]!);
+            Assert.That(Convert.ToDouble(byKind["Class"]["avgLen"]), Is.EqualTo(39.5));
+            Assert.That(Convert.ToDouble(byKind["Method"]["avgLen"]), Is.EqualTo(10.0));
+        }
+        finally
+        {
+            storage.Dispose();
+            Cleanup(tempDir);
+        }
+    }
+
+    [Test]
+    public async Task SqlQueryAsync_AggregateExpression_SumMinMaxWithArithmetic_ReturnsCorrectValues()
+    {
+        var (tool, storage, tempDir) = await CreateToolWithLineData();
+
+        try
+        {
+            var result = await tool.SqlQueryAsync(
+                """SELECT Kind, SUM(LineEnd - LineStart) AS total, MIN(LineEnd - LineStart) AS minLen, MAX(LineEnd - LineStart) AS maxLen FROM SymbolRecord GROUP BY Kind ORDER BY Kind""",
+                maxResults: 10);
+
+            AssertSuccess(result, expectedRowCount: 2);
+            var byKind = GetRows(result).ToDictionary(r => (string)r["Kind"]!);
+            Assert.That(Convert.ToDouble(byKind["Class"]["total"]), Is.EqualTo(79.0));
+            Assert.That(Convert.ToDouble(byKind["Class"]["minLen"]), Is.EqualTo(30.0));
+            Assert.That(Convert.ToDouble(byKind["Class"]["maxLen"]), Is.EqualTo(49.0));
+            Assert.That(Convert.ToDouble(byKind["Method"]["total"]), Is.EqualTo(10.0));
+        }
+        finally
+        {
+            storage.Dispose();
+            Cleanup(tempDir);
+        }
+    }
+
+    [Test]
+    public async Task SqlQueryAsync_AggregateExpression_MixedWithPlainColumns_Works()
+    {
+        var (tool, storage, tempDir) = await CreateToolWithLineData();
+
+        try
+        {
+            var result = await tool.SqlQueryAsync(
+                """SELECT Kind, COUNT(*) AS cnt, AVG(LineEnd - LineStart) AS avgLen FROM SymbolRecord GROUP BY Kind ORDER BY Kind""",
+                maxResults: 10);
+
+            AssertSuccess(result, expectedRowCount: 2);
+            var byKind = GetRows(result).ToDictionary(r => (string)r["Kind"]!);
+            Assert.That((long)byKind["Class"]["cnt"]!, Is.EqualTo(2));
+            Assert.That(Convert.ToDouble(byKind["Class"]["avgLen"]), Is.EqualTo(39.5));
+            Assert.That((long)byKind["Method"]["cnt"]!, Is.EqualTo(1));
+            Assert.That(Convert.ToDouble(byKind["Method"]["avgLen"]), Is.EqualTo(10.0));
+        }
+        finally
+        {
+            storage.Dispose();
+            Cleanup(tempDir);
+        }
+    }
+
+    [Test]
+    public async Task SqlQueryAsync_AggregateExpression_GlobalNoGroupBy_Works()
+    {
+        var (tool, storage, tempDir) = await CreateToolWithLineData();
+
+        try
+        {
+            var result = await tool.SqlQueryAsync(
+                """SELECT AVG(LineEnd - LineStart) AS overall FROM SymbolRecord""",
+                maxResults: 10);
+
+            AssertSuccess(result, expectedRowCount: 1);
+            Assert.That(Convert.ToDouble(GetRows(result)[0]["overall"]), Is.EqualTo(29.666666666666668));
+        }
+        finally
+        {
+            storage.Dispose();
+            Cleanup(tempDir);
+        }
+    }
+
+    [Test]
+    public async Task SqlQueryAsync_AggregateExpression_WithAlias_ReturnedInColumns()
+    {
+        var (tool, storage, tempDir) = await CreateToolWithLineData();
+
+        try
+        {
+            var result = await tool.SqlQueryAsync(
+                """SELECT Kind, AVG(LineEnd - LineStart) AS length FROM SymbolRecord GROUP BY Kind ORDER BY Kind""",
+                maxResults: 10);
+
+            AssertSuccess(result, expectedRowCount: 2);
+            Assert.That(result.Columns, Does.Contain("length"));
+        }
+        finally
+        {
+            storage.Dispose();
+            Cleanup(tempDir);
+        }
+    }
+
     static void Cleanup(string tempDir)
     {
         try

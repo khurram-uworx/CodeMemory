@@ -138,7 +138,11 @@ public sealed class SqlQueryService
 
                 case SelectItem.UnnamedExpression ue:
                     if (ue.Expression is AstExpr.Function func && isAggregateFunction(func))
-                        columns.Add(new SelectColumnInfo(null, null, true, extractFunctionName(func), extractFunctionArg(func)));
+                    {
+                        var argExpr = extractFunctionArgExpression(func);
+                        var argName = argExpr is AstExpr.Identifier id ? id.Ident.Value : null;
+                        columns.Add(new SelectColumnInfo(null, null, true, extractFunctionName(func), argName, argExpr));
+                    }
                     else if (ue.Expression is AstExpr.Identifier id)
                         columns.Add(new SelectColumnInfo(id.Ident.Value, null, false, null));
                     else
@@ -147,7 +151,11 @@ public sealed class SqlQueryService
 
                 case SelectItem.ExpressionWithAlias ea:
                     if (ea.Expression is AstExpr.Function eaFunc && isAggregateFunction(eaFunc))
-                        columns.Add(new SelectColumnInfo(null, ea.Alias.Value, true, extractFunctionName(eaFunc), extractFunctionArg(eaFunc)));
+                    {
+                        var argExpr = extractFunctionArgExpression(eaFunc);
+                        var argName = argExpr is AstExpr.Identifier id ? id.Ident.Value : null;
+                        columns.Add(new SelectColumnInfo(null, ea.Alias.Value, true, extractFunctionName(eaFunc), argName, argExpr));
+                    }
                     else if (ea.Expression is AstExpr.Identifier id)
                         columns.Add(new SelectColumnInfo(id.Ident.Value, ea.Alias.Value, false, null));
                     else
@@ -176,6 +184,18 @@ public sealed class SqlQueryService
             }
         }
 
+        return null;
+    }
+
+    static AstExpr? extractFunctionArgExpression(AstExpr.Function func)
+    {
+        if (func.Args is FunctionArguments.List listArgs)
+        {
+            var args = listArgs.ArgumentList.Args;
+            if (args?.Count >= 1 && args[0] is FunctionArg.Unnamed unnamed
+                && unnamed.FunctionArgExpression is FunctionArgExpression.FunctionExpression fe)
+                return fe.Expression;
+        }
         return null;
     }
 
@@ -245,6 +265,15 @@ public sealed class SqlQueryService
         return results;
     }
 
+    static object? resolveAggregateArg(Dictionary<string, object?> row, SelectColumnInfo col)
+    {
+        if (col.AggregateArg is not null)
+            return row.GetValueOrDefault(col.AggregateArg);
+        if (col.Expression is not null)
+            return evaluateExpression(col.Expression, row);
+        return null;
+    }
+
     static object? computeAggregate(IEnumerable<Dictionary<string, object?>> group, SelectColumnInfo col)
     {
         var func = col.AggregateFunction?.ToUpperInvariant() ?? "COUNT";
@@ -253,14 +282,14 @@ public sealed class SqlQueryService
         {
             case "COUNT":
                 {
-                    if (col.AggregateArg is null)
+                    if (col.AggregateArg is null && col.Expression is null)
                         return (long)group.Count();
-                    return (long)group.Count(r => r.GetValueOrDefault(col.AggregateArg!) is not null);
+                    return (long)group.Count(r => resolveAggregateArg(r, col) is not null);
                 }
             case "SUM":
                 {
                     var vals = group
-                        .Select(r => safeToDouble(r.GetValueOrDefault(col.AggregateArg!)))
+                        .Select(r => safeToDouble(resolveAggregateArg(r, col)))
                         .Where(v => v is not null)
                         .Select(v => v!.Value)
                         .ToList();
@@ -269,7 +298,7 @@ public sealed class SqlQueryService
             case "AVG":
                 {
                     var vals = group
-                        .Select(r => safeToDouble(r.GetValueOrDefault(col.AggregateArg!)))
+                        .Select(r => safeToDouble(resolveAggregateArg(r, col)))
                         .Where(v => v is not null)
                         .Select(v => v!.Value)
                         .ToList();
@@ -278,7 +307,7 @@ public sealed class SqlQueryService
             case "MIN":
                 {
                     var vals = group
-                        .Select(r => safeToDouble(r.GetValueOrDefault(col.AggregateArg!)))
+                        .Select(r => safeToDouble(resolveAggregateArg(r, col)))
                         .Where(v => v is not null)
                         .Select(v => v!.Value)
                         .ToList();
@@ -287,7 +316,7 @@ public sealed class SqlQueryService
             case "MAX":
                 {
                     var vals = group
-                        .Select(r => safeToDouble(r.GetValueOrDefault(col.AggregateArg!)))
+                        .Select(r => safeToDouble(resolveAggregateArg(r, col)))
                         .Where(v => v is not null)
                         .Select(v => v!.Value)
                         .ToList();
