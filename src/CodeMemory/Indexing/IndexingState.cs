@@ -4,6 +4,8 @@ namespace CodeMemory.Indexing;
 
 public static class IndexingState
 {
+    public static event EventHandler<DataUpdatedEventArgs>? DataUpdated;
+
     static readonly ConcurrentDictionary<string, bool> repoCompleted = new(StringComparer.OrdinalIgnoreCase);
     static readonly ConcurrentDictionary<string, double> repoProgress = new(StringComparer.OrdinalIgnoreCase);
     static volatile bool fileWatcherActive;
@@ -35,4 +37,14 @@ public static class IndexingState
 
     public static void MarkFileWatcherActive()
         => fileWatcherActive = true;
+
+    public static void MarkDataUpdated(string repoRoot)
+    {
+        DataUpdated?.Invoke(null, new DataUpdatedEventArgs(repoRoot));
+    }
+}
+
+public sealed class DataUpdatedEventArgs(string repoRoot) : EventArgs
+{
+    public string RepoRoot { get; } = repoRoot;
 }

@@ -13,6 +13,8 @@
     <Compile Include="..\..\src\CodeMemory.Mcp\SqlQuery\SqlExpressionBuilder.cs" Link="Includes\SqlExpressionBuilder.cs" />
     <Compile Include="..\..\src\CodeMemory.Mcp\SqlQuery\SqlQueryService.cs" Link="Includes\SqlQueryService.cs" />
     <Compile Include="..\..\src\CodeMemory.Mcp\SqlQuery\TableSchemaProvider.cs" Link="Includes\TableSchemaProvider.cs" />
+    <Compile Include="..\..\src\CodeMemory.Mcp\SqlQuery\VirtualTables.cs" Link="Includes\VirtualTables.cs" />
+    <Compile Include="..\..\src\CodeMemory.Mcp\SqlQuery\VirtualTableMaterializer.cs" Link="Includes\VirtualTableMaterializer.cs" />
   </ItemGroup>
 
   <ItemGroup>

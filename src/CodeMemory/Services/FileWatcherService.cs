@@ -241,6 +241,9 @@ public sealed class FileWatcherService : IDisposable
                 logger.LogWarning(ex, "Failed to re-index {Path}", fullPath);
             }
         }
+
+        if (creates.Length > 0 || deletes.Length > 0)
+            IndexingState.MarkDataUpdated(repoRoot);
     }
 
     public Task StartAsync(CancellationToken ct)

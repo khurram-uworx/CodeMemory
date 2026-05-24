@@ -317,6 +317,8 @@ public sealed class IndexingEngine
         logger.LogInformation(
             "Indexing complete — {Files} files, {ParsedInfo}, {Symbols} symbols, {Chunks} chunks, {Relationships} relationships",
             fileCount, parsedInfo, symbolCount, chunkCount, relationshipsInfo);
+
+        IndexingState.MarkDataUpdated(repoRoot);
     }
 
     public async Task<FileIndexResult> ProcessFileAsync(string filePath, CancellationToken ct)

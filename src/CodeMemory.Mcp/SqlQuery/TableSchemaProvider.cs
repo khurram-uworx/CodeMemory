@@ -5,7 +5,30 @@ namespace CodeMemory.Mcp.SqlQuery;
 
 public sealed class TableSchemaProvider
 {
-    public record ColumnInfo(string Name, string Type, bool IsNullable, bool IsKey, bool IsVector, string? StorageName);
+    public sealed record ColumnInfo(string Name, string Type, bool IsNullable, bool IsKey, bool IsVector, string? StorageName);
+
+    public sealed record JoinKeyInfo(
+        string SourceTable,
+        string SourceColumn,
+        string TargetTable,
+        string TargetColumn,
+        string Description);
+
+    static readonly List<JoinKeyInfo> JoinKeys = new()
+    {
+        new("RelationshipRecord", "SourceSymbolId", "SymbolRecord", "Id",
+            "Outgoing relationship: what symbol depends on another"),
+        new("RelationshipRecord", "TargetSymbolId", "SymbolRecord", "Id",
+            "Incoming relationship: what symbol is depended upon"),
+        new("ChunkRecord", "SymbolId", "SymbolRecord", "Id",
+            "Chunk belongs to a symbol (if SymbolId is set)"),
+        new("RelationshipWithNames", "SourceSymbolId", "SymbolRecord", "Id",
+            "Outgoing relationship (denormalized view already includes SourceName)"),
+        new("RelationshipWithNames", "TargetSymbolId", "SymbolRecord", "Id",
+            "Incoming relationship (denormalized view already includes TargetName)"),
+        new("SymbolReferenceStats", "SymbolId", "SymbolRecord", "Id",
+            "Reference stats for a symbol (denormalized view already includes Name/Kind)"),
+    };
 
     public List<ColumnInfo> GetColumns<T>()
         => GetColumns(typeof(T));
@@ -42,12 +65,16 @@ public sealed class TableSchemaProvider
         })
         .ToList();
 
+    public IReadOnlyList<JoinKeyInfo> GetJoinKeys() => JoinKeys;
+
     public Dictionary<string, List<ColumnInfo>> GetAll()
         => new(StringComparer.OrdinalIgnoreCase)
         {
             ["SymbolRecord"] = GetColumns<SymbolRecord>(),
             ["ChunkRecord"] = GetColumns<ChunkRecord>(),
             ["RelationshipRecord"] = GetColumns<RelationshipRecord>(),
+            ["RelationshipWithNames"] = GetColumns<RelationshipWithNamesRecord>(),
+            ["SymbolReferenceStats"] = GetColumns<SymbolReferenceStatsRecord>(),
         };
 
     public string DescribeAll()
@@ -67,6 +94,38 @@ public sealed class TableSchemaProvider
                 sb.AppendLine($"    - {c.Name}: {c.Type}{tagStr}");
             }
         }
+
+        return sb.ToString();
+    }
+
+    public string DescribeJoinKeys()
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("  Join relationships:");
+
+        foreach (var key in JoinKeys)
+        {
+            sb.AppendLine(
+                $"    - {key.SourceTable}.{key.SourceColumn} → {key.TargetTable}.{key.TargetColumn}");
+            sb.AppendLine($"      ({key.Description})");
+        }
+
+        return sb.ToString();
+    }
+
+    public string DescribeVirtualTables()
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("  Virtual Tables (denormalized for convenience):");
+        sb.AppendLine("  - RelationshipWithNames: Relationships with symbol names resolved");
+        sb.AppendLine("    - SourceName, SourceKind, SourceFullName, SourceFilePath");
+        sb.AppendLine("    - TargetName, TargetKind, TargetFullName, TargetFilePath");
+        sb.AppendLine("    - No JOIN needed - query directly by TargetKind='Class' etc.");
+        sb.AppendLine("  - SymbolReferenceStats: Pre-aggregated reference counts per symbol");
+        sb.AppendLine("    - IncomingReferences, OutgoingReferences (total counts)");
+        sb.AppendLine("    - IncomingCalls, OutgoingCalls (calls only)");
+        sb.AppendLine("    - IncomingInherits, IncomingImplements (inheritance/implementation)");
+        sb.AppendLine("    - Name, Kind, FullName, FilePath included directly");
 
         return sb.ToString();
     }

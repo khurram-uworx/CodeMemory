@@ -72,6 +72,7 @@ builder.Services.AddSingleton<SemanticChunker>();
 builder.Services.AddSingleton<CodeMemory.Mcp.SqlQuery.CollectionRegistry>();
 builder.Services.AddSingleton<CodeMemory.Mcp.SqlQuery.SqlQueryService>();
 builder.Services.AddSingleton<CodeMemory.Mcp.SqlQuery.TableSchemaProvider>();
+builder.Services.AddSingleton<CodeMemory.Mcp.SqlQuery.VirtualTableMaterializer>();
 
 // Built-in n-gram embedding generator
 builder.Services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>, NgramEmbeddingGenerator>();
@@ -115,6 +116,36 @@ var app = builder.Build();
 var loggerFactory = app.Services.GetRequiredService<ILoggerFactory>();
 var embeddingGenerator = app.Services.GetRequiredService<IEmbeddingGenerator<string, Embedding<float>>>();
 
+var startupLogger = loggerFactory.CreateLogger("CodeMemory.Mcp.Startup");
+var storageService = app.Services.GetRequiredService<IStorageService>();
+var materializer = app.Services.GetRequiredService<CodeMemory.Mcp.SqlQuery.VirtualTableMaterializer>();
+
+EventHandler<DataUpdatedEventArgs> onDataUpdated = (_, args) =>
+{
+    if (!string.Equals(args.RepoRoot, repoRoot, StringComparison.OrdinalIgnoreCase))
+        return;
+
+    if (storageService.Store is null)
+    {
+        startupLogger.LogWarning("Virtual table materialization skipped: Store not available");
+        return;
+    }
+
+    _ = Task.Run(async () =>
+    {
+        try
+        {
+            await materializer.MaterializeAsync(storageService.Store, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            startupLogger.LogError(ex, "Virtual table materialization failed");
+        }
+    });
+};
+
+IndexingState.DataUpdated += onDataUpdated;
+
 
 if (debugMode)
 {
@@ -124,6 +155,12 @@ if (debugMode)
         var engine = app.Services.GetRequiredService<IndexingEngine>();
         var progress = new Progress<double>(p => IndexingState.UpdateProgress(repoRoot, p));
         await engine.RunIndexingAsync(repoRoot, CancellationToken.None, progress);
+
+        if (storageService.Store is not null)
+        {
+            await materializer.MaterializeAsync(storageService.Store, CancellationToken.None);
+        }
+
         IndexingState.MarkCompleted(repoRoot);
         Console.Out.WriteLine();
         Console.Out.WriteLine("=== Indexing Complete ===");

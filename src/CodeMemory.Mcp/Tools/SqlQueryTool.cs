@@ -33,7 +33,29 @@ Execute SELECT-only SQL queries against the indexed repository.
 
 Only SELECT is supported. No INSERT/UPDATE/DELETE/CREATE.
 
-TABLES: SymbolRecord, ChunkRecord (incl. vector search & text files), RelationshipRecord
+TABLES:
+  - SymbolRecord: symbols (classes, methods, interfaces, etc.)
+  - ChunkRecord: code/text chunks with embeddings (vector search capable)
+  - RelationshipRecord: relationships between symbols (uses GUID IDs)
+  - RelationshipWithNames: VIRTUAL TABLE — relationships with denormalized symbol names
+  - SymbolReferenceStats: VIRTUAL TABLE — pre-aggregated reference counts per symbol
+
+VIRTUAL TABLES (recommended for simpler queries):
+  - RelationshipWithNames: No JOIN needed. Has SourceName/SourceKind/SourceFullName/SourceFilePath
+    and TargetName/TargetKind/TargetFullName/TargetFilePath.
+  - SymbolReferenceStats: Pre-computed counts. Has Name, Kind, FullName, FilePath plus
+    IncomingReferences, OutgoingReferences, IncomingCalls, OutgoingCalls, etc.
+
+JOIN RELATIONSHIPS (for raw tables):
+  - RelationshipRecord.SourceSymbolId → SymbolRecord.Id (outgoing: what depends on what)
+  - RelationshipRecord.TargetSymbolId → SymbolRecord.Id (incoming: what is depended upon)
+  - ChunkRecord.SymbolId → SymbolRecord.Id (chunk belongs to symbol, if set)
+  Tip: Use RelationshipWithNames or SymbolReferenceStats virtual tables instead of writing JOINs.
+
+ALTERNATIVE TOOLS (no SQL required):
+  - get_most_referenced_symbols: Find most referenced symbols with filtering by kind/relationType
+  - trace_dependency: Trace dependency chains for a symbol
+  - find_related_code: Find related symbols for a given symbol
 
 SYNTAX:
   [WITH cte AS (SELECT ...)] SELECT [DISTINCT] cols|*|aggr FROM t [[AS] a]
@@ -60,20 +82,27 @@ BEHAVIOR:
   - .md/.txt files indexed as ChunkRecord with Language = 'Text'
   - Only InMemoryVectorStore backend; other backends return error
 
-EXAMPLES:
+EXAMPLES (Basic Tables):
   SELECT * FROM SymbolRecord WHERE Kind = 'Class' LIMIT 10
   SELECT DISTINCT Kind FROM SymbolRecord
   SELECT FilePath, COUNT(*) AS cnt FROM SymbolRecord GROUP BY FilePath HAVING cnt > 1 ORDER BY cnt DESC
   SELECT Name, LineEnd - LineStart AS Length FROM SymbolRecord ORDER BY Length DESC LIMIT 10
   SELECT * FROM ChunkRecord WHERE Content ILIKE '%auth%' ORDER BY Similarity DESC LIMIT 5
   SELECT * FROM ChunkRecord WHERE Language = 'Text'
+
+EXAMPLES (JOINs — use RelationshipWithNames instead for simplicity):
   WITH counts AS (SELECT FilePath, COUNT(*) AS cnt FROM SymbolRecord GROUP BY FilePath) SELECT * FROM counts ORDER BY cnt DESC
   SELECT Name, Kind FROM (SELECT * FROM SymbolRecord) AS sub WHERE sub.Kind = 'Method'
   SELECT s.Name, COUNT(*) AS cnt FROM SymbolRecord s JOIN RelationshipRecord r ON s.Id = r.TargetSymbolId GROUP BY s.Name ORDER BY cnt DESC
-  SELECT Name || '::' || Kind AS combined FROM SymbolRecord WHERE Kind IN ('Class', 'Interface') LIMIT 10
-  SELECT Name, FilePath FROM SymbolRecord WHERE Kind = 'Method' AND (LineEnd - LineStart) BETWEEN 5 AND 50 ORDER BY Name
-  SELECT Kind, AVG(LineEnd - LineStart) AS avgLen, COUNT(*) AS cnt FROM SymbolRecord GROUP BY Kind ORDER BY avgLen DESC
-  SELECT c.Name, COUNT(*) AS methodCount FROM SymbolRecord c, SymbolRecord m WHERE m.Kind = 'Method' AND m.FullName LIKE c.FullName || '.%' AND c.Kind = 'Class' GROUP BY c.Name ORDER BY methodCount DESC LIMIT 10
+
+EXAMPLES (Virtual Tables — RECOMMENDED):
+  SELECT TargetName, COUNT(*) AS refCount FROM RelationshipWithNames
+    WHERE TargetKind = 'Class' AND RelationshipType = 'References'
+    GROUP BY TargetName ORDER BY refCount DESC
+
+  SELECT Name, IncomingReferences, IncomingCalls, FilePath
+    FROM SymbolReferenceStats WHERE Kind = 'Class'
+    ORDER BY IncomingReferences DESC LIMIT 10
 
 RETURNS JSON: success, rowCount, executionTimeMs, columns, rows, error
 ")]

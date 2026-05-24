@@ -15,6 +15,8 @@ public sealed class CollectionRegistry
         register<SymbolRecord>("SymbolRecord", "symbols");
         register<ChunkRecord>("ChunkRecord", "chunks");
         register<RelationshipRecord>("RelationshipRecord", "relationships");
+        register<RelationshipWithNamesRecord>("RelationshipWithNames", "relWithNames");
+        register<SymbolReferenceStatsRecord>("SymbolReferenceStats", "refStats");
     }
 
     void register<TRecord>(string tableName, string collectionName) where TRecord : class
