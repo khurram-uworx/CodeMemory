@@ -1,7 +1,16 @@
+using CodeMemory.Storage;
+
 namespace CodeMemory.Services.Architecture;
 
 public sealed class ComponentResolver : IComponentResolver
 {
+    readonly IStorageService storage;
+
+    public ComponentResolver(IStorageService storage)
+    {
+        this.storage = storage;
+    }
+
     static string getDirectoryAtDepth(string filePath, int depth)
     {
         var normalized = filePath.Replace('\\', '/');
@@ -19,9 +28,34 @@ public sealed class ComponentResolver : IComponentResolver
         return result;
     }
 
-    public string GetComponentName(string filePath, int depth = 1)
+    static string? resolveFromMapping(string filePath, IReadOnlyDictionary<string, string> mapping)
     {
-        var fromMapping = ComponentMapping.Resolve(filePath);
+        if (mapping.Count == 0)
+            return null;
+
+        var normalized = filePath.Replace('\\', '/').TrimStart('/');
+        string? bestMatch = null;
+        var bestLength = 0;
+
+        foreach (var (prefix, component) in mapping)
+        {
+            var normalizedPrefix = prefix.Replace('\\', '/').TrimEnd('/') + '/';
+            if (normalized.StartsWith(normalizedPrefix, StringComparison.OrdinalIgnoreCase)
+                && normalizedPrefix.Length > bestLength)
+            {
+                bestMatch = component;
+                bestLength = normalizedPrefix.Length;
+            }
+        }
+
+        return bestMatch;
+    }
+
+    public async Task<string> GetComponentNameAsync(string filePath, int depth = 1)
+    {
+        var mapping = await storage.LoadComponentMappingAsync();
+
+        var fromMapping = resolveFromMapping(filePath, mapping);
         if (fromMapping != null)
             return fromMapping;
 

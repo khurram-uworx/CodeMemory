@@ -108,6 +108,12 @@ sealed class MockStorageService : IStorageService
 
     public Task ClearAllAsync(CancellationToken ct = default)
         => Task.CompletedTask;
+
+    public Task StoreComponentMappingAsync(IReadOnlyDictionary<string, string> mapping, CancellationToken ct = default)
+        => Task.CompletedTask;
+
+    public Task<IReadOnlyDictionary<string, string>> LoadComponentMappingAsync(CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyDictionary<string, string>>(new Dictionary<string, string>());
 }
 
 sealed class MockGraphService : IDependencyGraphService

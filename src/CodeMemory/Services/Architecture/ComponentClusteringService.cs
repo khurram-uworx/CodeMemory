@@ -122,7 +122,7 @@ public sealed class ComponentClusteringService : IComponentClusteringService
 
         foreach (var sym in symbolsPerKind)
         {
-            var component = componentResolver.GetComponentName(sym.FilePath, depth);
+            var component = await componentResolver.GetComponentNameAsync(sym.FilePath, depth);
             symbolToComponent[sym.Id] = component;
             if (!componentFiles.ContainsKey(component))
                 componentFiles[component] = [];

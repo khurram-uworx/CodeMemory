@@ -1,6 +1,7 @@
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.VectorData;
+using System.Collections.Concurrent;
 using System.Linq.Expressions;
 
 namespace CodeMemory.Storage;
@@ -16,6 +17,7 @@ public sealed class StorageService : IStorageService, IDisposable
     VectorStoreCollection<string, SymbolRecord>? symbols;
     VectorStoreCollection<string, ChunkRecord>? chunks;
     VectorStoreCollection<string, RelationshipRecord>? relationships;
+    readonly ConcurrentDictionary<string, string> componentMapping = new(StringComparer.OrdinalIgnoreCase);
     bool initialized;
 
     public StorageService(string repoRoot,
@@ -295,6 +297,20 @@ public sealed class StorageService : IStorageService, IDisposable
             relationships = null;
             initialized = false;
         }, ct);
+    }
+
+    public Task StoreComponentMappingAsync(IReadOnlyDictionary<string, string> mapping, CancellationToken ct = default)
+    {
+        componentMapping.Clear();
+        foreach (var (key, value) in mapping)
+            componentMapping[key] = value;
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyDictionary<string, string>> LoadComponentMappingAsync(CancellationToken ct = default)
+    {
+        return Task.FromResult<IReadOnlyDictionary<string, string>>(
+            new Dictionary<string, string>(componentMapping, StringComparer.OrdinalIgnoreCase));
     }
 
     public void Dispose()

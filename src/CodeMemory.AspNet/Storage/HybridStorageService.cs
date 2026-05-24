@@ -2,6 +2,7 @@ using CodeMemory.Storage;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.VectorData;
+using System.Collections.Concurrent;
 using System.Linq.Expressions;
 
 namespace CodeMemory.AspNet.Storage;
@@ -195,6 +196,7 @@ public sealed class HybridStorageService : IStorageService, IDisposable
     readonly IEmbeddingGenerator<string, Embedding<float>>? embeddingGenerator;
     readonly int configuredDimension;
     int actualDimension;
+    readonly ConcurrentDictionary<string, string> componentMapping = new(StringComparer.OrdinalIgnoreCase);
     VectorStoreCollection<string, ChunkRecord>? chunks;
     bool initialized;
 
@@ -532,6 +534,22 @@ public sealed class HybridStorageService : IStorageService, IDisposable
 
         chunks = null;
         initialized = false;
+    }
+
+    // TODO: Persist via EF Core table when component_mapping entity is introduced.
+    // Currently uses in-memory ConcurrentDictionary for non-blocking persistence evolution.
+    public Task StoreComponentMappingAsync(IReadOnlyDictionary<string, string> mapping, CancellationToken ct = default)
+    {
+        componentMapping.Clear();
+        foreach (var (key, value) in mapping)
+            componentMapping[key] = value;
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyDictionary<string, string>> LoadComponentMappingAsync(CancellationToken ct = default)
+    {
+        return Task.FromResult<IReadOnlyDictionary<string, string>>(
+            new Dictionary<string, string>(componentMapping, StringComparer.OrdinalIgnoreCase));
     }
 
     public void Dispose()
