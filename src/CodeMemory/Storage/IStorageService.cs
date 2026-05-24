@@ -47,4 +47,8 @@ public interface IStorageService
     Task DeleteRelationshipsByTargetIdsAsync(IReadOnlyList<string> targetIds, CancellationToken ct = default);
 
     Task ClearAllAsync(CancellationToken ct = default);
+
+    Task StoreComponentMappingAsync(IReadOnlyDictionary<string, string> mapping, CancellationToken ct = default);
+
+    Task<IReadOnlyDictionary<string, string>> LoadComponentMappingAsync(CancellationToken ct = default);
 }

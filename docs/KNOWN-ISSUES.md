@@ -118,27 +118,11 @@ No further action warranted. The only path worth optimizing is the `ConstantExpr
 
 ---
 
-## 1. `ComponentMapping` Static Cache Breaks Multi-Repo Component Resolution
+## 1. Component Resolution in Multi-Repo Mode
 
-**Status: Confirmed. Root cause identified, not yet fixed.**
+**Status: Resolved.** The static `ComponentMapping` class has been removed. Component mappings are now persisted via `IStorageService` (`StoreComponentMappingAsync`/`LoadComponentMappingAsync`) and resolved by `ComponentResolver.GetComponentNameAsync()` which reads from storage directly. Each repo has its own `IStorageService` instance, and `StorageServiceRouter` routes to the correct repo at runtime via `IRepoContextAccessor`.
 
-`ComponentMapping` (`src/CodeMemory/Services/Architecture/ComponentMapping.cs`) is a **static** class with a `static ConcurrentDictionary` storing file path prefix → component name mappings. It is populated during indexing by `IndexingEngine.RunIndexingAsync()` calling `ComponentMapping.Initialize()`.
-
-**Problem:** In a multi-repo ASP.NET deployment, `ComponentMapping` is shared across all repos. When any repo undergoes a full reindex, `Initialize()` calls `prefixToComponent.Clear()` and repopulates from only that repo's project files. This **destroys all other repos' component mappings**, causing `ArchitectureService` and `ComponentClusteringService` to fall back to directory-depth-based component names for those repos instead of the correct project-derived names.
-
-**Affected:**
-- `ArchitectureService.GetOverviewAsync()` — components misnamed for unaffected repos
-- `ComponentClusteringService.GetClustersAsync()` — same
-- All MCP tools that consume component names
-
-**Root cause:**
-- Static state (`ComponentMapping`) should either be per-repo (keyed by repo name) or `ComponentMapping.Initialize()` should merge rather than replace
-- No existing mechanism to persist/restore component mappings per repo
-
-**Potential fixes (not implemented):**
-- Make `ComponentMapping` instance-based with repo-scoped lifetime (requires DI changes and a per-repo registry)
-- Change `Initialize()` to accept a repo name key and store mappings in a `ConcurrentDictionary<string, ConcurrentDictionary<string, string>>` keyed by repo
-- Persist component mappings in storage (add `ComponentMappingRecord` to storage schema)
+**Remaining limitation:** In-memory storage backends lose component mappings on restart. Use `sqlite`/`pgvector`/`sqlserver` providers for persistence across restarts.
 
 ---
 

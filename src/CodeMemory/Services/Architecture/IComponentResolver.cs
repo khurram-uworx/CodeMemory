@@ -2,5 +2,5 @@ namespace CodeMemory.Services.Architecture;
 
 public interface IComponentResolver
 {
-    string GetComponentName(string filePath, int depth = 1);
+    Task<string> GetComponentNameAsync(string filePath, int depth = 1);
 }
