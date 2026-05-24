@@ -920,15 +920,30 @@ public sealed class SqlQueryServiceTests
     }
 
     [Test]
-    public async Task UnionQuery_ReturnsError()
+    public async Task UnionQuery_Works()
     {
         var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
 
         var result = await service.ExecuteAsync(store,
             "SELECT Name FROM SymbolRecord UNION SELECT Name FROM SymbolRecord");
 
-        Assert.That(result.Success, Is.False);
-        Assert.That(result.Error, Does.Contain("simple SELECT"));
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(5));
+        Assert.That(result.Columns, Does.Contain("Name"));
+    }
+
+    [Test]
+    public async Task UnionAllQuery_Works()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT Name FROM SymbolRecord UNION ALL SELECT Name FROM SymbolRecord");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(10));
     }
 
     [Test]

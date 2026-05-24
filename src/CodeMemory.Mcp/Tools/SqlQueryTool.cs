@@ -40,12 +40,14 @@ SYNTAX:
     [JOIN t [[AS] a] ON c] [WHERE c [AND|OR ...]] [GROUP BY c]
     [HAVING c] [ORDER BY c [ASC|DESC]] [LIMIT n]
   Strings use single quotes (''). Table aliases required for multi-table queries.
-  JOINs (INNER/LEFT/CROSS), self-joins, CTEs (non-recursive, chained),
-  derived tables FROM (subquery) AS alias — all supported.
+  JOINs (INNER/LEFT/RIGHT/FULL OUTER/CROSS, USING(col)), self-joins, CTEs (non-recursive, chained),
+  derived tables FROM (subquery) AS alias, nested joins — all supported.
 
-OPERATORS: =, <>, <, >, <=, >=, LIKE, ILIKE, IN(...), IS NULL, IS NOT NULL, BETWEEN
+OPERATORS: =, <>, <, >, <=, >=, LIKE, ILIKE, IN(...), IN (SELECT ...), IS NULL, IS NOT NULL, BETWEEN
 
 AGGREGATES: COUNT(*|col), SUM, AVG, MIN, MAX — use AS alias
+
+SET OPERATIONS: UNION [ALL], INTERSECT, EXCEPT — each side must be a SELECT with FROM.
 
 VECTOR SEARCH (ChunkRecord only):
   SELECT ... FROM ChunkRecord WHERE Content LIKE '%text%' ORDER BY Similarity DESC
@@ -74,6 +76,9 @@ EXAMPLES:
   SELECT Name, FilePath FROM SymbolRecord WHERE Kind = 'Method' AND (LineEnd - LineStart) BETWEEN 5 AND 50 ORDER BY Name
   SELECT Kind, AVG(LineEnd - LineStart) AS avgLen, COUNT(*) AS cnt FROM SymbolRecord GROUP BY Kind ORDER BY avgLen DESC
   SELECT c.Name, COUNT(*) AS methodCount FROM SymbolRecord c, SymbolRecord m WHERE m.Kind = 'Method' AND m.FullName LIKE c.FullName || '.%' AND c.Kind = 'Class' GROUP BY c.Name ORDER BY methodCount DESC LIMIT 10
+  SELECT s.Name, r.RelationshipType FROM SymbolRecord s LEFT JOIN RelationshipRecord r ON s.Id = r.SourceSymbolId WHERE s.Kind = 'Class'
+  SELECT Name FROM SymbolRecord WHERE Id IN (SELECT TargetSymbolId FROM RelationshipRecord WHERE RelationshipType = 'References')
+  SELECT Name FROM SymbolRecord WHERE Kind = 'Class' UNION SELECT Name FROM SymbolRecord WHERE Kind = 'Interface'
 
 RETURNS JSON: success, rowCount, executionTimeMs, columns, rows, error
 ")]

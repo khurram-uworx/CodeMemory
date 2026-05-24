@@ -7,6 +7,29 @@ public sealed class TableSchemaProvider
 {
     public record ColumnInfo(string Name, string Type, bool IsNullable, bool IsKey, bool IsVector, string? StorageName);
 
+    public sealed record JoinKeyInfo(
+        string LeftTable, string LeftColumn,
+        string RightTable, string RightColumn,
+        string Description);
+
+    static readonly List<JoinKeyInfo> KnownJoinKeys =
+    [
+        new JoinKeyInfo("SymbolRecord", "Id", "RelationshipRecord", "SourceSymbolId",
+            "SymbolRecord.Id = RelationshipRecord.SourceSymbolId — e.g., find relationships from a symbol"),
+        new JoinKeyInfo("RelationshipRecord", "SourceSymbolId", "SymbolRecord", "Id",
+            "RelationshipRecord.SourceSymbolId = SymbolRecord.Id — resolve source symbol of a relationship"),
+        new JoinKeyInfo("SymbolRecord", "Id", "RelationshipRecord", "TargetSymbolId",
+            "SymbolRecord.Id = RelationshipRecord.TargetSymbolId — e.g., find relationships targeting a symbol"),
+        new JoinKeyInfo("RelationshipRecord", "TargetSymbolId", "SymbolRecord", "Id",
+            "RelationshipRecord.TargetSymbolId = SymbolRecord.Id — resolve target symbol of a relationship"),
+        new JoinKeyInfo("SymbolRecord", "Id", "ChunkRecord", "SymbolId",
+            "SymbolRecord.Id = ChunkRecord.SymbolId — find chunks belonging to a symbol"),
+        new JoinKeyInfo("ChunkRecord", "SymbolId", "SymbolRecord", "Id",
+            "ChunkRecord.SymbolId = SymbolRecord.Id — resolve the symbol that owns a chunk"),
+        new JoinKeyInfo("SymbolRecord", "FullName", "SymbolRecord", "FullName",
+            "SymbolRecord.FullName LIKE SymbolRecord.FullName || '.%' — self-join for parent-child symbol nesting"),
+    ];
+
     public List<ColumnInfo> GetColumns<T>()
         => GetColumns(typeof(T));
 
@@ -50,9 +73,22 @@ public sealed class TableSchemaProvider
             ["RelationshipRecord"] = GetColumns<RelationshipRecord>(),
         };
 
+    public List<JoinKeyInfo> GetJoinKeys()
+        => KnownJoinKeys;
+
+    public string DescribeJoinKeys()
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("  Join Keys (foreign-key relationships):");
+        foreach (var jk in KnownJoinKeys)
+            sb.AppendLine($"    - {jk.LeftTable}.{jk.LeftColumn} ↔ {jk.RightTable}.{jk.RightColumn}: {jk.Description}");
+        return sb.ToString();
+    }
+
     public string DescribeAll()
     {
         var sb = new System.Text.StringBuilder();
+        sb.AppendLine("Tables:");
 
         foreach (var (table, columns) in GetAll())
         {
@@ -67,6 +103,9 @@ public sealed class TableSchemaProvider
                 sb.AppendLine($"    - {c.Name}: {c.Type}{tagStr}");
             }
         }
+
+        sb.AppendLine();
+        sb.Append(DescribeJoinKeys());
 
         return sb.ToString();
     }
