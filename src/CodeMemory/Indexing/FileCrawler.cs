@@ -12,6 +12,9 @@ public sealed record FileEntry(
 
 public sealed class FileCrawler
 {
+    static bool isFileIgnored(string relPath, GitIgnoreParser ignoreParser)
+        => ignoreParser.IsIgnored(relPath);
+
     static string getRelativePath(Uri rootUri, string fullPath)
     {
         var fileUri = new Uri(fullPath);
@@ -31,18 +34,13 @@ public sealed class FileCrawler
             return false;
 
         var dirName = relDir.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
-        if (dirName != null && alwaysIgnored.Contains(dirName))
+        if (dirName != null && AlwaysIgnored.Contains(dirName))
             return true;
 
         return ignoreParser.IsIgnored(relDir + "/") || ignoreParser.IsIgnored(relDir);
     }
 
-    static bool isFileIgnored(string relPath, GitIgnoreParser ignoreParser)
-    {
-        return ignoreParser.IsIgnored(relPath);
-    }
-
-    static readonly FrozenSet<string> alwaysIgnored = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    static readonly FrozenSet<string> AlwaysIgnored = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         ".git",
         ".codememory",

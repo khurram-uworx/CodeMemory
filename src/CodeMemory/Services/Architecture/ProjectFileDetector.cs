@@ -5,6 +5,15 @@ namespace CodeMemory.Services.Architecture;
 
 public sealed class ProjectFileDetector
 {
+    static ComponentType inferComponentType(string relativeDir)
+    {
+        var segments = relativeDir.Split(DirSeparators, StringSplitOptions.RemoveEmptyEntries);
+        return segments.Any(s => string.Equals(s, "test", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(s, "tests", StringComparison.OrdinalIgnoreCase))
+            ? ComponentType.Test
+            : ComponentType.Component;
+    }
+
     static readonly (string Pattern, ComponentKind Kind)[] KnownBuildFiles =
     [
         ("*.csproj", ComponentKind.MsBuild),
@@ -22,15 +31,6 @@ public sealed class ProjectFileDetector
     ];
 
     static readonly char[] DirSeparators = ['/', '\\'];
-
-    static ComponentType inferComponentType(string relativeDir)
-    {
-        var segments = relativeDir.Split(DirSeparators, StringSplitOptions.RemoveEmptyEntries);
-        return segments.Any(s => string.Equals(s, "test", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(s, "tests", StringComparison.OrdinalIgnoreCase))
-            ? ComponentType.Test
-            : ComponentType.Component;
-    }
 
     readonly ILogger<ProjectFileDetector> logger;
 

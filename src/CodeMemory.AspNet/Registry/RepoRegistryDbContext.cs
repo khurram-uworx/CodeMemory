@@ -4,8 +4,8 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace CodeMemory.AspNet.Registry;
 
-[Table("RegisteredRepos")]
-public sealed class RegisteredRepo
+[Table("Repositories")]
+public sealed class Repositories
 {
     [Key]
     [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
@@ -37,28 +37,55 @@ public sealed class RegisteredRepo
     public DateTime? LastIndexedAt { get; set; }
 }
 
+[Table("Components")]
+public sealed class Components
+{
+    public int RepositoryId { get; init; }
+
+    [Required, MaxLength(1000)]
+    public string BuildFilePath { get; set; } = string.Empty;
+
+    [Required, MaxLength(500)]
+    public string ComponentName { get; set; } = string.Empty;
+
+    [Required, MaxLength(100)]
+    public string ComponentKindString { get; set; } = "Unknown";
+
+    [Required, MaxLength(100)]
+    public string ComponentTypeString { get; set; } = "Component";
+
+    public int FileCount { get; set; }
+
+    public bool IsDeleted { get; set; }
+
+    public DateTime? DeletedAt { get; set; }
+
+    public Repositories RegisteredRepo { get; init; } = null!;
+}
+
+
 public sealed class RepoRegistryDbContext : DbContext
 {
     public RepoRegistryDbContext(DbContextOptions<RepoRegistryDbContext> options) : base(options)
     { }
 
-    public DbSet<RegisteredRepo> RegisteredRepos
-        => Set<RegisteredRepo>();
+    public DbSet<Repositories> RegisteredRepos
+        => Set<Repositories>();
 
-    public DbSet<ComponentEntity> Components
-        => Set<ComponentEntity>();
+    public DbSet<Components> Components
+        => Set<Components>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.Entity<RegisteredRepo>(entity =>
+        modelBuilder.Entity<Repositories>(entity =>
         {
             entity.HasIndex(r => r.Name).IsUnique();
         });
 
-        modelBuilder.Entity<ComponentEntity>(entity =>
+        modelBuilder.Entity<Components>(entity =>
         {
-            entity.ToTable("Components");
-            entity.HasKey(c => new { c.RegisteredRepoId, c.BuildFilePath });
+            //entity.ToTable("Components");
+            entity.HasKey(c => new { c.RepositoryId, c.BuildFilePath });
 
             entity.Property(c => c.BuildFilePath).HasColumnName("build_file_path").IsRequired().HasMaxLength(1000);
             entity.Property(c => c.ComponentName).HasColumnName("component_name").IsRequired().HasMaxLength(500);
@@ -70,10 +97,10 @@ public sealed class RepoRegistryDbContext : DbContext
 
             entity.HasOne(c => c.RegisteredRepo)
                   .WithMany()
-                  .HasForeignKey(c => c.RegisteredRepoId)
+                  .HasForeignKey(c => c.RepositoryId)
                   .OnDelete(DeleteBehavior.Cascade);
 
-            entity.HasIndex(c => c.RegisteredRepoId).HasDatabaseName("IX_Components_RegisteredRepoId");
+            entity.HasIndex(c => c.RepositoryId).HasDatabaseName("IX_Components_RegisteredRepoId");
         });
     }
 }

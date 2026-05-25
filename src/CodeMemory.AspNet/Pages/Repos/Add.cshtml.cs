@@ -54,7 +54,7 @@ public sealed class AddModel : PageModel
         var isUrl = Input.Source.Contains("://");
         var cloneBasePath = getCloneBasePath();
 
-        var repo = new RegisteredRepo
+        var repo = new Repositories
         {
             Name = Input.Name,
             GitUrl = isUrl ? Input.Source : null,

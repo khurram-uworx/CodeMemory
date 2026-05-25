@@ -14,8 +14,8 @@ public sealed class RoslynCSharpParser : ILanguageParser
     public async Task<ParseResult?> ParseAsync(string filePath, CancellationToken cancellationToken = default)
     {
         logger.LogDebug("Parsing file: {FilePath}", filePath);
-
         string text;
+
         try
         {
             text = await File.ReadAllTextAsync(filePath, cancellationToken);
