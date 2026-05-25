@@ -7,109 +7,7 @@ namespace CodeMemory.AspNet.Extensions;
 
 public sealed class BertOnnxEmbeddingGenerator : IEmbeddingGenerator<string, Embedding<float>>
 {
-    private readonly InferenceSession _session;
-    private readonly BertTokenizer _tokenizer;
-    private readonly int _dimension;
-    private readonly EmbeddingGeneratorMetadata _metadata;
-
-    public BertOnnxEmbeddingGenerator(string modelPath, string vocabPath)
-    {
-        _session = new InferenceSession(modelPath);
-        _tokenizer = new BertTokenizer(vocabPath);
-
-        var outputMetadata = _session.OutputMetadata;
-        var outputKey = outputMetadata.Keys.First();
-        var outputShape = outputMetadata[outputKey].Dimensions;
-        _dimension = outputShape.Length > 0
-            ? (int)outputShape[^1]
-            : 384;
-
-        _metadata = new EmbeddingGeneratorMetadata(
-            "bert-onnx-bge-micro-v2",
-            defaultModelDimensions: _dimension);
-    }
-
-    public void Dispose()
-    {
-        _session.Dispose();
-    }
-
-    public object? GetService(Type serviceType, object? serviceKey = null)
-    {
-        return serviceKey is not null
-            ? null
-            : serviceType == typeof(EmbeddingGeneratorMetadata)
-                ? _metadata
-                : serviceType?.IsInstanceOfType(this) == true
-                    ? this
-                    : null;
-    }
-
-    public Task<GeneratedEmbeddings<Embedding<float>>> GenerateAsync(
-        IEnumerable<string> values,
-        EmbeddingGenerationOptions? options = null,
-        CancellationToken cancellationToken = default)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        ArgumentNullException.ThrowIfNull(values);
-
-        var results = new GeneratedEmbeddings<Embedding<float>>();
-        var inputs = values.Select(v => _tokenizer.Tokenize(v ?? string.Empty)).ToList();
-
-        var maxBatchSeqLen = inputs.Count > 0
-            ? inputs.Max(i => i.AttentionMask.Count(m => m == 1))
-            : 1;
-        maxBatchSeqLen = Math.Min(maxBatchSeqLen, _tokenizer.MaxLength);
-        var batchSize = inputs.Count;
-        var seqLen = maxBatchSeqLen;
-
-        var inputIdsArray = new long[batchSize * seqLen];
-        var attentionMaskArray = new long[batchSize * seqLen];
-        var tokenTypeIdsArray = new long[batchSize * seqLen];
-
-        for (int b = 0; b < batchSize; b++)
-        {
-            var seq = inputs[b];
-            for (int s = 0; s < seqLen; s++)
-            {
-                var idx = b * seqLen + s;
-                inputIdsArray[idx] = seq.InputIds[s];
-                attentionMaskArray[idx] = seq.AttentionMask[s];
-                tokenTypeIdsArray[idx] = seq.TokenTypeIds[s];
-            }
-        }
-
-        var shape = new[] { batchSize, seqLen };
-        var inputNames = _session.InputNames;
-
-        var namedInputs = new List<NamedOnnxValue>
-        {
-            NamedOnnxValue.CreateFromTensor(inputNames[0],
-                new DenseTensor<long>(inputIdsArray, shape)),
-            NamedOnnxValue.CreateFromTensor(inputNames[1],
-                new DenseTensor<long>(attentionMaskArray, shape)),
-            NamedOnnxValue.CreateFromTensor(inputNames[2],
-                new DenseTensor<long>(tokenTypeIdsArray, shape)),
-        };
-
-        using var ortOutputs = _session.Run(namedInputs);
-        var outputKey = _session.OutputNames[0];
-        var outputValue = ortOutputs.First(o => o.Name == outputKey);
-        var outputTensor = outputValue.AsTensor<float>();
-        var outputArray = outputTensor.ToArray();
-
-        for (int b = 0; b < batchSize; b++)
-        {
-            var embedding = MeanPoolAndNormalize(
-                outputArray.AsSpan(), attentionMaskArray.AsSpan(),
-                b, batchSize, seqLen, _dimension);
-            results.Add(new Embedding<float>(embedding));
-        }
-
-        return Task.FromResult(results);
-    }
-
-    private static float[] MeanPoolAndNormalize(
+    static float[] meanPoolAndNormalize(
         ReadOnlySpan<float> outputData,
         ReadOnlySpan<long> attentionMask,
         int batchIndex,
@@ -144,5 +42,107 @@ public sealed class BertOnnxEmbeddingGenerator : IEmbeddingGenerator<string, Emb
             TensorPrimitives.Divide(pooled, norm, pooled);
 
         return pooled;
+    }
+
+    readonly InferenceSession session;
+    readonly BertTokenizer tokenizer;
+    readonly int dimension;
+    readonly EmbeddingGeneratorMetadata metadata;
+
+    public BertOnnxEmbeddingGenerator(string modelPath, string vocabPath)
+    {
+        session = new InferenceSession(modelPath);
+        tokenizer = new BertTokenizer(vocabPath);
+
+        var outputMetadata = session.OutputMetadata;
+        var outputKey = outputMetadata.Keys.First();
+        var outputShape = outputMetadata[outputKey].Dimensions;
+        dimension = outputShape.Length > 0
+            ? (int)outputShape[^1]
+            : 384;
+
+        metadata = new EmbeddingGeneratorMetadata(
+            "bert-onnx-bge-micro-v2",
+            defaultModelDimensions: dimension);
+    }
+
+    public void Dispose()
+    {
+        session.Dispose();
+    }
+
+    public object? GetService(Type serviceType, object? serviceKey = null)
+    {
+        return serviceKey is not null
+            ? null
+            : serviceType == typeof(EmbeddingGeneratorMetadata)
+                ? metadata
+                : serviceType?.IsInstanceOfType(this) == true
+                    ? this
+                    : null;
+    }
+
+    public Task<GeneratedEmbeddings<Embedding<float>>> GenerateAsync(
+        IEnumerable<string> values,
+        EmbeddingGenerationOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentNullException.ThrowIfNull(values);
+
+        var results = new GeneratedEmbeddings<Embedding<float>>();
+        var inputs = values.Select(v => tokenizer.Tokenize(v ?? string.Empty)).ToList();
+
+        var maxBatchSeqLen = inputs.Count > 0
+            ? inputs.Max(i => i.AttentionMask.Count(m => m == 1))
+            : 1;
+        maxBatchSeqLen = Math.Min(maxBatchSeqLen, tokenizer.MaxLength);
+        var batchSize = inputs.Count;
+        var seqLen = maxBatchSeqLen;
+
+        var inputIdsArray = new long[batchSize * seqLen];
+        var attentionMaskArray = new long[batchSize * seqLen];
+        var tokenTypeIdsArray = new long[batchSize * seqLen];
+
+        for (int b = 0; b < batchSize; b++)
+        {
+            var seq = inputs[b];
+            for (int s = 0; s < seqLen; s++)
+            {
+                var idx = b * seqLen + s;
+                inputIdsArray[idx] = seq.InputIds[s];
+                attentionMaskArray[idx] = seq.AttentionMask[s];
+                tokenTypeIdsArray[idx] = seq.TokenTypeIds[s];
+            }
+        }
+
+        var shape = new[] { batchSize, seqLen };
+        var inputNames = session.InputNames;
+
+        var namedInputs = new List<NamedOnnxValue>
+        {
+            NamedOnnxValue.CreateFromTensor(inputNames[0],
+                new DenseTensor<long>(inputIdsArray, shape)),
+            NamedOnnxValue.CreateFromTensor(inputNames[1],
+                new DenseTensor<long>(attentionMaskArray, shape)),
+            NamedOnnxValue.CreateFromTensor(inputNames[2],
+                new DenseTensor<long>(tokenTypeIdsArray, shape)),
+        };
+
+        using var ortOutputs = session.Run(namedInputs);
+        var outputKey = session.OutputNames[0];
+        var outputValue = ortOutputs.First(o => o.Name == outputKey);
+        var outputTensor = outputValue.AsTensor<float>();
+        var outputArray = outputTensor.ToArray();
+
+        for (int b = 0; b < batchSize; b++)
+        {
+            var embedding = meanPoolAndNormalize(
+                outputArray.AsSpan(), attentionMaskArray.AsSpan(),
+                b, batchSize, seqLen, dimension);
+            results.Add(new Embedding<float>(embedding));
+        }
+
+        return Task.FromResult(results);
     }
 }

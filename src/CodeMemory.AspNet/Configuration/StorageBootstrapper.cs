@@ -1,43 +1,25 @@
 using CodeMemory.AspNet.Registry;
+using CodeMemory.AspNet.Services;
 using CodeMemory.AspNet.Storage;
 using CodeMemory.Indexing;
 using CodeMemory.Storage;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.AI;
 
 namespace CodeMemory.AspNet.Configuration;
 
 public sealed class StorageBootstrapper
 {
-    static string sanitizeSchemaName(string name)
-    {
-        var sanitized = new System.Text.StringBuilder(name.Length);
-        foreach (var ch in name)
-        {
-            if (char.IsLetterOrDigit(ch) || ch == '_')
-                sanitized.Append(ch);
-            else
-                sanitized.Append('_');
-        }
-        var result = sanitized.ToString();
-        return string.IsNullOrEmpty(result) ? "default" : result.ToLowerInvariant();
-    }
-
     readonly WebApplication app;
-    readonly ILoggerFactory loggerFactory;
-    readonly IEmbeddingGenerator<string, Embedding<float>> embeddingGenerator;
-    readonly IConfiguration configuration;
     readonly IServiceRegistry storageRegistry;
     readonly RepoRegistryOptions registryOptions;
+    readonly IConfiguration configuration;
     readonly string storageProvider;
 
     public StorageBootstrapper(WebApplication app, string storageProvider)
     {
         this.app = app;
         this.storageProvider = storageProvider;
-        loggerFactory = app.Services.GetRequiredService<ILoggerFactory>();
-        embeddingGenerator = app.Services.GetRequiredService<IEmbeddingGenerator<string, Embedding<float>>>();
         configuration = app.Services.GetRequiredService<IConfiguration>();
         storageRegistry = app.Services.GetRequiredService<IServiceRegistry>();
         registryOptions = app.Services.GetRequiredService<RepoRegistryOptions>();
@@ -78,25 +60,23 @@ public sealed class StorageBootstrapper
 
         var configRepos = configuration.GetSection("Repositories").Get<Dictionary<string, string>>();
         var repoService = app.Services.GetRequiredService<RepoRegistryService>();
+        var cloneIndex = app.Services.GetRequiredService<CloneIndexService>();
 
         foreach (var (name, source) in configRepos ?? [])
         {
             var isUrl = source.Contains("://");
-            var resolvedPath = isUrl
-                ? Path.GetFullPath(Path.Combine(registryOptions.CloneBasePath, name))
-                : Path.IsPathRooted(source)
-                    ? source
-                    : Path.GetFullPath(Path.Combine(Environment.CurrentDirectory, source));
 
-            await repoService.AddAsync(new Repositories
+            var repo = new Repositories
             {
                 Name = name,
                 GitUrl = isUrl ? source : null,
-                LocalPath = resolvedPath,
+                LocalPath = CloneIndexService.ResolveRepoPath(source, name, registryOptions),
                 CloneStatus = isUrl ? "Pending" : "Cloned",
-                IndexStatus = "Pending",
-                CreatedAt = DateTime.UtcNow
-            });
+                IndexStatus = "Pending"
+            };
+
+            await repoService.AddAsync(repo);
+            await cloneIndex.EnqueueRepoAsync(name, source, null);
         }
     }
 
@@ -109,8 +89,13 @@ public sealed class StorageBootstrapper
             .Where(r => r.CloneStatus == "Cloned")
             .ToListAsync();
 
+        var cloneIndex = app.Services.GetRequiredService<CloneIndexService>();
+
         foreach (var repo in repos)
         {
+            if (cloneIndex.IsProcessing(repo.Name))
+                continue;
+
             var storage = createStorageForProvider(repo);
             storageRegistry.Register(repo.Name, storage);
 
@@ -123,55 +108,8 @@ public sealed class StorageBootstrapper
 
     IStorageService createStorageForProvider(Repositories repo)
     {
-        var repoRoot = repo.LocalPath;
-        var repoName = repo.Name;
-        var repoId = repo.Id;
-
-        if (string.Equals(storageProvider, "inmemory", StringComparison.OrdinalIgnoreCase))
-            return app.Services.CreateInMemoryStorage(
-                repoRoot,
-                loggerFactory.CreateLogger<StorageService>(),
-                embeddingGenerator);
-
-        var registryDbFactory = app.Services.GetRequiredService<IDbContextFactory<RepoRegistryDbContext>>();
-
-        if (string.Equals(storageProvider, "sqlite", StringComparison.OrdinalIgnoreCase))
-        {
-            var memoryPath = Path.Combine(repoRoot, ".codememory");
-            Directory.CreateDirectory(memoryPath);
-            var connString = $"Data Source={Path.Combine(memoryPath, "sqlvec.db")}";
-            return Storage.ServiceCollectionExtensions.createSqliteStorage(
-                repoRoot, repoId, connString, registryDbFactory,
-                loggerFactory.CreateLogger<HybridStorageService>(),
-                embeddingGenerator);
-        }
-
-        if (string.Equals(storageProvider, "pgvector", StringComparison.OrdinalIgnoreCase))
-        {
-            var connString = configuration.GetConnectionString("PgVector")
-                ?? throw new InvalidOperationException(
-                    "Connection string 'PgVector' is required when Storage:Provider is 'pgvector'");
-            var schema = sanitizeSchemaName(repoName);
-            return Storage.ServiceCollectionExtensions.CreatePgVectorStorage(
-                repoRoot, repoId, connString, schema, registryDbFactory,
-                loggerFactory.CreateLogger<HybridStorageService>(),
-                embeddingGenerator);
-        }
-
-        if (string.Equals(storageProvider, "sqlserver", StringComparison.OrdinalIgnoreCase))
-        {
-            var connString = configuration.GetConnectionString("SqlServer")
-                ?? throw new InvalidOperationException(
-                    "Connection string 'SqlServer' is required when Storage:Provider is 'sqlserver'");
-            var schema = sanitizeSchemaName(repoName);
-            return Storage.ServiceCollectionExtensions.createSqlServerStorage(
-                repoRoot, repoId, connString, schema, registryDbFactory,
-                loggerFactory.CreateLogger<HybridStorageService>(),
-                embeddingGenerator);
-        }
-
-        throw new InvalidOperationException(
-            $"Unsupported storage provider '{storageProvider}'. Supported: inmemory, sqlite, pgvector, sqlserver");
+        var factory = app.Services.GetRequiredService<StorageFactory>();
+        return factory(repo.Name, repo.LocalPath, repo.Id);
     }
 
     public async Task<List<Repositories>> BootstrapAsync()

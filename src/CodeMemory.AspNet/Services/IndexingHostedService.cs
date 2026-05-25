@@ -1,11 +1,10 @@
 using CodeMemory.AspNet.Configuration;
 using CodeMemory.AspNet.Registry;
+using CodeMemory.AspNet.Storage;
 using CodeMemory.Diagnostics;
 using CodeMemory.Indexing;
 using CodeMemory.Services;
-using CodeMemory.Storage;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Options;
 using System.Diagnostics;
 
@@ -17,15 +16,21 @@ public sealed class IndexingHostedService : BackgroundService
     readonly IRepoContextAccessor repoContext;
     readonly ILogger<IndexingHostedService> logger;
     readonly IndexingOptions indexingOptions;
+    readonly StorageFactory storageFactory;
+    readonly CloneIndexService cloneIndex;
 
     public IndexingHostedService(IServiceProvider serviceProvider,
         IRepoContextAccessor repoContext, ILogger<IndexingHostedService> logger,
-        IOptions<IndexingOptions> indexingOptions)
+        IOptions<IndexingOptions> indexingOptions,
+        StorageFactory storageFactory,
+        CloneIndexService cloneIndex)
     {
         this.serviceProvider = serviceProvider;
         this.repoContext = repoContext;
         this.logger = logger;
         this.indexingOptions = indexingOptions.Value;
+        this.storageFactory = storageFactory;
+        this.cloneIndex = cloneIndex;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -43,6 +48,8 @@ public sealed class IndexingHostedService : BackgroundService
         var pendingRepos = await db.RegisteredRepos
             .Where(r => r.CloneStatus == "Pending" || r.IndexStatus == "Pending")
             .ToListAsync(stoppingToken);
+
+        pendingRepos = pendingRepos.Where(r => !cloneIndex.IsProcessing(r.Name)).ToList();
 
         if (pendingRepos.Count == 0)
         {
@@ -109,11 +116,7 @@ public sealed class IndexingHostedService : BackgroundService
                 }
                 catch
                 {
-                    var embeddingGenerator = serviceProvider.GetRequiredService<IEmbeddingGenerator<string, Embedding<float>>>();
-                    var loggerFactory = serviceProvider.GetRequiredService<ILoggerFactory>();
-                    var storage = new StorageService(repo.LocalPath,
-                        loggerFactory.CreateLogger<StorageService>(),
-                        new Memori.Storage.InMemoryVectorStore(), embeddingGenerator);
+                    var storage = storageFactory(repo.Name, repo.LocalPath, repo.Id);
                     registry.Register(repo.Name, storage);
                 }
 
