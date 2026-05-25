@@ -1,5 +1,4 @@
 using CodeMemory.AspNet.Registry;
-using CodeMemory.AspNet.Services;
 using CodeMemory.Storage;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -9,13 +8,6 @@ namespace CodeMemory.AspNet.Pages.Repos;
 
 public sealed class DetailModel : PageModel
 {
-    readonly RepoRegistryService registry;
-    readonly IDbContextFactory<RepoRegistryDbContext> dbFactory;
-
-    public Repositories? Repo { get; private set; }
-    public string? NotFoundMessage { get; private set; }
-    public List<ComponentRow> Components { get; private set; } = [];
-
     public sealed record ComponentRow(
         string BuildFilePath,
         string ComponentName,
@@ -24,8 +16,35 @@ public sealed class DetailModel : PageModel
         int FileCount
     );
 
+    readonly RepoRegistryService registry;
+    readonly IDbContextFactory<RepoRegistryDbContext> dbFactory;
+
+    public Repositories? Repo { get; private set; }
+    public string? NotFoundMessage { get; private set; }
+    public List<ComponentRow> Components { get; private set; } = [];
+
     public DetailModel(RepoRegistryService registry, IDbContextFactory<RepoRegistryDbContext> dbFactory)
         => (this.registry, this.dbFactory) = (registry, dbFactory);
+
+    async Task loadComponentsAsync(int repoId)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var entities = await db.Components
+            .AsNoTracking()
+            .Where(c => c.RepositoryId == repoId && !c.IsDeleted)
+            .OrderBy(c => c.BuildFilePath)
+            .ToListAsync();
+
+        Components = entities
+            .Select(e => new ComponentRow(
+                e.BuildFilePath,
+                e.ComponentName,
+                e.ComponentKindString,
+                e.ComponentTypeString,
+                e.FileCount
+            ))
+            .ToList();
+    }
 
     public async Task<IActionResult> OnGetAsync(string name)
     {
@@ -36,7 +55,7 @@ public sealed class DetailModel : PageModel
             return Page();
         }
 
-        await LoadComponentsAsync(Repo.Id);
+        await loadComponentsAsync(Repo.Id);
         return Page();
     }
 
@@ -52,14 +71,14 @@ public sealed class DetailModel : PageModel
         if (!Enum.TryParse<ComponentKind>(componentKind, ignoreCase: true, out _))
         {
             ModelState.AddModelError(string.Empty, $"Invalid component kind '{componentKind}'");
-            await LoadComponentsAsync(Repo.Id);
+            await loadComponentsAsync(Repo.Id);
             return Page();
         }
 
         if (!Enum.TryParse<ComponentType>(componentType, ignoreCase: true, out _))
         {
             ModelState.AddModelError(string.Empty, $"Invalid component type '{componentType}'");
-            await LoadComponentsAsync(Repo.Id);
+            await loadComponentsAsync(Repo.Id);
             return Page();
         }
 
@@ -70,7 +89,7 @@ public sealed class DetailModel : PageModel
         if (entity is null || entity.IsDeleted)
         {
             ModelState.AddModelError(string.Empty, $"Component '{buildFilePath}' not found");
-            await LoadComponentsAsync(Repo.Id);
+            await loadComponentsAsync(Repo.Id);
             return Page();
         }
 
@@ -98,7 +117,7 @@ public sealed class DetailModel : PageModel
         if (entity is null || entity.IsDeleted)
         {
             ModelState.AddModelError(string.Empty, $"Component '{buildFilePath}' not found");
-            await LoadComponentsAsync(Repo.Id);
+            await loadComponentsAsync(Repo.Id);
             return Page();
         }
 
@@ -108,25 +127,5 @@ public sealed class DetailModel : PageModel
 
         TempData["Message"] = $"Component '{buildFilePath}' deleted.";
         return RedirectToPage(new { name });
-    }
-
-    async Task LoadComponentsAsync(int repoId)
-    {
-        await using var db = await dbFactory.CreateDbContextAsync();
-        var entities = await db.Components
-            .AsNoTracking()
-            .Where(c => c.RepositoryId == repoId && !c.IsDeleted)
-            .OrderBy(c => c.BuildFilePath)
-            .ToListAsync();
-
-        Components = entities
-            .Select(e => new ComponentRow(
-                e.BuildFilePath,
-                e.ComponentName,
-                e.ComponentKindString,
-                e.ComponentTypeString,
-                e.FileCount
-            ))
-            .ToList();
     }
 }

@@ -155,6 +155,7 @@ public sealed class IndexingEngine
         var allChunks = new List<DocumentChunk>();
         var parseResults = new List<(ParseResult Result, string FilePath)>();
         var fullNameToGuid = new Dictionary<string, string>();
+        var collectedBuildFiles = new List<string>();
 
         progress?.Report(0.01);
         await foreach (var entry in crawler.WalkAsync(repoRoot,
@@ -162,6 +163,9 @@ public sealed class IndexingEngine
         {
             logger.LogDebug("Found file: {Path} ({Ext})", entry.RelativePath, entry.Extension);
             fileCount++;
+
+            if (ProjectFileDetector.IsKnownBuildFile(Path.GetFileName(entry.Path)) != null)
+                collectedBuildFiles.Add(entry.Path);
 
             var lang = LanguageDetector.Detect(entry.Path);
             if (lang != Language.Unknown && parsers.TryGetValue(lang, out var languageParser))
@@ -288,7 +292,7 @@ public sealed class IndexingEngine
         else if (allChunks.Count > 0)
             logger.LogWarning("No embedding generator registered — skipping chunk storage. Register an IEmbeddingGenerator<string, Embedding<float>> to enable semantic chunk storage.");
 
-        var components = projectFileDetector.Discover(repoRoot);
+        var components = projectFileDetector.Discover(repoRoot, collectedBuildFiles);
         await storage.StoreComponentMappingAsync(components, ct);
         logger.LogInformation("Project file detection: discovered and stored {Count} components", components.Count);
 

@@ -1,3 +1,62 @@
+# File Crawling — Remaining Gaps
+
+## Remaining Gaps
+
+### 1. Per-Component File Count Sub-Crawl
+
+`ProjectFileDetector.Discover()` still calls
+`Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories).Count()`
+for each discovered component directory. This is a cheap, targeted
+single-directory scan (not a full-tree crawl), but it's still an extra
+filesystem enumeration that could be eliminated.
+
+**Possible fix:** Track file counts per directory during the main crawl
+(e.g., a `Dictionary<string, int>` incremented for each yielded file),
+then pass to `Discover()` to look up counts instead of re-enumerating.
+
+### 2. .gitignore Behavior Change (Side Effect)
+
+The main crawl respects `.gitignore` (via `FileCrawler`). The old
+`ProjectFileDetector.Discover()` did not — it used raw
+`Directory.EnumerateFiles` which ignores `.gitignore`. After this change,
+build files inside gitignored directories (e.g., `node_modules/`,
+`bin/Debug/`) will no longer produce component entries.
+
+This is arguably a bugfix, but it is a behavioral difference worth noting
+if someone relied on the old behavior.
+
+### 3. No Incremental Component Refresh
+
+`FileWatcherService` (incremental indexing on file change) calls only
+`IndexingEngine.ProcessFileAsync()` for the single changed file — it does
+**not** re-run `ProjectFileDetector.Discover()`. Component mappings are
+only refreshed during a full `RunIndexingAsync()` pass (startup or manual
+re-scan).
+
+**Possible fix:** Either:
+- Track which directories contain build files and re-run `Discover()` when
+  a build file changes, or
+- Accept that component mappings are a startup-time concern and document
+  that `rescan_repository` is needed after adding/removing build files.
+
+### 4. No Direct Tests for `ProjectFileDetector.Discover()`
+
+No tests call `Discover()` directly. Existing integration tests
+(`IndexingEngineTests`, `FileWatcherServiceTests`) construct
+`ProjectFileDetector` but don't assert on component discovery output.
+
+**Possible fix:** Add a test that creates a temp repo with a `.csproj`
+file, runs `Discover()`, and validates the returned
+`ComponentInformation`.
+
+### 5. `ComponentInformation.BuildFilePath` Field Name Mismatch
+
+`ComponentInformation` declares the first field as `BuildFilePath`, but
+`ProjectFileDetector` stores the **directory** path (relative from repo
+root) — not the file path of the build file itself. This is a pre-existing
+naming issue, not introduced by this change, but worth fixing if the
+record is touched again.
+
 # SQL Query — Known Issues & Limitations
 
 | # | Issue | Effort | Impact | Status |

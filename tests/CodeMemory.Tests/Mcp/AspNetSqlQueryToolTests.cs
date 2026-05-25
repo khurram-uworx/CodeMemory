@@ -211,8 +211,11 @@ public sealed class AspNetSqlQueryToolTests : BaseToolTests
             seedDb.Database.EnsureCreated();
             seedDb.RegisteredRepos.Add(new Repositories
             {
-                Id = 1, Name = "test-repo", LocalPath = tempDir,
-                CloneStatus = "Cloned", IndexStatus = "Pending"
+                Id = 1,
+                Name = "test-repo",
+                LocalPath = tempDir,
+                CloneStatus = "Cloned",
+                IndexStatus = "Pending"
             });
             seedDb.SaveChanges();
         }

@@ -1,3 +1,4 @@
+using CodeMemory.AspNet.Registry;
 using CodeMemory.AspNet.Storage.PgVector;
 using CodeMemory.Storage;
 using Microsoft.Data.SqlClient;
@@ -9,7 +10,6 @@ using Microsoft.SemanticKernel.Connectors.PgVector;
 using Microsoft.SemanticKernel.Connectors.SqliteVec;
 using Microsoft.SemanticKernel.Connectors.SqlServer;
 using Npgsql;
-using CodeMemory.AspNet.Registry;
 
 namespace CodeMemory.AspNet.Storage;
 

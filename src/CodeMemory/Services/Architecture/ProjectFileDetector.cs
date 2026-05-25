@@ -37,7 +37,25 @@ public sealed class ProjectFileDetector
     public ProjectFileDetector(ILogger<ProjectFileDetector> logger)
         => this.logger = logger;
 
+    public static ComponentKind? IsKnownBuildFile(string fileName)
+    {
+        foreach (var (pattern, kind) in KnownBuildFiles)
+        {
+            if (pattern.StartsWith("*."))
+                if (string.Equals(Path.GetExtension(fileName), pattern[1..], StringComparison.OrdinalIgnoreCase))
+                    return kind;
+            else
+                if (string.Equals(fileName, pattern, StringComparison.OrdinalIgnoreCase))
+                    return kind;
+        }
+
+        return null;
+    }
+
     public IReadOnlyList<ComponentInformation> Discover(string repoRoot)
+        => Discover(repoRoot, null);
+
+    public IReadOnlyList<ComponentInformation> Discover(string repoRoot, IReadOnlyList<string>? preCollectedFiles)
     {
         var components = new List<ComponentInformation>();
         var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -48,9 +66,9 @@ public sealed class ProjectFileDetector
             return components;
         }
 
-        foreach (var (pattern, kind) in KnownBuildFiles)
+        if (preCollectedFiles != null)
         {
-            foreach (var filePath in Directory.EnumerateFiles(repoRoot, pattern, SearchOption.AllDirectories))
+            foreach (var filePath in preCollectedFiles)
             {
                 var dir = Path.GetDirectoryName(filePath);
                 if (dir == null || !visited.Add(dir))
@@ -58,12 +76,34 @@ public sealed class ProjectFileDetector
 
                 var relativeDir = Path.GetRelativePath(repoRoot, dir).Replace('\\', '/');
                 var componentName = Path.GetFileName(dir);
+                var kind = IsKnownBuildFile(Path.GetFileName(filePath)) ?? ComponentKind.MsBuild;
                 var componentType = inferComponentType(relativeDir);
                 var fileCount = Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories).Count();
 
                 components.Add(new ComponentInformation(relativeDir, componentName, kind, componentType, fileCount));
                 logger.LogDebug("Discovered component '{Component}' ({Kind}, {Type}) at '{Dir}' from {File}",
                     componentName, kind, componentType, relativeDir, Path.GetFileName(filePath));
+            }
+        }
+        else
+        {
+            foreach (var (pattern, kind) in KnownBuildFiles)
+            {
+                foreach (var filePath in Directory.EnumerateFiles(repoRoot, pattern, SearchOption.AllDirectories))
+                {
+                    var dir = Path.GetDirectoryName(filePath);
+                    if (dir == null || !visited.Add(dir))
+                        continue;
+
+                    var relativeDir = Path.GetRelativePath(repoRoot, dir).Replace('\\', '/');
+                    var componentName = Path.GetFileName(dir);
+                    var componentType = inferComponentType(relativeDir);
+                    var fileCount = Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories).Count();
+
+                    components.Add(new ComponentInformation(relativeDir, componentName, kind, componentType, fileCount));
+                    logger.LogDebug("Discovered component '{Component}' ({Kind}, {Type}) at '{Dir}' from {File}",
+                        componentName, kind, componentType, relativeDir, Path.GetFileName(filePath));
+                }
             }
         }
 

@@ -59,7 +59,7 @@ Vector search re-ranking cannot operate on unfiltered data — a `Content LIKE '
 ## Suggested Order
 
 | # | Item | Effort | Why |
-|---|---|---|---|---|
+|---|---|---|---|
 | 3 | Error-path test coverage | Low | Fills actual test gap, prevents drift |
 | 1 | Single error pattern | Low | Only `AdminTool`/`McpTools.Ping` remain; `AspNetSqlQueryTool` already migrated |
 | 7 | Vector search LIKE requirement | Medium | Usability gap in sql_query |

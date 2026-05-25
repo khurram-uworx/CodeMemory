@@ -1,19 +1,28 @@
 <Solution>
+  <Folder Name="/.github/" />
+  <Folder Name="/.github/workflows/">
+    <File Path=".github/workflows/ci.yml" />
+    <File Path=".github/workflows/release.yml" />
+  </Folder>
+  <Folder Name="/docs/">
+    <File Path="docs/IDEA.md" />
+    <File Path="docs/KNOWN-ISSUES.md" />
+    <File Path="docs/TASKS-TEMPLATE.md" />
+    <File Path="docs/TECHDEBT.md" />
+  </Folder>
+  <Folder Name="/docs/adr/">
+    <File Path="docs/adr/Web-Data-01.md" />
+  </Folder>
+  <Folder Name="/scripts/">
+    <File Path="scripts/pg-start.ps1" />
+    <File Path="scripts/pg-stop.ps1" />
+  </Folder>
   <Folder Name="/Solution Items/">
     <File Path=".mcp.json" />
     <File Path="AGENTS.md" />
     <File Path="ARCHITECTURE.md" />
     <File Path="opencode.json" />
     <File Path="README.md" />
-  </Folder>
-  <Folder Name="/Solution Items/.github/" />
-  <Folder Name="/Solution Items/.github/workflows/">
-    <File Path=".github/workflows/ci.yml" />
-    <File Path=".github/workflows/release.yml" />
-  </Folder>
-  <Folder Name="/Solution Items/scripts/">
-    <File Path="scripts/pg-start.ps1" />
-    <File Path="scripts/pg-stop.ps1" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/CodeMemory.AppHost/CodeMemory.AppHost.csproj" Id="d2399944-5866-4829-8ec2-e85b806cfed5" />

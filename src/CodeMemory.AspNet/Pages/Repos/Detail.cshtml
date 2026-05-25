@@ -98,8 +98,7 @@ else
                                 <select name="componentKind" class="form-select form-select-sm" onchange="this.form.submit()">
                                     @foreach (var k in GetComponentKinds())
                                     {
-                                        var selected = k == c.ComponentKind ? "selected" : "";
-                                        <option value="@k" selected="@selected">@k</option>
+                                        <option value="@k" selected="@(k == c.ComponentKind)">@k</option>
                                     }
                                 </select>
                                 <input type="hidden" name="componentType" value="@c.ComponentType" />
@@ -113,8 +112,7 @@ else
                                 <select name="componentType" class="form-select form-select-sm" onchange="this.form.submit()">
                                     @foreach (var t in GetComponentTypes())
                                     {
-                                        var selected = t == c.ComponentType ? "selected" : "";
-                                        <option value="@t" selected="@selected">@t</option>
+                                        <option value="@t" selected="@(t == c.ComponentType)">@t</option>
                                     }
                                 </select>
                             </form>

@@ -85,6 +85,17 @@ or when still indexing:
 - The `IndexingState` static class uses `ConcurrentDictionary` — it is process-scoped. In multi-repo ASP.NET, `IndexingState.IsCompleted()` without a repo name checks all repos are done.
 - **`sql_query` MCP tool** requires `InMemoryVectorStore` — `"sqlite"`/`"pgvector"`/`"sqlserver"` returns an error. Full syntax reference in the tool's `[Description]`, discoverable via `tools/list`.
 
+## Embedding Limitations & Agent Expectations
+
+code-memory MCP configured for this repo, defaults to the `NgramEmbeddingGenerator` (see [ADR Library-Embeddings-01](docs/adr/Library-Embeddings-01.md)) — a **deterministic character n-gram embedding** that requires no ML model, no API keys, and zero startup cost. It is consistent across processes and sessions. However, it is **not true semantic search**.
+
+**Agents using `semantic_search` or `sql_query` with `ORDER BY SIMILARITY` / `VECTOR_SEARCH` must follow these rules:**
+
+- **Use literal terms** — query with words that appear in the codebase (identifiers, type names, keywords, comments). Synonyms will not match: `"delete"` and `"remove"` share zero n-gram overlap.
+- **Set lower similarity thresholds** — use `minimumSimilarity: 0.3` to `0.5` rather than the ML-embedding default of `0.7`. The n-gram approach produces softer score distributions.
+- **Prefer longer query strings** — queries shorter than 2 characters return a zero vector (no results). Queries of 5–15 characters work best.
+- **Do not expect concept matching** — `"find slow code"` will not surface `PerformantQuery` or complexity-related comments. Construct queries from observed code terminology instead.
+
 ## Error Handling
 
 MCP tools use three patterns — follow the one matching your return type:
