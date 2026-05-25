@@ -1,8 +1,8 @@
+using CodeMemory.AspNet.Registry;
 using CodeMemory.Storage;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.VectorData;
-using System.Collections.Concurrent;
 using System.Linq.Expressions;
 
 namespace CodeMemory.AspNet.Storage;
@@ -191,27 +191,32 @@ public sealed class HybridStorageService : IStorageService, IDisposable
 
     readonly ILogger logger;
     readonly string repoRoot;
+    readonly int registeredRepoId;
     readonly VectorStore vectorStore;
     readonly Func<CodeMemoryDbContext> createDbContext;
+    readonly IDbContextFactory<RepoRegistryDbContext> registryDbFactory;
     readonly IEmbeddingGenerator<string, Embedding<float>>? embeddingGenerator;
     readonly int configuredDimension;
     int actualDimension;
-    readonly ConcurrentDictionary<string, string> componentMapping = new(StringComparer.OrdinalIgnoreCase);
     VectorStoreCollection<string, ChunkRecord>? chunks;
     bool initialized;
 
     public HybridStorageService(
         string repoRoot,
+        int registeredRepoId,
         ILogger logger,
         VectorStore vectorStore,
         Func<CodeMemoryDbContext> createDbContext,
+        IDbContextFactory<RepoRegistryDbContext> registryDbFactory,
         IEmbeddingGenerator<string, Embedding<float>>? embeddingGenerator = null,
         int configuredDimension = 1536)
     {
         this.repoRoot = repoRoot;
+        this.registeredRepoId = registeredRepoId;
         this.logger = logger;
         this.vectorStore = vectorStore;
         this.createDbContext = createDbContext;
+        this.registryDbFactory = registryDbFactory;
         this.embeddingGenerator = embeddingGenerator;
         this.configuredDimension = configuredDimension;
     }
@@ -536,20 +541,43 @@ public sealed class HybridStorageService : IStorageService, IDisposable
         initialized = false;
     }
 
-    // TODO: Persist via EF Core table when component_mapping entity is introduced.
-    // Currently uses in-memory ConcurrentDictionary for non-blocking persistence evolution.
-    public Task StoreComponentMappingAsync(IReadOnlyDictionary<string, string> mapping, CancellationToken ct = default)
+    public async Task StoreComponentMappingAsync(IReadOnlyList<ComponentMappingInfo> components, CancellationToken ct = default)
     {
-        componentMapping.Clear();
-        foreach (var (key, value) in mapping)
-            componentMapping[key] = value;
-        return Task.CompletedTask;
+        await using var db = await registryDbFactory.CreateDbContextAsync(ct);
+        var repoId = registeredRepoId;
+
+        var existing = await db.Components
+            .Where(c => c.RegisteredRepoId == repoId)
+            .ToListAsync(ct);
+
+        db.Components.RemoveRange(existing);
+
+        var entities = components.Select(c => new ComponentEntity
+        {
+            RegisteredRepoId = repoId,
+            BuildFilePath = c.BuildFilePath,
+            ComponentName = c.ComponentName,
+            ComponentKind = c.ComponentKind,
+            ComponentType = c.ComponentType,
+        });
+
+        db.Components.AddRange(entities);
+        await db.SaveChangesAsync(ct);
     }
 
-    public Task<IReadOnlyDictionary<string, string>> LoadComponentMappingAsync(CancellationToken ct = default)
+    public async Task<IReadOnlyList<ComponentMappingInfo>> LoadComponentMappingAsync(CancellationToken ct = default)
     {
-        return Task.FromResult<IReadOnlyDictionary<string, string>>(
-            new Dictionary<string, string>(componentMapping, StringComparer.OrdinalIgnoreCase));
+        await using var db = await registryDbFactory.CreateDbContextAsync(ct);
+
+        return await db.Components
+            .AsNoTracking()
+            .Where(c => c.RegisteredRepoId == registeredRepoId)
+            .Select(c => new ComponentMappingInfo(
+                c.BuildFilePath,
+                c.ComponentName,
+                c.ComponentKind,
+                c.ComponentType))
+            .ToListAsync(ct);
     }
 
     public void Dispose()

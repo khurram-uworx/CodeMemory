@@ -288,9 +288,9 @@ public sealed class IndexingEngine
         else if (allChunks.Count > 0)
             logger.LogWarning("No embedding generator registered — skipping chunk storage. Register an IEmbeddingGenerator<string, Embedding<float>> to enable semantic chunk storage.");
 
-        var componentMapping = projectFileDetector.Discover(repoRoot);
-        await storage.StoreComponentMappingAsync(componentMapping, ct);
-        logger.LogInformation("Project file detection: discovered and stored {Count} components", componentMapping.Count);
+        var components = projectFileDetector.Discover(repoRoot);
+        await storage.StoreComponentMappingAsync(components, ct);
+        logger.LogInformation("Project file detection: discovered and stored {Count} components", components.Count);
 
         progress?.Report(0.95);
 

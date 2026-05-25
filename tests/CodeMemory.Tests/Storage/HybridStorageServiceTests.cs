@@ -1,3 +1,4 @@
+using CodeMemory.AspNet.Registry;
 using CodeMemory.AspNet.Storage;
 using CodeMemory.Storage;
 using Microsoft.EntityFrameworkCore;
@@ -152,6 +153,53 @@ public sealed class HybridStorageServiceTests
     }
 
     [Test]
+    public async Task Components_RoundTripThroughRegistryStore()
+    {
+        var storage = CreateStorage(out var tempDir);
+        await storage.InitializeAsync();
+
+        var components = new List<ComponentMappingInfo>
+        {
+            new("src/CodeMemory", "CodeMemory", "MsBuild", "Component"),
+            new("src/CodeMemory.AspNet", "CodeMemory.AspNet", "MsBuild", "Component"),
+            new("tests/CodeMemory.Tests", "CodeMemory.Tests", "MsBuild", "Test"),
+        };
+
+        await storage.StoreComponentMappingAsync(components);
+
+        var loaded = await storage.LoadComponentMappingAsync();
+
+        Assert.That(loaded, Has.Count.EqualTo(3));
+        Assert.That(loaded.Any(c => c.BuildFilePath == "src/CodeMemory" && c.ComponentKind == "MsBuild"), Is.True);
+        Assert.That(loaded.Any(c => c.ComponentType == "Test"), Is.True);
+        Assert.That(loaded.First(c => c.BuildFilePath == "tests/CodeMemory.Tests").ComponentType, Is.EqualTo("Test"));
+
+        Cleanup(tempDir);
+    }
+
+    [Test]
+    public async Task StoreComponentMappingAsync_ReplacesExistingData()
+    {
+        var storage = CreateStorage(out var tempDir);
+        await storage.InitializeAsync();
+
+        await storage.StoreComponentMappingAsync([
+            new ComponentMappingInfo("src/Lib", "Lib", "MsBuild", "Component"),
+        ]);
+
+        await storage.StoreComponentMappingAsync([
+            new ComponentMappingInfo("src/NewLib", "NewLib", "MsBuild", "Component"),
+        ]);
+
+        var loaded = await storage.LoadComponentMappingAsync();
+
+        Assert.That(loaded, Has.Count.EqualTo(1));
+        Assert.That(loaded[0].ComponentName, Is.EqualTo("NewLib"));
+
+        Cleanup(tempDir);
+    }
+
+    [Test]
     public async Task ClearAllAsync_DropsDataAndRequiresReinitialization()
     {
         var storage = CreateStorage(out var tempDir);
@@ -194,11 +242,36 @@ public sealed class HybridStorageServiceTests
             .ReplaceService<IModelCacheKeyFactory, SchemaModelCacheKeyFactory>()
             .Options;
 
+        var registryDbPath = Path.Combine(tempDir, "registry.db");
+        var registryConnectionString = $"Data Source={registryDbPath}";
+        var registryOptions = new DbContextOptionsBuilder<RepoRegistryDbContext>()
+            .UseSqlite(registryConnectionString)
+            .Options;
+
+        var registryDbFactory = new TestRepoRegistryDbContextFactory(registryOptions);
+
+        // Seed a test repo
+        using (var seedDb = registryDbFactory.CreateDbContext())
+        {
+            seedDb.Database.EnsureCreated();
+            seedDb.RegisteredRepos.Add(new RegisteredRepo
+            {
+                Id = 1,
+                Name = "test-repo",
+                LocalPath = tempDir,
+                CloneStatus = "Cloned",
+                IndexStatus = "Pending"
+            });
+            seedDb.SaveChanges();
+        }
+
         return new HybridStorageService(
             tempDir,
+            registeredRepoId: 1,
             NullLogger<HybridStorageService>.Instance,
             store,
             () => new CodeMemoryDbContext(options, "main"),
+            registryDbFactory,
             configuredDimension: TestConstants.EmbeddingDimension);
     }
 

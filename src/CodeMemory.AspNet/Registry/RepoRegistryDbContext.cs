@@ -45,11 +45,32 @@ public sealed class RepoRegistryDbContext : DbContext
     public DbSet<RegisteredRepo> RegisteredRepos
         => Set<RegisteredRepo>();
 
+    public DbSet<ComponentEntity> Components
+        => Set<ComponentEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<RegisteredRepo>(entity =>
         {
             entity.HasIndex(r => r.Name).IsUnique();
+        });
+
+        modelBuilder.Entity<ComponentEntity>(entity =>
+        {
+            entity.ToTable("Components");
+            entity.HasKey(c => new { c.RegisteredRepoId, c.BuildFilePath });
+
+            entity.Property(c => c.BuildFilePath).HasColumnName("build_file_path").IsRequired().HasMaxLength(1000);
+            entity.Property(c => c.ComponentName).HasColumnName("component_name").IsRequired().HasMaxLength(500);
+            entity.Property(c => c.ComponentKind).HasColumnName("component_kind").IsRequired().HasMaxLength(100);
+            entity.Property(c => c.ComponentType).HasColumnName("component_type").IsRequired().HasMaxLength(100);
+
+            entity.HasOne(c => c.RegisteredRepo)
+                  .WithMany()
+                  .HasForeignKey(c => c.RegisteredRepoId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(c => c.RegisteredRepoId).HasDatabaseName("IX_Components_RegisteredRepoId");
         });
     }
 }

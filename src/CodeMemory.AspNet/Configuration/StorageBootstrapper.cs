@@ -111,7 +111,7 @@ public sealed class StorageBootstrapper
 
         foreach (var repo in repos)
         {
-            var storage = createStorageForProvider(repo.LocalPath, repo.Name);
+            var storage = createStorageForProvider(repo);
             storageRegistry.Register(repo.Name, storage);
 
             if (repo.IndexStatus == "Indexed")
@@ -121,13 +121,19 @@ public sealed class StorageBootstrapper
         return repos;
     }
 
-    IStorageService createStorageForProvider(string repoRoot, string repoName)
+    IStorageService createStorageForProvider(RegisteredRepo repo)
     {
+        var repoRoot = repo.LocalPath;
+        var repoName = repo.Name;
+        var repoId = repo.Id;
+
         if (string.Equals(storageProvider, "inmemory", StringComparison.OrdinalIgnoreCase))
             return app.Services.CreateInMemoryStorage(
                 repoRoot,
                 loggerFactory.CreateLogger<StorageService>(),
                 embeddingGenerator);
+
+        var registryDbFactory = app.Services.GetRequiredService<IDbContextFactory<RepoRegistryDbContext>>();
 
         if (string.Equals(storageProvider, "sqlite", StringComparison.OrdinalIgnoreCase))
         {
@@ -135,7 +141,7 @@ public sealed class StorageBootstrapper
             Directory.CreateDirectory(memoryPath);
             var connString = $"Data Source={Path.Combine(memoryPath, "sqlvec.db")}";
             return Storage.ServiceCollectionExtensions.createSqliteStorage(
-                repoRoot, connString,
+                repoRoot, repoId, connString, registryDbFactory,
                 loggerFactory.CreateLogger<HybridStorageService>(),
                 embeddingGenerator);
         }
@@ -147,7 +153,7 @@ public sealed class StorageBootstrapper
                     "Connection string 'PgVector' is required when Storage:Provider is 'pgvector'");
             var schema = sanitizeSchemaName(repoName);
             return Storage.ServiceCollectionExtensions.CreatePgVectorStorage(
-                repoRoot, connString, schema,
+                repoRoot, repoId, connString, schema, registryDbFactory,
                 loggerFactory.CreateLogger<HybridStorageService>(),
                 embeddingGenerator);
         }
@@ -159,7 +165,7 @@ public sealed class StorageBootstrapper
                     "Connection string 'SqlServer' is required when Storage:Provider is 'sqlserver'");
             var schema = sanitizeSchemaName(repoName);
             return Storage.ServiceCollectionExtensions.createSqlServerStorage(
-                repoRoot, connString, schema,
+                repoRoot, repoId, connString, schema, registryDbFactory,
                 loggerFactory.CreateLogger<HybridStorageService>(),
                 embeddingGenerator);
         }

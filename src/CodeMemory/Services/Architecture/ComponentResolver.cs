@@ -28,22 +28,22 @@ public sealed class ComponentResolver : IComponentResolver
         return result;
     }
 
-    static string? resolveFromMapping(string filePath, IReadOnlyDictionary<string, string> mapping)
+    static string? resolveFromMapping(string filePath, IReadOnlyList<ComponentMappingInfo> components)
     {
-        if (mapping.Count == 0)
+        if (components.Count == 0)
             return null;
 
         var normalized = filePath.Replace('\\', '/').TrimStart('/');
         string? bestMatch = null;
         var bestLength = 0;
 
-        foreach (var (prefix, component) in mapping)
+        foreach (var component in components)
         {
-            var normalizedPrefix = prefix.Replace('\\', '/').TrimEnd('/') + '/';
+            var normalizedPrefix = component.BuildFilePath.Replace('\\', '/').TrimEnd('/') + '/';
             if (normalized.StartsWith(normalizedPrefix, StringComparison.OrdinalIgnoreCase)
                 && normalizedPrefix.Length > bestLength)
             {
-                bestMatch = component;
+                bestMatch = component.ComponentName;
                 bestLength = normalizedPrefix.Length;
             }
         }
@@ -53,9 +53,9 @@ public sealed class ComponentResolver : IComponentResolver
 
     public async Task<string> GetComponentNameAsync(string filePath, int depth = 1)
     {
-        var mapping = await storage.LoadComponentMappingAsync();
+        var components = await storage.LoadComponentMappingAsync();
 
-        var fromMapping = resolveFromMapping(filePath, mapping);
+        var fromMapping = resolveFromMapping(filePath, components);
         if (fromMapping != null)
             return fromMapping;
 

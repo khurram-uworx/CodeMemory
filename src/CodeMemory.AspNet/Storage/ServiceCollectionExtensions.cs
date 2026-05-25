@@ -9,6 +9,7 @@ using Microsoft.SemanticKernel.Connectors.PgVector;
 using Microsoft.SemanticKernel.Connectors.SqliteVec;
 using Microsoft.SemanticKernel.Connectors.SqlServer;
 using Npgsql;
+using CodeMemory.AspNet.Registry;
 
 namespace CodeMemory.AspNet.Storage;
 
@@ -47,7 +48,9 @@ public static class ServiceCollectionExtensions
 
     internal static IStorageService createSqliteStorage(
         string repoRoot,
+        int registeredRepoId,
         string connectionString,
+        IDbContextFactory<RepoRegistryDbContext> registryDbFactory,
         ILogger logger,
         IEmbeddingGenerator<string, Embedding<float>>? embeddingGenerator = null,
         int configuredDimension = 1536)
@@ -55,17 +58,21 @@ public static class ServiceCollectionExtensions
         var store = new SqliteVectorStore(connectionString);
         return new HybridStorageService(
             repoRoot,
+            registeredRepoId,
             logger,
             store,
             createSqliteDbContextFactory(connectionString, "main"),
+            registryDbFactory,
             embeddingGenerator,
             configuredDimension);
     }
 
     internal static IStorageService createSqlServerStorage(
         string repoRoot,
+        int registeredRepoId,
         string connectionString,
         string schema,
+        IDbContextFactory<RepoRegistryDbContext> registryDbFactory,
         ILogger logger,
         IEmbeddingGenerator<string, Embedding<float>>? embeddingGenerator = null,
         int configuredDimension = 1536)
@@ -76,9 +83,11 @@ public static class ServiceCollectionExtensions
         var store = new SqlServerVectorStore(connectionString, options);
         return new HybridStorageService(
             repoRoot,
+            registeredRepoId,
             logger,
             store,
             createSqlServerDbContextFactory(connectionString, schema),
+            registryDbFactory,
             embeddingGenerator,
             configuredDimension);
     }
@@ -86,8 +95,10 @@ public static class ServiceCollectionExtensions
     // public because of tests
     public static IStorageService CreatePgVectorStorage(
         string repoRoot,
+        int registeredRepoId,
         string connectionString,
         string schema,
+        IDbContextFactory<RepoRegistryDbContext> registryDbFactory,
         ILogger logger,
         IEmbeddingGenerator<string, Embedding<float>>? embeddingGenerator = null,
         int configuredDimension = 1536)
@@ -109,9 +120,11 @@ public static class ServiceCollectionExtensions
         var store = new PostgresVectorStore(dataSource, ownsDataSource: true, options);
         return new HybridStorageService(
             repoRoot,
+            registeredRepoId,
             logger,
             store,
             createNpgsqlDbContextFactory(connectionString, schema),
+            registryDbFactory,
             embeddingGenerator,
             configuredDimension);
     }
@@ -150,7 +163,9 @@ public static class ServiceCollectionExtensions
         string provider,
         string name, string repoRoot,
         ILoggerFactory loggerFactory,
-        IEmbeddingGenerator<string, Embedding<float>>? embeddingGenerator = null)
+        IEmbeddingGenerator<string, Embedding<float>>? embeddingGenerator = null,
+        int registeredRepoId = 0,
+        IDbContextFactory<RepoRegistryDbContext>? registryDbFactory = null)
     {
         var useSqlite = string.Equals(provider, "sqlite", StringComparison.OrdinalIgnoreCase);
         var usePgVector = string.Equals(provider, "pgvector", StringComparison.OrdinalIgnoreCase);
@@ -171,15 +186,9 @@ public static class ServiceCollectionExtensions
                 ?? throw new InvalidOperationException("PgVector: Connection string 'PgVector' is required when Storage:Provider is 'pgvector'");
             var schema = sanitizeSchemaName(name);
             storageService = CreatePgVectorStorage(
-                repoRoot, pgConnectionString, schema,
+                repoRoot, registeredRepoId, pgConnectionString, schema, registryDbFactory!,
                 loggerFactory.CreateLogger<HybridStorageService>(), embeddingGenerator);
             dbPath = $"pgvector://{schema}";
-
-            //var pgOptions = builder.Configuration.GetSection("PgVector").Get<PgVectorOptions>() ?? new();
-            //var store = new PgVectorStore(connString, pgOptions with { ConnectionString = connString });
-            //var storageService = new StorageService(repoRoot, logger, store, embeddingGenerator);
-            //storageRegistry.Register(name, storageService);
-            //repoInfos.Add((name, repoRoot, connString));
         }
         else if (useSqlServer)
         {
@@ -187,7 +196,7 @@ public static class ServiceCollectionExtensions
                 ?? throw new InvalidOperationException("SQL Server: Connection string 'SqlServer' is required when Storage:Provider is 'sqlserver'");
             var schema = sanitizeSchemaName(name);
             storageService = createSqlServerStorage(
-                repoRoot, sqlServerConnectionString, schema,
+                repoRoot, registeredRepoId, sqlServerConnectionString, schema, registryDbFactory!,
                 loggerFactory.CreateLogger<HybridStorageService>(), embeddingGenerator);
             dbPath = $"sqlserver://{schema}";
         }
@@ -198,7 +207,7 @@ public static class ServiceCollectionExtensions
 
             var sqliteConnectionString = $"Data Source={Path.Combine(memoryPath, "sqlvec.db")}";
             storageService = createSqliteStorage(
-                repoRoot, sqliteConnectionString,
+                repoRoot, registeredRepoId, sqliteConnectionString, registryDbFactory!,
                 loggerFactory.CreateLogger<HybridStorageService>(), embeddingGenerator);
             dbPath = Path.Combine(memoryPath, "sqlvec.db");
         }
