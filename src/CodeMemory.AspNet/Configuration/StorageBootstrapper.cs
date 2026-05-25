@@ -88,7 +88,7 @@ public sealed class StorageBootstrapper
                     ? source
                     : Path.GetFullPath(Path.Combine(Environment.CurrentDirectory, source));
 
-            await repoService.AddAsync(new RegisteredRepo
+            await repoService.AddAsync(new Repositories
             {
                 Name = name,
                 GitUrl = isUrl ? source : null,
@@ -100,7 +100,7 @@ public sealed class StorageBootstrapper
         }
     }
 
-    async Task<List<RegisteredRepo>> loadAndRegisterReposAsync()
+    async Task<List<Repositories>> loadAndRegisterReposAsync()
     {
         var dbFactory = app.Services.GetRequiredService<IDbContextFactory<RepoRegistryDbContext>>();
         await using var db = await dbFactory.CreateDbContextAsync();
@@ -121,7 +121,7 @@ public sealed class StorageBootstrapper
         return repos;
     }
 
-    IStorageService createStorageForProvider(RegisteredRepo repo)
+    IStorageService createStorageForProvider(Repositories repo)
     {
         var repoRoot = repo.LocalPath;
         var repoName = repo.Name;
@@ -174,7 +174,7 @@ public sealed class StorageBootstrapper
             $"Unsupported storage provider '{storageProvider}'. Supported: inmemory, sqlite, pgvector, sqlserver");
     }
 
-    public async Task<List<RegisteredRepo>> BootstrapAsync()
+    public async Task<List<Repositories>> BootstrapAsync()
     {
         await ensureDatabaseAsync();
         await seedFromConfigAsync();

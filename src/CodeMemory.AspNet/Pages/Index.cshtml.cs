@@ -12,7 +12,7 @@ public sealed class IndexModel : PageModel
     readonly CloneIndexService cloneIndex;
     readonly NotificationService notifications;
 
-    public List<RegisteredRepo> Repos { get; private set; } = [];
+    public List<Repositories> Repos { get; private set; } = [];
     public Dictionary<string, double?> Progress { get; private set; } = [];
 
     public IndexModel(RepoRegistryService registry, CloneIndexService cloneIndex, NotificationService notifications)

@@ -12,7 +12,7 @@ public sealed class DetailModel : PageModel
     readonly RepoRegistryService registry;
     readonly IDbContextFactory<RepoRegistryDbContext> dbFactory;
 
-    public RegisteredRepo? Repo { get; private set; }
+    public Repositories? Repo { get; private set; }
     public string? NotFoundMessage { get; private set; }
     public List<ComponentRow> Components { get; private set; } = [];
 
@@ -65,7 +65,7 @@ public sealed class DetailModel : PageModel
 
         await using var db = await dbFactory.CreateDbContextAsync();
         var entity = await db.Components
-            .FirstOrDefaultAsync(c => c.RegisteredRepoId == Repo.Id && c.BuildFilePath == buildFilePath);
+            .FirstOrDefaultAsync(c => c.RepositoryId == Repo.Id && c.BuildFilePath == buildFilePath);
 
         if (entity is null || entity.IsDeleted)
         {
@@ -93,7 +93,7 @@ public sealed class DetailModel : PageModel
 
         await using var db = await dbFactory.CreateDbContextAsync();
         var entity = await db.Components
-            .FirstOrDefaultAsync(c => c.RegisteredRepoId == Repo.Id && c.BuildFilePath == buildFilePath);
+            .FirstOrDefaultAsync(c => c.RepositoryId == Repo.Id && c.BuildFilePath == buildFilePath);
 
         if (entity is null || entity.IsDeleted)
         {
@@ -115,7 +115,7 @@ public sealed class DetailModel : PageModel
         await using var db = await dbFactory.CreateDbContextAsync();
         var entities = await db.Components
             .AsNoTracking()
-            .Where(c => c.RegisteredRepoId == repoId && !c.IsDeleted)
+            .Where(c => c.RepositoryId == repoId && !c.IsDeleted)
             .OrderBy(c => c.BuildFilePath)
             .ToListAsync();
 

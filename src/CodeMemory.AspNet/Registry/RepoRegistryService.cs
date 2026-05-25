@@ -9,21 +9,21 @@ public sealed class RepoRegistryService
     public RepoRegistryService(IDbContextFactory<RepoRegistryDbContext> contextFactory)
         => this.contextFactory = contextFactory;
 
-    public async Task<List<RegisteredRepo>> ListAsync()
+    public async Task<List<Repositories>> ListAsync()
     {
         await using var db = await contextFactory.CreateDbContextAsync();
 
         return await db.RegisteredRepos.OrderBy(r => r.Name).ToListAsync();
     }
 
-    public async Task<RegisteredRepo?> GetAsync(string name)
+    public async Task<Repositories?> GetAsync(string name)
     {
         await using var db = await contextFactory.CreateDbContextAsync();
 
         return await db.RegisteredRepos.FirstOrDefaultAsync(r => r.Name == name);
     }
 
-    public async Task<RegisteredRepo> AddAsync(RegisteredRepo repo)
+    public async Task<Repositories> AddAsync(Repositories repo)
     {
         await using var db = await contextFactory.CreateDbContextAsync();
 

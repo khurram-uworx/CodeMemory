@@ -216,7 +216,7 @@ public sealed class HybridStorageServiceTests
         // Simulate user editing via API — bypass storage, update DB directly
         await using (var db = ((HybridStorageService)storage).CreateRegistryDbContext())
         {
-            var entity = await db.Components.FirstAsync(c => c.RegisteredRepoId == 1);
+            var entity = await db.Components.FirstAsync(c => c.RepositoryId == 1);
             entity.ComponentKindString = "Maven"; // user changed Kind
             entity.ComponentTypeString = "Tool";  // user changed Type
             await db.SaveChangesAsync();
@@ -250,7 +250,7 @@ public sealed class HybridStorageServiceTests
         // Simulate user soft-delete via API
         await using (var db = ((HybridStorageService)storage).CreateRegistryDbContext())
         {
-            var entity = await db.Components.FirstAsync(c => c.RegisteredRepoId == 1);
+            var entity = await db.Components.FirstAsync(c => c.RepositoryId == 1);
             entity.IsDeleted = true;
             entity.DeletedAt = DateTime.UtcNow;
             await db.SaveChangesAsync();
@@ -324,7 +324,7 @@ public sealed class HybridStorageServiceTests
         using (var seedDb = registryDbFactory.CreateDbContext())
         {
             seedDb.Database.EnsureCreated();
-            seedDb.RegisteredRepos.Add(new RegisteredRepo
+            seedDb.RegisteredRepos.Add(new Repositories
             {
                 Id = 1,
                 Name = "test-repo",

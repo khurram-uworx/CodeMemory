@@ -550,12 +550,12 @@ public sealed class HybridStorageService : IStorageService, IDisposable
         var repoId = registeredRepoId;
 
         var existing = await db.Components
-            .Where(c => c.RegisteredRepoId == repoId)
+            .Where(c => c.RepositoryId == repoId)
             .ToListAsync(ct);
 
         var existingByPath = existing.ToDictionary(e => e.BuildFilePath, StringComparer.OrdinalIgnoreCase);
 
-        var toInsert = new List<ComponentEntity>();
+        var toInsert = new List<Components>();
 
         foreach (var c in detected)
         {
@@ -570,9 +570,9 @@ public sealed class HybridStorageService : IStorageService, IDisposable
             }
             else
             {
-                toInsert.Add(new ComponentEntity
+                toInsert.Add(new Components
                 {
-                    RegisteredRepoId = repoId,
+                    RepositoryId = repoId,
                     BuildFilePath = c.BuildFilePath,
                     ComponentName = c.ComponentName,
                     ComponentKindString = c.ComponentKind.ToString(),
@@ -594,7 +594,7 @@ public sealed class HybridStorageService : IStorageService, IDisposable
 
         var entities = await db.Components
             .AsNoTracking()
-            .Where(c => c.RegisteredRepoId == registeredRepoId && !c.IsDeleted)
+            .Where(c => c.RepositoryId == registeredRepoId && !c.IsDeleted)
             .ToListAsync(ct);
 
         return entities.Select(c => new ComponentInformation(

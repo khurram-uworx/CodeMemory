@@ -204,7 +204,7 @@ public sealed class CloneIndexService
         await db.SaveChangesAsync();
     }
 
-    async Task<RegisteredRepo?> GetRepoAsync(string name)
+    async Task<Repositories?> GetRepoAsync(string name)
     {
         await using var db = await contextFactory.CreateDbContextAsync();
         return await db.RegisteredRepos.FirstOrDefaultAsync(r => r.Name == name);

@@ -143,7 +143,7 @@ public sealed class RebuildIndexHostedService : BackgroundService
         }
     }
 
-    async Task gitPullAsync(RegisteredRepo repo, CancellationToken ct)
+    async Task gitPullAsync(Repositories repo, CancellationToken ct)
     {
         logger.LogInformation("Pulling latest for '{Repo}'", repo.Name);
 

@@ -6,22 +6,6 @@ namespace CodeMemory.Services.Architecture;
 
 public sealed class ComponentClusteringService : IComponentClusteringService
 {
-    readonly IComponentResolver componentResolver;
-    readonly IStorageService storage;
-    readonly ILogger<ComponentClusteringService> logger;
-
-    public ComponentClusteringService(
-        IComponentResolver componentResolver,
-        IStorageService storage,
-        ILogger<ComponentClusteringService> logger)
-    {
-        this.componentResolver = componentResolver;
-        this.storage = storage;
-        this.logger = logger;
-    }
-
-    static readonly string[] knownKinds = ["Class", "Interface", "Struct", "Enum", "Record", "Method", "Property", "Field", "Event"];
-
     static IReadOnlyList<ComponentCluster> clusterComponents(
         string[] components,
         Dictionary<string, Dictionary<string, int>> matrix,
@@ -103,11 +87,28 @@ public sealed class ComponentClusteringService : IComponentClusteringService
         return totalEdges > 0 ? (double)internalEdges / totalEdges : 1.0;
     }
 
+    static readonly string[] knownKinds = ["Class", "Interface", "Struct", "Enum", "Record", "Method", "Property", "Field", "Event"];
+
+    readonly IComponentResolver componentResolver;
+    readonly IStorageService storage;
+    readonly ILogger<ComponentClusteringService> logger;
+
+    public ComponentClusteringService(
+        IComponentResolver componentResolver,
+        IStorageService storage,
+        ILogger<ComponentClusteringService> logger)
+    {
+        this.componentResolver = componentResolver;
+        this.storage = storage;
+        this.logger = logger;
+    }
+
     public async Task<IReadOnlyList<ComponentCluster>> GetClustersAsync(
         double threshold = 0.3, int depth = 1, CancellationToken ct = default)
     {
         threshold = Math.Clamp(threshold, 0.01, 1.0);
         var symbolsPerKind = new List<SymbolRecord>();
+
         foreach (var kind in knownKinds)
         {
             var batch = await storage.GetSymbolsByKindAsync(kind, 100000, ct);

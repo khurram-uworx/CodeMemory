@@ -209,7 +209,7 @@ public sealed class AspNetSqlQueryToolTests : BaseToolTests
         using (var seedDb = registryDbFactory.CreateDbContext())
         {
             seedDb.Database.EnsureCreated();
-            seedDb.RegisteredRepos.Add(new RegisteredRepo
+            seedDb.RegisteredRepos.Add(new Repositories
             {
                 Id = 1, Name = "test-repo", LocalPath = tempDir,
                 CloneStatus = "Cloned", IndexStatus = "Pending"

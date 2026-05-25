@@ -78,7 +78,7 @@
                             <code class="text-break">@repo.LocalPath</code>
                         }
                     </td>
-                    <td class="repo-last-indexed">@repo.LastIndexedAt?.ToString("g") ?? "—"</td>
+                    <td class="repo-last-indexed">@(repo.LastIndexedAt?.ToString("g") ?? "—")</td>
                     <td><code>/api/mcp/@repo.Name</code></td>
                     <td>
                         <a asp-page="/Repos/Detail" asp-route-name="@repo.Name" class="btn btn-sm btn-outline-info" title="Components">
