@@ -32,7 +32,7 @@ public static class ServiceCollectionExtensions
         cmd.ExecuteNonQuery();
     }
 
-    static string sanitizeSchemaName(string name)
+    internal static string sanitizeSchemaName(string name)
     {
         var sanitized = new System.Text.StringBuilder(name.Length);
         foreach (var ch in name)

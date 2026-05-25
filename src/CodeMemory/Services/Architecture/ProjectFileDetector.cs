@@ -44,9 +44,9 @@ public sealed class ProjectFileDetector
             if (pattern.StartsWith("*."))
                 if (string.Equals(Path.GetExtension(fileName), pattern[1..], StringComparison.OrdinalIgnoreCase))
                     return kind;
-            else
-                if (string.Equals(fileName, pattern, StringComparison.OrdinalIgnoreCase))
-                    return kind;
+                else
+                    if (string.Equals(fileName, pattern, StringComparison.OrdinalIgnoreCase))
+                        return kind;
         }
 
         return null;

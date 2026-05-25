@@ -1,8 +1,8 @@
 using CodeMemory.AspNet.Configuration;
-using CodeMemory.AspNet.Extensions;
 using CodeMemory.AspNet.Registry;
 using CodeMemory.AspNet.Scheduling;
 using CodeMemory.AspNet.Services;
+using CodeMemory.AspNet.Storage;
 using CodeMemory.Indexing;
 using CodeMemory.Indexing.Chunking;
 using CodeMemory.Indexing.Extraction;
@@ -42,38 +42,38 @@ builder.Services.AddSingleton<SemanticChunker>();
 var embeddingProvider = builder.Configuration.GetValue<string>("Embedding:Provider") ?? "ngram";
 switch (embeddingProvider)
 {
-    case "onnx":
-    {
-        var modelPath = Path.GetFullPath(
-            builder.Configuration.GetValue<string>("Embedding:OnnxModelPath")
-            ?? "models/bge-micro-v2/model.onnx");
-        var vocabPath = Path.GetFullPath(
-            builder.Configuration.GetValue<string>("Embedding:OnnxVocabPath")
-            ?? "models/bge-micro-v2/vocab.txt");
-        builder.Services.AddCodeMemoryOnnxEmbeddingGenerator(modelPath, vocabPath);
-        break;
-    }
-    case "sk-connector-onnx":
-    {
-        var modelPath = Path.GetFullPath(
-            builder.Configuration.GetValue<string>("Embedding:OnnxModelPath")
-            ?? "models/bge-micro-v2/model.onnx");
-        var vocabPath = Path.GetFullPath(
-            builder.Configuration.GetValue<string>("Embedding:OnnxVocabPath")
-            ?? "models/bge-micro-v2/vocab.txt");
-        builder.Services.AddCodeMemorySKOnnxEmbeddingGenerator(modelPath, vocabPath);
-        break;
-    }
-    case "ollama":
-    {
-        var endpoint = builder.Configuration.GetValue<string>("Embedding:OllamaEndpoint")
-            ?? "http://localhost:11434";
-        var model = builder.Configuration.GetValue<string>("Embedding:OllamaModel")
-            ?? "all-minilm";
-        builder.Services.AddCodeMemoryOllamaEmbeddingGenerator(
-            new Uri(endpoint), model);
-        break;
-    }
+    //case "onnx":
+    //    {
+    //        var modelPath = Path.GetFullPath(
+    //            builder.Configuration.GetValue<string>("Embedding:OnnxModelPath")
+    //            ?? "models/bge-micro-v2/model.onnx");
+    //        var vocabPath = Path.GetFullPath(
+    //            builder.Configuration.GetValue<string>("Embedding:OnnxVocabPath")
+    //            ?? "models/bge-micro-v2/vocab.txt");
+    //        builder.Services.AddCodeMemoryOnnxEmbeddingGenerator(modelPath, vocabPath);
+    //        break;
+    //    }
+    //case "sk-connector-onnx":
+    //    {
+    //        var modelPath = Path.GetFullPath(
+    //            builder.Configuration.GetValue<string>("Embedding:OnnxModelPath")
+    //            ?? "models/bge-micro-v2/model.onnx");
+    //        var vocabPath = Path.GetFullPath(
+    //            builder.Configuration.GetValue<string>("Embedding:OnnxVocabPath")
+    //            ?? "models/bge-micro-v2/vocab.txt");
+    //        builder.Services.AddCodeMemorySKOnnxEmbeddingGenerator(modelPath, vocabPath);
+    //        break;
+    //    }
+    //case "ollama":
+    //    {
+    //        var endpoint = builder.Configuration.GetValue<string>("Embedding:OllamaEndpoint")
+    //            ?? "http://localhost:11434";
+    //        var model = builder.Configuration.GetValue<string>("Embedding:OllamaModel")
+    //            ?? "all-minilm";
+    //        builder.Services.AddCodeMemoryOllamaEmbeddingGenerator(
+    //            new Uri(endpoint), model);
+    //        break;
+    //    }
     default:
         builder.Services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>, NgramEmbeddingGenerator>();
         break;
@@ -149,6 +149,59 @@ var registryOptions = builder.Configuration
 builder.Services.AddSingleton(registryOptions);
 
 var provider = builder.Configuration.GetValue<string>("Storage:Provider") ?? "inmemory";
+
+builder.Services.AddSingleton<StorageFactory>(sp =>
+{
+    var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
+    var embeddingGenerator = sp.GetRequiredService<IEmbeddingGenerator<string, Embedding<float>>>();
+    var configuration = sp.GetRequiredService<IConfiguration>();
+    var registryDbFactory = sp.GetRequiredService<IDbContextFactory<RepoRegistryDbContext>>();
+
+    return (repoName, repoPath, repoId) =>
+    {
+        if (string.Equals(provider, "inmemory", StringComparison.OrdinalIgnoreCase))
+        {
+            return new StorageService(repoPath,
+                loggerFactory.CreateLogger<StorageService>(),
+                new Memori.Storage.InMemoryVectorStore(), embeddingGenerator);
+        }
+
+        if (string.Equals(provider, "sqlite", StringComparison.OrdinalIgnoreCase))
+        {
+            var memoryPath = Path.Combine(repoPath, ".codememory");
+            Directory.CreateDirectory(memoryPath);
+            var connString = $"Data Source={Path.Combine(memoryPath, "sqlvec.db")}";
+            return CodeMemory.AspNet.Storage.ServiceCollectionExtensions.createSqliteStorage(
+                repoPath, repoId, connString, registryDbFactory,
+                loggerFactory.CreateLogger<HybridStorageService>(), embeddingGenerator);
+        }
+
+        if (string.Equals(provider, "pgvector", StringComparison.OrdinalIgnoreCase))
+        {
+            var connString = configuration.GetConnectionString("PgVector")
+                ?? throw new InvalidOperationException(
+                    "Connection string 'PgVector' is required when Storage:Provider is 'pgvector'");
+            var schema = CodeMemory.AspNet.Storage.ServiceCollectionExtensions.sanitizeSchemaName(repoName);
+            return CodeMemory.AspNet.Storage.ServiceCollectionExtensions.CreatePgVectorStorage(
+                repoPath, repoId, connString, schema, registryDbFactory,
+                loggerFactory.CreateLogger<HybridStorageService>(), embeddingGenerator);
+        }
+
+        if (string.Equals(provider, "sqlserver", StringComparison.OrdinalIgnoreCase))
+        {
+            var connString = configuration.GetConnectionString("SqlServer")
+                ?? throw new InvalidOperationException(
+                    "Connection string 'SqlServer' is required when Storage:Provider is 'sqlserver'");
+            var schema = CodeMemory.AspNet.Storage.ServiceCollectionExtensions.sanitizeSchemaName(repoName);
+            return CodeMemory.AspNet.Storage.ServiceCollectionExtensions.createSqlServerStorage(
+                repoPath, repoId, connString, schema, registryDbFactory,
+                loggerFactory.CreateLogger<HybridStorageService>(), embeddingGenerator);
+        }
+
+        throw new InvalidOperationException(
+            $"Unsupported storage provider '{provider}'. Supported: inmemory, sqlite, pgvector, sqlserver");
+    };
+});
 
 (string? registryConnString, string registryProvider) = provider.ToLowerInvariant() switch
 {

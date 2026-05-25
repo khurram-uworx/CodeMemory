@@ -1,11 +1,10 @@
 using CodeMemory.AspNet.Configuration;
 using CodeMemory.AspNet.Registry;
+using CodeMemory.AspNet.Storage;
 using CodeMemory.Diagnostics;
 using CodeMemory.Indexing;
 using CodeMemory.Services;
-using CodeMemory.Storage;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.AI;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 
@@ -17,10 +16,9 @@ public sealed class CloneIndexService
     readonly IServiceRegistry storageRegistry;
     readonly IRepoContextAccessor repoContext;
     readonly IServiceScopeFactory scopeFactory;
-    readonly IEmbeddingGenerator<string, Embedding<float>> embeddingGenerator;
-    readonly ILoggerFactory loggerFactory;
     readonly ILogger<CloneIndexService> logger;
     readonly RepoRegistryOptions registryOptions;
+    readonly StorageFactory storageFactory;
     readonly ConcurrentDictionary<string, bool> inProgress = new(StringComparer.OrdinalIgnoreCase);
 
     public CloneIndexService(
@@ -28,20 +26,29 @@ public sealed class CloneIndexService
         IServiceRegistry storageRegistry,
         IRepoContextAccessor repoContext,
         IServiceScopeFactory scopeFactory,
-        IEmbeddingGenerator<string, Embedding<float>> embeddingGenerator,
-        ILoggerFactory loggerFactory,
         ILogger<CloneIndexService> logger,
-        RepoRegistryOptions registryOptions)
+        RepoRegistryOptions registryOptions,
+        StorageFactory storageFactory)
     {
         this.contextFactory = contextFactory;
         this.storageRegistry = storageRegistry;
         this.repoContext = repoContext;
         this.scopeFactory = scopeFactory;
-        this.embeddingGenerator = embeddingGenerator;
-        this.loggerFactory = loggerFactory;
         this.logger = logger;
         this.registryOptions = registryOptions;
+        this.storageFactory = storageFactory;
     }
+
+    public static string ResolveRepoPath(string source, string repoName, RepoRegistryOptions options)
+    {
+        var isUrl = source.Contains("://");
+        if (isUrl)
+            return Path.GetFullPath(Path.Combine(Path.GetFullPath(options.CloneBasePath), repoName));
+        return Path.GetFullPath(source);
+    }
+
+    public bool IsProcessing(string repoName)
+        => inProgress.ContainsKey(repoName);
 
     public Task EnqueueRepoAsync(string repoName, string source, string? branch)
     {
@@ -52,8 +59,7 @@ public sealed class CloneIndexService
         }
 
         var isUrl = source.Contains("://");
-        var cloneBasePath = Path.GetFullPath(registryOptions.CloneBasePath);
-        var clonePath = isUrl ? Path.GetFullPath(Path.Combine(cloneBasePath, repoName)) : source;
+        var clonePath = isUrl ? Path.GetFullPath(Path.Combine(Path.GetFullPath(registryOptions.CloneBasePath), repoName)) : source;
 
         _ = Task.Run(async () =>
         {
@@ -127,9 +133,9 @@ public sealed class CloneIndexService
         activity?.SetTag("repo.name", repoName);
         activity?.SetTag("repo.path", repoPath);
 
-        var logger = loggerFactory.CreateLogger<StorageService>();
-        var storage = new StorageService(repoPath, logger,
-            new Memori.Storage.InMemoryVectorStore(), embeddingGenerator);
+        var repoEntity = await GetRepoAsync(repoName);
+        var repoId = repoEntity?.Id ?? 0;
+        var storage = storageFactory(repoName, repoPath, repoId);
 
         storageRegistry.Register(repoName, storage);
 

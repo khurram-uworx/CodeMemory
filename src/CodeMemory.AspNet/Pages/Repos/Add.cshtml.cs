@@ -27,9 +27,6 @@ public sealed class AddModel : PageModel
     readonly CloneIndexService cloneIndex;
     readonly RepoRegistryOptions registryOptions;
 
-    string getCloneBasePath()
-        => registryOptions.CloneBasePath;
-
     public AddModel(RepoRegistryService registry, CloneIndexService cloneIndex, RepoRegistryOptions registryOptions)
         => (this.registry, this.cloneIndex, this.registryOptions) = (registry, cloneIndex, registryOptions);
 
@@ -52,16 +49,13 @@ public sealed class AddModel : PageModel
         }
 
         var isUrl = Input.Source.Contains("://");
-        var cloneBasePath = getCloneBasePath();
 
         var repo = new Repositories
         {
             Name = Input.Name,
             GitUrl = isUrl ? Input.Source : null,
             Branch = isUrl ? Input.Branch : null,
-            LocalPath = isUrl
-                ? Path.GetFullPath(Path.Combine(cloneBasePath, Input.Name))
-                : Path.GetFullPath(Input.Source),
+            LocalPath = CloneIndexService.ResolveRepoPath(Input.Source, Input.Name, registryOptions),
             CloneStatus = isUrl ? "Pending" : "Cloned",
             IndexStatus = "Pending"
         };
