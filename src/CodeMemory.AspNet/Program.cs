@@ -1,4 +1,5 @@
 using CodeMemory.AspNet.Configuration;
+using CodeMemory.AspNet.Extensions;
 using CodeMemory.AspNet.Registry;
 using CodeMemory.AspNet.Scheduling;
 using CodeMemory.AspNet.Services;
@@ -33,7 +34,50 @@ builder.Services.AddSingleton<TreeSitterRelationshipExtractor>();
 builder.Services.AddSingleton<SemanticChunker>();
 
 // Repo-agnostic: embedding generator (registered before repo loop)
-builder.Services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>, NgramEmbeddingGenerator>();
+// Configurable via Embedding:Provider in appsettings.json:
+//   "ngram" (default, no model needed)
+//   "onnx"  (raw ONNX Runtime, requires bge-micro-v2 model)
+//   "sk-connector-onnx" (SK ONNX connector, requires bge-micro-v2 model)
+//   "ollama" (Ollama server, requires Ollama running at Embedding:OllamaEndpoint)
+var embeddingProvider = builder.Configuration.GetValue<string>("Embedding:Provider") ?? "ngram";
+switch (embeddingProvider)
+{
+    case "onnx":
+    {
+        var modelPath = Path.GetFullPath(
+            builder.Configuration.GetValue<string>("Embedding:OnnxModelPath")
+            ?? "models/bge-micro-v2/model.onnx");
+        var vocabPath = Path.GetFullPath(
+            builder.Configuration.GetValue<string>("Embedding:OnnxVocabPath")
+            ?? "models/bge-micro-v2/vocab.txt");
+        builder.Services.AddCodeMemoryOnnxEmbeddingGenerator(modelPath, vocabPath);
+        break;
+    }
+    case "sk-connector-onnx":
+    {
+        var modelPath = Path.GetFullPath(
+            builder.Configuration.GetValue<string>("Embedding:OnnxModelPath")
+            ?? "models/bge-micro-v2/model.onnx");
+        var vocabPath = Path.GetFullPath(
+            builder.Configuration.GetValue<string>("Embedding:OnnxVocabPath")
+            ?? "models/bge-micro-v2/vocab.txt");
+        builder.Services.AddCodeMemorySKOnnxEmbeddingGenerator(modelPath, vocabPath);
+        break;
+    }
+    case "ollama":
+    {
+        var endpoint = builder.Configuration.GetValue<string>("Embedding:OllamaEndpoint")
+            ?? "http://localhost:11434";
+        var model = builder.Configuration.GetValue<string>("Embedding:OllamaModel")
+            ?? "all-minilm";
+        builder.Services.AddCodeMemoryOllamaEmbeddingGenerator(
+            new Uri(endpoint), model);
+        break;
+    }
+    default:
+        builder.Services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>, NgramEmbeddingGenerator>();
+        break;
+}
 
 var storageRegistry = new ServiceRegistry();
 builder.Services.AddSingleton<IServiceRegistry>(storageRegistry);

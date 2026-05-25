@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\CodeMemory\CodeMemory.csproj" />
+    <ProjectReference Include="..\CodeMemory.AspNet.Extensions\CodeMemory.AspNet.Extensions.csproj" />
     <ProjectReference Include="..\CodeMemory.ServiceDefaults\CodeMemory.ServiceDefaults.csproj" />
   </ItemGroup>
 
