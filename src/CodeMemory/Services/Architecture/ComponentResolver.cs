@@ -28,7 +28,7 @@ public sealed class ComponentResolver : IComponentResolver
         return result;
     }
 
-    static string? resolveFromMapping(string filePath, IReadOnlyList<ComponentMappingInfo> components)
+    static string? resolveFromMapping(string filePath, IReadOnlyList<ComponentInformation> components)
     {
         if (components.Count == 0)
             return null;

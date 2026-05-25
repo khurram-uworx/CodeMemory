@@ -13,10 +13,16 @@ public sealed class ComponentEntity
     public string ComponentName { get; set; } = string.Empty;
 
     [Required, MaxLength(100)]
-    public string ComponentKind { get; set; } = string.Empty;
+    public string ComponentKindString { get; set; } = "Unknown";
 
     [Required, MaxLength(100)]
-    public string ComponentType { get; set; } = "Component";
+    public string ComponentTypeString { get; set; } = "Component";
+
+    public int FileCount { get; set; }
+
+    public bool IsDeleted { get; set; }
+
+    public DateTime? DeletedAt { get; set; }
 
     public RegisteredRepo RegisteredRepo { get; init; } = null!;
 }

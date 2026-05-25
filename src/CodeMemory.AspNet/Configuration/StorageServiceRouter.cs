@@ -81,9 +81,9 @@ public sealed class StorageServiceRouter : IStorageService
     public Task ClearAllAsync(CancellationToken ct = default)
         => GetStorage().ClearAllAsync(ct);
 
-    public Task StoreComponentMappingAsync(IReadOnlyList<ComponentMappingInfo> components, CancellationToken ct = default)
+    public Task StoreComponentMappingAsync(IReadOnlyList<ComponentInformation> components, CancellationToken ct = default)
         => GetStorage().StoreComponentMappingAsync(components, ct);
 
-    public Task<IReadOnlyList<ComponentMappingInfo>> LoadComponentMappingAsync(CancellationToken ct = default)
+    public Task<IReadOnlyList<ComponentInformation>> LoadComponentMappingAsync(CancellationToken ct = default)
         => GetStorage().LoadComponentMappingAsync(ct);
 }

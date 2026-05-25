@@ -259,5 +259,4 @@ app.MapGet("/api/repos/{name}/status", async (string name, RepoRegistryService r
         indexingCompleted = IndexingState.IsCompleted(repo.Name)
     });
 });
-
 app.Run();

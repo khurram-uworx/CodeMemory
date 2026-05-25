@@ -234,6 +234,9 @@ public sealed class HybridStorageService : IStorageService, IDisposable
     public CodeMemoryDbContext CreateDbContext()
         => createDbContext();
 
+    public RepoRegistryDbContext CreateRegistryDbContext()
+        => registryDbFactory.CreateDbContext();
+
     public async Task InitializeAsync(CancellationToken ct = default)
     {
         var dimension = configuredDimension;
@@ -541,7 +544,7 @@ public sealed class HybridStorageService : IStorageService, IDisposable
         initialized = false;
     }
 
-    public async Task StoreComponentMappingAsync(IReadOnlyList<ComponentMappingInfo> components, CancellationToken ct = default)
+    public async Task StoreComponentMappingAsync(IReadOnlyList<ComponentInformation> detected, CancellationToken ct = default)
     {
         await using var db = await registryDbFactory.CreateDbContextAsync(ct);
         var repoId = registeredRepoId;
@@ -550,34 +553,57 @@ public sealed class HybridStorageService : IStorageService, IDisposable
             .Where(c => c.RegisteredRepoId == repoId)
             .ToListAsync(ct);
 
-        db.Components.RemoveRange(existing);
+        var existingByPath = existing.ToDictionary(e => e.BuildFilePath, StringComparer.OrdinalIgnoreCase);
 
-        var entities = components.Select(c => new ComponentEntity
+        var toInsert = new List<ComponentEntity>();
+
+        foreach (var c in detected)
         {
-            RegisteredRepoId = repoId,
-            BuildFilePath = c.BuildFilePath,
-            ComponentName = c.ComponentName,
-            ComponentKind = c.ComponentKind,
-            ComponentType = c.ComponentType,
-        });
+            if (existingByPath.TryGetValue(c.BuildFilePath, out var existingEntity))
+            {
+                if (!existingEntity.IsDeleted)
+                {
+                    // DB is source of truth — keep user's edits, only update FileCount
+                    existingEntity.FileCount = c.FileCount;
+                }
+                // else soft-deleted — skip entirely, don't re-add
+            }
+            else
+            {
+                toInsert.Add(new ComponentEntity
+                {
+                    RegisteredRepoId = repoId,
+                    BuildFilePath = c.BuildFilePath,
+                    ComponentName = c.ComponentName,
+                    ComponentKindString = c.ComponentKind.ToString(),
+                    ComponentTypeString = c.ComponentType.ToString(),
+                    FileCount = c.FileCount,
+                });
+            }
+        }
 
-        db.Components.AddRange(entities);
+        if (toInsert.Count > 0)
+            db.Components.AddRange(toInsert);
+
         await db.SaveChangesAsync(ct);
     }
 
-    public async Task<IReadOnlyList<ComponentMappingInfo>> LoadComponentMappingAsync(CancellationToken ct = default)
+    public async Task<IReadOnlyList<ComponentInformation>> LoadComponentMappingAsync(CancellationToken ct = default)
     {
         await using var db = await registryDbFactory.CreateDbContextAsync(ct);
 
-        return await db.Components
+        var entities = await db.Components
             .AsNoTracking()
-            .Where(c => c.RegisteredRepoId == registeredRepoId)
-            .Select(c => new ComponentMappingInfo(
-                c.BuildFilePath,
-                c.ComponentName,
-                c.ComponentKind,
-                c.ComponentType))
+            .Where(c => c.RegisteredRepoId == registeredRepoId && !c.IsDeleted)
             .ToListAsync(ct);
+
+        return entities.Select(c => new ComponentInformation(
+            c.BuildFilePath,
+            c.ComponentName,
+            Enum.TryParse<ComponentKind>(c.ComponentKindString, out var kind) ? kind : ComponentKind.Unknown,
+            Enum.TryParse<ComponentType>(c.ComponentTypeString, out var type) ? type : ComponentType.Component,
+            c.FileCount))
+            .ToList();
     }
 
     public void Dispose()

@@ -109,11 +109,11 @@ sealed class MockStorageService : IStorageService
     public Task ClearAllAsync(CancellationToken ct = default)
         => Task.CompletedTask;
 
-    public Task StoreComponentMappingAsync(IReadOnlyList<ComponentMappingInfo> components, CancellationToken ct = default)
+    public Task StoreComponentMappingAsync(IReadOnlyList<ComponentInformation> components, CancellationToken ct = default)
         => Task.CompletedTask;
 
-    public Task<IReadOnlyList<ComponentMappingInfo>> LoadComponentMappingAsync(CancellationToken ct = default)
-        => Task.FromResult<IReadOnlyList<ComponentMappingInfo>>([]);
+    public Task<IReadOnlyList<ComponentInformation>> LoadComponentMappingAsync(CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<ComponentInformation>>([]);
 }
 
 sealed class MockGraphService : IDependencyGraphService

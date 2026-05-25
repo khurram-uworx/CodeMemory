@@ -62,8 +62,11 @@ public sealed class RepoRegistryDbContext : DbContext
 
             entity.Property(c => c.BuildFilePath).HasColumnName("build_file_path").IsRequired().HasMaxLength(1000);
             entity.Property(c => c.ComponentName).HasColumnName("component_name").IsRequired().HasMaxLength(500);
-            entity.Property(c => c.ComponentKind).HasColumnName("component_kind").IsRequired().HasMaxLength(100);
-            entity.Property(c => c.ComponentType).HasColumnName("component_type").IsRequired().HasMaxLength(100);
+            entity.Property(c => c.ComponentKindString).HasColumnName("component_kind").IsRequired().HasMaxLength(100);
+            entity.Property(c => c.ComponentTypeString).HasColumnName("component_type").IsRequired().HasMaxLength(100);
+            entity.Property(c => c.FileCount).HasColumnName("file_count").HasDefaultValue(0);
+            entity.Property(c => c.IsDeleted).HasColumnName("is_deleted").HasDefaultValue(false);
+            entity.Property(c => c.DeletedAt).HasColumnName("deleted_at");
 
             entity.HasOne(c => c.RegisteredRepo)
                   .WithMany()

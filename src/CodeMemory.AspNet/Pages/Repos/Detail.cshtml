@@ -1,0 +1,143 @@
+@page "/Repos/{name}"
+@model CodeMemory.AspNet.Pages.Repos.DetailModel
+@{
+    ViewData["Title"] = Model.Repo?.Name ?? "Repo Detail";
+}
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a asp-page="/Index">Repos</a></li>
+        <li class="breadcrumb-item active">@Model.Repo?.Name</li>
+    </ol>
+</nav>
+
+@if (TempData["Message"] is string msg)
+{
+    <div class="alert alert-success alert-dismissible fade show">@msg
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1>@Model.Repo?.Name</h1>
+    <a asp-page="/Index" class="btn btn-secondary">
+        <i class="bi bi-arrow-left"></i> Back
+    </a>
+</div>
+
+@if (Model.NotFoundMessage is not null)
+{
+    <div class="alert alert-warning">@Model.NotFoundMessage</div>
+}
+else if (Model.Repo is not null)
+{
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <strong>Source:</strong>
+            @if (!string.IsNullOrEmpty(Model.Repo.GitUrl))
+            {
+                <a href="@Model.Repo.GitUrl" target="_blank" class="text-break">@Model.Repo.GitUrl</a>
+            }
+            else
+            {
+                <code class="text-break">@Model.Repo.LocalPath</code>
+            }
+        </div>
+        <div class="col-md-3">
+            <strong>Status:</strong>
+            @{
+                var status = Model.Repo.CloneStatus == "Failed" || Model.Repo.IndexStatus == "Failed" ? "Failed"
+                    : Model.Repo.IndexStatus == "Indexed" ? "Indexed"
+                    : Model.Repo.CloneStatus;
+                var badgeClass = status switch
+                {
+                    "Indexed" => "bg-success",
+                    "Failed" => "bg-danger",
+                    _ => "bg-secondary"
+                };
+            }
+            <span class="badge @badgeClass">@status</span>
+        </div>
+        <div class="col-md-3">
+            <strong>Last Indexed:</strong>
+            <span>@Model.Repo.LastIndexedAt?.ToString("g") ?? "—"</span>
+        </div>
+    </div>
+}
+
+<h2>Components</h2>
+
+@if (Model.Components.Count == 0)
+{
+    <div class="alert alert-info">No components found for this repository.</div>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-hover align-middle">
+            <thead class="table-dark">
+                <tr>
+                    <th>Build File Path</th>
+                    <th>Name</th>
+                    <th>Kind</th>
+                    <th>Type</th>
+                    <th class="text-end">Files</th>
+                    <th class="text-end">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var c in Model.Components)
+                {
+                    <tr>
+                        <td><code>@c.BuildFilePath</code></td>
+                        <td><strong>@c.ComponentName</strong></td>
+                        <td>
+                            <form method="post" asp-page-handler="Update" class="d-inline" style="max-width: 160px;">
+                                <input type="hidden" name="name" value="@Model.Repo!.Name" />
+                                <input type="hidden" name="buildFilePath" value="@c.BuildFilePath" />
+                                <select name="componentKind" class="form-select form-select-sm" onchange="this.form.submit()">
+                                    @foreach (var k in GetComponentKinds())
+                                    {
+                                        var selected = k == c.ComponentKind ? "selected" : "";
+                                        <option value="@k" selected="@selected">@k</option>
+                                    }
+                                </select>
+                                <input type="hidden" name="componentType" value="@c.ComponentType" />
+                            </form>
+                        </td>
+                        <td>
+                            <form method="post" asp-page-handler="Update" class="d-inline" style="max-width: 160px;">
+                                <input type="hidden" name="name" value="@Model.Repo!.Name" />
+                                <input type="hidden" name="buildFilePath" value="@c.BuildFilePath" />
+                                <input type="hidden" name="componentKind" value="@c.ComponentKind" />
+                                <select name="componentType" class="form-select form-select-sm" onchange="this.form.submit()">
+                                    @foreach (var t in GetComponentTypes())
+                                    {
+                                        var selected = t == c.ComponentType ? "selected" : "";
+                                        <option value="@t" selected="@selected">@t</option>
+                                    }
+                                </select>
+                            </form>
+                        </td>
+                        <td class="text-end">@c.FileCount</td>
+                        <td class="text-end">
+                            <form method="post" asp-page-handler="Delete" class="d-inline"
+                                  onsubmit="return confirm('Delete component @c.BuildFilePath? It will be hidden and won\u0027t reappear on re-index.')">
+                                <input type="hidden" name="name" value="@Model.Repo!.Name" />
+                                <input type="hidden" name="buildFilePath" value="@c.BuildFilePath" />
+                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Soft-delete component">
+                                    <i class="bi bi-x-circle"></i>
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@functions {
+    static string[] GetComponentKinds() => [ "Unknown", "MsBuild", "Maven", "Node", "Cargo", "Go", "Gradle", "Python", "CMake", "Haskell", "Folder" ];
+    static string[] GetComponentTypes() => [ "Component", "Test", "Tool", "Documentation", "Example", "Other" ];
+}

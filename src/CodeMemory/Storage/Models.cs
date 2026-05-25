@@ -53,11 +53,12 @@ public sealed class SymbolRecord
     public string? Documentation { get; set; }
 }
 
-public sealed record ComponentMappingInfo(
+public sealed record ComponentInformation(
     string BuildFilePath,
     string ComponentName,
-    string ComponentKind,
-    string ComponentType
+    ComponentKind ComponentKind,
+    ComponentType ComponentType,
+    int FileCount = 0
 );
 
 public sealed class ChunkRecord
