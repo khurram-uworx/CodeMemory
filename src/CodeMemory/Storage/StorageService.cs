@@ -17,7 +17,7 @@ public sealed class StorageService : IStorageService, IDisposable
     VectorStoreCollection<string, SymbolRecord>? symbols;
     VectorStoreCollection<string, ChunkRecord>? chunks;
     VectorStoreCollection<string, RelationshipRecord>? relationships;
-    readonly ConcurrentDictionary<string, string> componentMapping = new(StringComparer.OrdinalIgnoreCase);
+    readonly ConcurrentDictionary<string, ComponentInformation> componentMapping = new(StringComparer.OrdinalIgnoreCase);
     bool initialized;
 
     public StorageService(string repoRoot,
@@ -299,18 +299,18 @@ public sealed class StorageService : IStorageService, IDisposable
         }, ct);
     }
 
-    public Task StoreComponentMappingAsync(IReadOnlyDictionary<string, string> mapping, CancellationToken ct = default)
+    public Task StoreComponentMappingAsync(IReadOnlyList<ComponentInformation> components, CancellationToken ct = default)
     {
         componentMapping.Clear();
-        foreach (var (key, value) in mapping)
-            componentMapping[key] = value;
+        foreach (var component in components)
+            componentMapping[component.BuildFilePath] = component;
         return Task.CompletedTask;
     }
 
-    public Task<IReadOnlyDictionary<string, string>> LoadComponentMappingAsync(CancellationToken ct = default)
+    public Task<IReadOnlyList<ComponentInformation>> LoadComponentMappingAsync(CancellationToken ct = default)
     {
-        return Task.FromResult<IReadOnlyDictionary<string, string>>(
-            new Dictionary<string, string>(componentMapping, StringComparer.OrdinalIgnoreCase));
+        return Task.FromResult<IReadOnlyList<ComponentInformation>>(
+            [.. componentMapping.Values]);
     }
 
     public void Dispose()

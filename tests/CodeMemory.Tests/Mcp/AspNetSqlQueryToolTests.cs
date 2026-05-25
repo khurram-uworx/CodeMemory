@@ -1,3 +1,4 @@
+using CodeMemory.AspNet.Registry;
 using CodeMemory.AspNet.Storage;
 using CodeMemory.AspNet.Tools;
 using CodeMemory.Storage;
@@ -199,11 +200,30 @@ public sealed class AspNetSqlQueryToolTests : BaseToolTests
             .ReplaceService<IModelCacheKeyFactory, SchemaModelCacheKeyFactory>()
             .Options;
 
+        var registryDbPath = Path.Combine(tempDir, "registry.db");
+        var registryOptions = new DbContextOptionsBuilder<RepoRegistryDbContext>()
+            .UseSqlite($"Data Source={registryDbPath}")
+            .Options;
+
+        var registryDbFactory = new Storage.TestRepoRegistryDbContextFactory(registryOptions);
+        using (var seedDb = registryDbFactory.CreateDbContext())
+        {
+            seedDb.Database.EnsureCreated();
+            seedDb.RegisteredRepos.Add(new RegisteredRepo
+            {
+                Id = 1, Name = "test-repo", LocalPath = tempDir,
+                CloneStatus = "Cloned", IndexStatus = "Pending"
+            });
+            seedDb.SaveChanges();
+        }
+
         return new HybridStorageService(
             tempDir,
+            registeredRepoId: 1,
             NullLogger<HybridStorageService>.Instance,
             store,
             () => new CodeMemoryDbContext(options, "main"),
+            registryDbFactory,
             configuredDimension: TestConstants.EmbeddingDimension);
     }
 

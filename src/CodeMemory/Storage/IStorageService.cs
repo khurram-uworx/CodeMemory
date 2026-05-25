@@ -48,7 +48,7 @@ public interface IStorageService
 
     Task ClearAllAsync(CancellationToken ct = default);
 
-    Task StoreComponentMappingAsync(IReadOnlyDictionary<string, string> mapping, CancellationToken ct = default);
+    Task StoreComponentMappingAsync(IReadOnlyList<ComponentInformation> components, CancellationToken ct = default);
 
-    Task<IReadOnlyDictionary<string, string>> LoadComponentMappingAsync(CancellationToken ct = default);
+    Task<IReadOnlyList<ComponentInformation>> LoadComponentMappingAsync(CancellationToken ct = default);
 }

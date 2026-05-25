@@ -1,41 +1,56 @@
+using CodeMemory.Storage;
 using Microsoft.Extensions.Logging;
 
 namespace CodeMemory.Services.Architecture;
 
 public sealed class ProjectFileDetector
 {
-    static readonly string[] KnownBuildFiles =
+    static readonly (string Pattern, ComponentKind Kind)[] KnownBuildFiles =
     [
-        "*.csproj", "*.vbproj", "*.fsproj",
-        "pom.xml",
-        "package.json",
-        "Cargo.toml",
-        "go.mod",
-        "build.gradle", "build.gradle.kts",
-        "pyproject.toml",
-        "CMakeLists.txt",
-        "*.cabal",
+        ("*.csproj", ComponentKind.MsBuild),
+        ("*.vbproj", ComponentKind.MsBuild),
+        ("*.fsproj", ComponentKind.MsBuild),
+        ("pom.xml", ComponentKind.Maven),
+        ("package.json", ComponentKind.Node),
+        ("Cargo.toml", ComponentKind.Cargo),
+        ("go.mod", ComponentKind.Go),
+        ("build.gradle", ComponentKind.Gradle),
+        ("build.gradle.kts", ComponentKind.Gradle),
+        ("pyproject.toml", ComponentKind.Python),
+        ("CMakeLists.txt", ComponentKind.CMake),
+        ("*.cabal", ComponentKind.Haskell),
     ];
+
+    static readonly char[] DirSeparators = ['/', '\\'];
+
+    static ComponentType inferComponentType(string relativeDir)
+    {
+        var segments = relativeDir.Split(DirSeparators, StringSplitOptions.RemoveEmptyEntries);
+        return segments.Any(s => string.Equals(s, "test", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(s, "tests", StringComparison.OrdinalIgnoreCase))
+            ? ComponentType.Test
+            : ComponentType.Component;
+    }
 
     readonly ILogger<ProjectFileDetector> logger;
 
     public ProjectFileDetector(ILogger<ProjectFileDetector> logger)
         => this.logger = logger;
 
-    public IReadOnlyDictionary<string, string> Discover(string repoRoot)
+    public IReadOnlyList<ComponentInformation> Discover(string repoRoot)
     {
-        var mapping = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var components = new List<ComponentInformation>();
         var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         if (!Directory.Exists(repoRoot))
         {
             logger.LogWarning("Repo root does not exist: {RepoRoot}", repoRoot);
-            return mapping;
+            return components;
         }
 
-        foreach (var buildFile in KnownBuildFiles)
+        foreach (var (pattern, kind) in KnownBuildFiles)
         {
-            foreach (var filePath in Directory.EnumerateFiles(repoRoot, buildFile, SearchOption.AllDirectories))
+            foreach (var filePath in Directory.EnumerateFiles(repoRoot, pattern, SearchOption.AllDirectories))
             {
                 var dir = Path.GetDirectoryName(filePath);
                 if (dir == null || !visited.Add(dir))
@@ -43,16 +58,18 @@ public sealed class ProjectFileDetector
 
                 var relativeDir = Path.GetRelativePath(repoRoot, dir).Replace('\\', '/');
                 var componentName = Path.GetFileName(dir);
+                var componentType = inferComponentType(relativeDir);
+                var fileCount = Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories).Count();
 
-                mapping[relativeDir] = componentName;
-                logger.LogDebug("Discovered component '{Component}' at '{Dir}' from {File}",
-                    componentName, relativeDir, Path.GetFileName(filePath));
+                components.Add(new ComponentInformation(relativeDir, componentName, kind, componentType, fileCount));
+                logger.LogDebug("Discovered component '{Component}' ({Kind}, {Type}) at '{Dir}' from {File}",
+                    componentName, kind, componentType, relativeDir, Path.GetFileName(filePath));
             }
         }
 
         logger.LogInformation("ProjectFileDetector: found {Count} components in {RepoRoot}",
-            mapping.Count, repoRoot);
+            components.Count, repoRoot);
 
-        return mapping;
+        return components;
     }
 }

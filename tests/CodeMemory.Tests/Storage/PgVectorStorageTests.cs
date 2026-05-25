@@ -1,4 +1,6 @@
+using CodeMemory.AspNet.Registry;
 using CodeMemory.Storage;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace CodeMemory.Tests.Storage;
@@ -13,10 +15,13 @@ public sealed class PgVectorStorageTests
     [Test]
     public async Task CreatePgVectorStorage_InitializesCollections()
     {
+        var registryDbFactory = CreateRegistryDbFactory();
         var storage = AspNet.Storage.ServiceCollectionExtensions.CreatePgVectorStorage(
             Environment.CurrentDirectory,
+            0,
             ConnectionString,
             "cm_test",
+            registryDbFactory,
             NullLogger<StorageService>.Instance);
 
         await storage.InitializeAsync();
@@ -41,13 +46,14 @@ public sealed class PgVectorStorageTests
     [Test]
     public async Task PgVector_ReposIsolatedBySchema()
     {
+        var registryDbFactory = CreateRegistryDbFactory();
         var storage1 = AspNet.Storage.ServiceCollectionExtensions.CreatePgVectorStorage(
-            "C:\\repo1", ConnectionString, "cm_repo1",
-            NullLogger<StorageService>.Instance);
+            "C:\\repo1", 0, ConnectionString, "cm_repo1",
+            registryDbFactory, NullLogger<StorageService>.Instance);
 
         var storage2 = AspNet.Storage.ServiceCollectionExtensions.CreatePgVectorStorage(
-            "C:\\repo2", ConnectionString, "cm_repo2",
-            NullLogger<StorageService>.Instance);
+            "C:\\repo2", 0, ConnectionString, "cm_repo2",
+            registryDbFactory, NullLogger<StorageService>.Instance);
 
         await storage1.InitializeAsync();
         await storage2.InitializeAsync();
@@ -71,5 +77,14 @@ public sealed class PgVectorStorageTests
         Assert.That(fromRepo1, Is.Not.Null);
         Assert.That(fromRepo2, Is.Not.Null);
         Assert.That(crossRepo, Is.Null, "Repo2 should not see Repo1's symbols (schema isolation)");
+    }
+
+    static IDbContextFactory<RepoRegistryDbContext> CreateRegistryDbFactory()
+    {
+        var options = new DbContextOptionsBuilder<RepoRegistryDbContext>()
+            .UseSqlite("Data Source=:memory:")
+            .Options;
+
+        return new TestRepoRegistryDbContextFactory(options);
     }
 }

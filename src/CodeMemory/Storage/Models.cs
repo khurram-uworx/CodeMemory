@@ -53,6 +53,14 @@ public sealed class SymbolRecord
     public string? Documentation { get; set; }
 }
 
+public sealed record ComponentInformation(
+    string BuildFilePath,
+    string ComponentName,
+    ComponentKind ComponentKind,
+    ComponentType ComponentType,
+    int FileCount = 0
+);
+
 public sealed class ChunkRecord
 {
     [VectorStoreKey]

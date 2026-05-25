@@ -1,8 +1,8 @@
+using CodeMemory.AspNet.Registry;
 using CodeMemory.Storage;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.VectorData;
-using System.Collections.Concurrent;
 using System.Linq.Expressions;
 
 namespace CodeMemory.AspNet.Storage;
@@ -191,27 +191,32 @@ public sealed class HybridStorageService : IStorageService, IDisposable
 
     readonly ILogger logger;
     readonly string repoRoot;
+    readonly int registeredRepoId;
     readonly VectorStore vectorStore;
     readonly Func<CodeMemoryDbContext> createDbContext;
+    readonly IDbContextFactory<RepoRegistryDbContext> registryDbFactory;
     readonly IEmbeddingGenerator<string, Embedding<float>>? embeddingGenerator;
     readonly int configuredDimension;
     int actualDimension;
-    readonly ConcurrentDictionary<string, string> componentMapping = new(StringComparer.OrdinalIgnoreCase);
     VectorStoreCollection<string, ChunkRecord>? chunks;
     bool initialized;
 
     public HybridStorageService(
         string repoRoot,
+        int registeredRepoId,
         ILogger logger,
         VectorStore vectorStore,
         Func<CodeMemoryDbContext> createDbContext,
+        IDbContextFactory<RepoRegistryDbContext> registryDbFactory,
         IEmbeddingGenerator<string, Embedding<float>>? embeddingGenerator = null,
         int configuredDimension = 1536)
     {
         this.repoRoot = repoRoot;
+        this.registeredRepoId = registeredRepoId;
         this.logger = logger;
         this.vectorStore = vectorStore;
         this.createDbContext = createDbContext;
+        this.registryDbFactory = registryDbFactory;
         this.embeddingGenerator = embeddingGenerator;
         this.configuredDimension = configuredDimension;
     }
@@ -228,6 +233,9 @@ public sealed class HybridStorageService : IStorageService, IDisposable
 
     public CodeMemoryDbContext CreateDbContext()
         => createDbContext();
+
+    public RepoRegistryDbContext CreateRegistryDbContext()
+        => registryDbFactory.CreateDbContext();
 
     public async Task InitializeAsync(CancellationToken ct = default)
     {
@@ -536,20 +544,66 @@ public sealed class HybridStorageService : IStorageService, IDisposable
         initialized = false;
     }
 
-    // TODO: Persist via EF Core table when component_mapping entity is introduced.
-    // Currently uses in-memory ConcurrentDictionary for non-blocking persistence evolution.
-    public Task StoreComponentMappingAsync(IReadOnlyDictionary<string, string> mapping, CancellationToken ct = default)
+    public async Task StoreComponentMappingAsync(IReadOnlyList<ComponentInformation> detected, CancellationToken ct = default)
     {
-        componentMapping.Clear();
-        foreach (var (key, value) in mapping)
-            componentMapping[key] = value;
-        return Task.CompletedTask;
+        await using var db = await registryDbFactory.CreateDbContextAsync(ct);
+        var repoId = registeredRepoId;
+
+        var existing = await db.Components
+            .Where(c => c.RegisteredRepoId == repoId)
+            .ToListAsync(ct);
+
+        var existingByPath = existing.ToDictionary(e => e.BuildFilePath, StringComparer.OrdinalIgnoreCase);
+
+        var toInsert = new List<ComponentEntity>();
+
+        foreach (var c in detected)
+        {
+            if (existingByPath.TryGetValue(c.BuildFilePath, out var existingEntity))
+            {
+                if (!existingEntity.IsDeleted)
+                {
+                    // DB is source of truth — keep user's edits, only update FileCount
+                    existingEntity.FileCount = c.FileCount;
+                }
+                // else soft-deleted — skip entirely, don't re-add
+            }
+            else
+            {
+                toInsert.Add(new ComponentEntity
+                {
+                    RegisteredRepoId = repoId,
+                    BuildFilePath = c.BuildFilePath,
+                    ComponentName = c.ComponentName,
+                    ComponentKindString = c.ComponentKind.ToString(),
+                    ComponentTypeString = c.ComponentType.ToString(),
+                    FileCount = c.FileCount,
+                });
+            }
+        }
+
+        if (toInsert.Count > 0)
+            db.Components.AddRange(toInsert);
+
+        await db.SaveChangesAsync(ct);
     }
 
-    public Task<IReadOnlyDictionary<string, string>> LoadComponentMappingAsync(CancellationToken ct = default)
+    public async Task<IReadOnlyList<ComponentInformation>> LoadComponentMappingAsync(CancellationToken ct = default)
     {
-        return Task.FromResult<IReadOnlyDictionary<string, string>>(
-            new Dictionary<string, string>(componentMapping, StringComparer.OrdinalIgnoreCase));
+        await using var db = await registryDbFactory.CreateDbContextAsync(ct);
+
+        var entities = await db.Components
+            .AsNoTracking()
+            .Where(c => c.RegisteredRepoId == registeredRepoId && !c.IsDeleted)
+            .ToListAsync(ct);
+
+        return entities.Select(c => new ComponentInformation(
+            c.BuildFilePath,
+            c.ComponentName,
+            Enum.TryParse<ComponentKind>(c.ComponentKindString, out var kind) ? kind : ComponentKind.Unknown,
+            Enum.TryParse<ComponentType>(c.ComponentTypeString, out var type) ? type : ComponentType.Component,
+            c.FileCount))
+            .ToList();
     }
 
     public void Dispose()
