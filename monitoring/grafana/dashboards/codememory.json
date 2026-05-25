@@ -1,0 +1,301 @@
+{
+  "__inputs": [],
+  "__elements": [],
+  "__requires": [
+    { "type": "grafana", "id": "grafana", "name": "Grafana", "version": "9.0.0" },
+    { "type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0" },
+    { "type": "panel", "id": "stat", "name": "Stat", "version": "" },
+    { "type": "panel", "id": "timeseries", "name": "Time series", "version": "" },
+    { "type": "panel", "id": "bargauge", "name": "Bar gauge", "version": "" }
+  ],
+  "title": "CodeMemory — Repository Intelligence",
+  "tags": ["codememory", "dotnet"],
+  "schemaVersion": 36,
+  "timezone": "browser",
+  "time": { "from": "now-1h", "to": "now" },
+  "refresh": "15s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Indexing Duration (last 5)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "min": 0,
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "lineInterpolation": "smooth",
+            "showPoints": "never",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "calcs": ["max", "mean"], "displayMode": "table", "placement": "right" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "expr": "rate(codememory_indexing_duration_ms_sum[5m]) / rate(codememory_indexing_duration_ms_count[5m])",
+          "legendFormat": "avg per-repo (5m rate)",
+          "interval": ""
+        },
+        {
+          "expr": "codememory_indexing_duration_ms_max",
+          "legendFormat": "max per-repo",
+          "interval": ""
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Files & Symbols Indexed (cumulative)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "lineInterpolation": "smooth",
+            "showPoints": "never",
+            "fillOpacity": 20,
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "calcs": ["last"], "displayMode": "table", "placement": "right" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "expr": "codememory_indexing_files_count_total",
+          "legendFormat": "files indexed"
+        },
+        {
+          "expr": "codememory_indexing_symbols_count_total",
+          "legendFormat": "symbols stored"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Tool Invocations",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "lineInterpolation": "smooth",
+            "showPoints": "never",
+            "stacking": { "mode": "normal" },
+            "fillOpacity": 40
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "calcs": ["max", "sum"], "displayMode": "table", "placement": "right" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "expr": "sum by (tool) (rate(codememory_tools_invocations_total[5m]))",
+          "legendFormat": "{{ tool }}",
+          "interval": ""
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Search Query Duration (last 5)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "min": 0,
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "lineInterpolation": "smooth",
+            "showPoints": "never",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "calcs": ["max", "mean"], "displayMode": "table", "placement": "right" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "expr": "rate(codememory_search_query_duration_ms_sum[5m]) / rate(codememory_search_query_duration_ms_count[5m])",
+          "legendFormat": "avg query (5m rate)"
+        },
+        {
+          "expr": "codememory_search_query_duration_ms_max",
+          "legendFormat": "max query"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Clone Duration (last 5)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "min": 0,
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "lineInterpolation": "smooth",
+            "showPoints": "never",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "calcs": ["max", "mean"], "displayMode": "table", "placement": "right" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "expr": "rate(codememory_git_clone_duration_ms_sum[5m]) / rate(codememory_git_clone_duration_ms_count[5m])",
+          "legendFormat": "avg clone (5m rate)"
+        },
+        {
+          "expr": "codememory_git_clone_duration_ms_max",
+          "legendFormat": "max clone"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "SQL Query Duration (last 5)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "min": 0,
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "lineInterpolation": "smooth",
+            "showPoints": "never",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "calcs": ["max", "mean"], "displayMode": "table", "placement": "right" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "expr": "rate(codememory_sql_query_duration_ms_sum[5m]) / rate(codememory_sql_query_duration_ms_count[5m])",
+          "legendFormat": "avg SQL query (5m rate)"
+        },
+        {
+          "expr": "codememory_sql_query_duration_ms_max",
+          "legendFormat": "max SQL query"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Runtime — GC & ThreadPool",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "lineInterpolation": "smooth",
+            "showPoints": "never",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "right" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "expr": "dotnet_gc_collections_total",
+          "legendFormat": "GC collections (rate)"
+        },
+        {
+          "expr": "dotnet_thread_pool_queue_length",
+          "legendFormat": "ThreadPool queue"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "HTTP Request Rate & Duration",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "lineInterpolation": "smooth",
+            "showPoints": "never",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "right" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "expr": "rate(http_server_request_duration_ms_sum[5m]) / rate(http_server_request_duration_ms_count[5m])",
+          "legendFormat": "avg duration (5m rate)"
+        },
+        {
+          "expr": "rate(http_server_active_requests_count[5m])",
+          "legendFormat": "active requests"
+        }
+      ]
+    }
+  ],
+  "templating": { "list": [] },
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  }
+}
