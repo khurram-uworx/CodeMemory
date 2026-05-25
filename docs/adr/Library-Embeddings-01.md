@@ -85,6 +85,25 @@ builder.Services.AddSingleton<
     OpenAIEmbeddingGenerator>(); // or Azure, ONNX, etc.
 ```
 
+The `CodeMemory.AspNet.Extensions` project provides two ONNX-based alternatives as reference implementations:
+
+| Provider | Config value | Implementation | Dependencies |
+|---|---|---|---|
+| **Raw ONNX Runtime** | `"onnx"` | `BertOnnxEmbeddingGenerator` — custom `IEmbeddingGenerator` using `Microsoft.ML.OnnxRuntime` directly, showing tokenization, inference, mean pooling, and L2 normalization | `Microsoft.ML.OnnxRuntime` |
+| **SK ONNX Connector** | `"sk-connector-onnx"` | Uses `AddBertOnnxEmbeddingGenerator()` from `Microsoft.SemanticKernel.Connectors.Onnx` — production-grade wrapper | `Microsoft.SemanticKernel.Connectors.Onnx` |
+
+Both require the [bge-micro-v2](https://huggingface.co/TaylorAI/bge-micro-v2) ONNX model (~69MB, 384-dim), downloadable via `download-models.ps1`. Configure via `appsettings.json`:
+
+```json
+{
+  "Embedding": {
+    "Provider": "onnx",
+    "OnnxModelPath": "models/bge-micro-v2/model.onnx",
+    "OnnxVocabPath": "models/bge-micro-v2/vocab.txt"
+  }
+}
+```
+
 All downstream code (`IndexingEngine`, `SemanticSearchService`, `SqlQueryService`) works unchanged because they depend only on the `IEmbeddingGenerator` abstraction.
 
 ---
@@ -141,5 +160,6 @@ Coding agents that consume CodeMemory's MCP tools must understand that `semantic
 |---|---|
 | **OpenAI / Azure OpenAI embeddings** | Requires API key, network, billing; adds startup latency; breaks offline/dev scenarios; DI-swappable so not a replacement for the default |
 | **ONNX local model (BERT-mini/LaBSE)** | Adds 5–50MB binary + ~2s load time; overkill for default; can be added via DI later |
+| **Raw ONNX Runtime custom implementation** | Educational but heavier; implemented in `CodeMemory.AspNet.Extensions` as `BertOnnxEmbeddingGenerator` — demonstrates the full pipeline (tokenization → inference → pooling → normalization) for learning purposes |
 | **DeterministicEmbeddingGenerator** (64-dim, word-hash based, same Memori namespace) | Lower quality than n-gram; 64-dim limits downstream vector-store compatibility; 1536 maintains compatibility with standard embedding dimensions |
 | **Skip embeddings entirely (keyword-only search)** | Rejected — even crude vector search (n-gram) outperforms bag-of-words for ranking; dimension reduction would lose too much signal |
