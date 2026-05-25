@@ -244,6 +244,7 @@ builder.Services.AddSingleton<NotificationService>();
 var app = builder.Build();
 
 app.MapDefaultEndpoints();
+app.MapPrometheusScrapingEndpoint();
 app.UseCors();
 app.MapRazorPages();
 
