@@ -12,7 +12,7 @@ Engineering constraints and implementation guidance for AI coding agents contrib
 
 Do not reinvent infrastructure. Prefer existing .NET and ecosystem primitives over custom solutions.
 
-Forbidden: custom LLM clients, custom embedding pipelines (use `IEmbeddingGenerator` — reference implementation in Memori NuGet), custom DI, custom vector DBs, custom chat orchestration.
+Forbidden: custom LLM clients, custom embedding pipelines (use `IEmbeddingGenerator` — reference implementations in Memori NuGet and `CodeMemory.AspNet.Extensions`), custom DI, custom vector DBs, custom chat orchestration.
 
 CodeMemory is NOT: an IDE, a chat assistant, a code generator, or a standalone AI agent runtime. It IS: a repository intelligence and memory substrate exposed via MCP.
 
@@ -87,7 +87,9 @@ or when still indexing:
 
 ## Embedding Limitations & Agent Expectations
 
-code-memory MCP configured for this repo, defaults to the `NgramEmbeddingGenerator` (see [ADR Library-Embeddings-01](docs/adr/Library-Embeddings-01.md)) — a **deterministic character n-gram embedding** that requires no ML model, no API keys, and zero startup cost. It is consistent across processes and sessions. However, it is **not true semantic search**.
+code-memory MCP configured for this repo defaults to the `NgramEmbeddingGenerator` (see [ADR Library-Embeddings-01](docs/adr/Library-Embeddings-01.md)) — a **deterministic character n-gram embedding** that requires no ML model, no API keys, and zero startup cost. It is consistent across processes and sessions. However, it is **not true semantic search**.
+
+> AspNet host supports alternative embedding backends (`"onnx"`, `"ollama"`) that provide true semantic search — see `appsettings.json:Embedding:Provider` and [`CodeMemory.AspNet.Extensions`](ARCHITECTURE.md#embedding-providers).
 
 **Agents using `semantic_search` or `sql_query` with `ORDER BY SIMILARITY` / `VECTOR_SEARCH` must follow these rules:**
 
