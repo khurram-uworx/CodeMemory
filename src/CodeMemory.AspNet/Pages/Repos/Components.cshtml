@@ -1,13 +1,14 @@
-@page "/Repos/{name}"
-@model CodeMemory.AspNet.Pages.Repos.DetailModel
+@page "/Repos/{name}/Components"
+@model CodeMemory.AspNet.Pages.Repos.ComponentsModel
 @{
-    ViewData["Title"] = Model.Repo?.Name ?? "Repo Detail";
+    ViewData["Title"] = Model.Repo?.Name ?? "Components";
 }
 
 <nav aria-label="breadcrumb">
     <ol class="breadcrumb">
         <li class="breadcrumb-item"><a asp-page="/Index">Repos</a></li>
-        <li class="breadcrumb-item active">@Model.Repo?.Name</li>
+        <li class="breadcrumb-item"><a asp-page="/Repos/Components" asp-route-name="@Model.Repo?.Name">@Model.Repo?.Name</a></li>
+        <li class="breadcrumb-item active">Components</li>
     </ol>
 </nav>
 
@@ -20,9 +21,14 @@
 
 <div class="d-flex justify-content-between align-items-center mb-3">
     <h1>@Model.Repo?.Name</h1>
-    <a asp-page="/Index" class="btn btn-secondary">
-        <i class="bi bi-arrow-left"></i> Back
-    </a>
+    <div>
+        <a asp-page="/Repos/Metrics" asp-route-name="@Model.Repo?.Name" class="btn btn-outline-warning me-2">
+            📊 Metrics
+        </a>
+        <a asp-page="/Index" class="btn btn-secondary">
+            <i class="bi bi-arrow-left"></i> Back
+        </a>
+    </div>
 </div>
 
 @if (Model.NotFoundMessage is not null)

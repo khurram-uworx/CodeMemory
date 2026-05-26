@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace CodeMemory.AspNet.Pages.Repos;
 
-public sealed class DetailModel : PageModel
+public sealed class ComponentsModel : PageModel
 {
     public sealed record ComponentRow(
         string BuildFilePath,
@@ -23,7 +23,7 @@ public sealed class DetailModel : PageModel
     public string? NotFoundMessage { get; private set; }
     public List<ComponentRow> Components { get; private set; } = [];
 
-    public DetailModel(RepoRegistryService registry, IDbContextFactory<RepoRegistryDbContext> dbFactory)
+    public ComponentsModel(RepoRegistryService registry, IDbContextFactory<RepoRegistryDbContext> dbFactory)
         => (this.registry, this.dbFactory) = (registry, dbFactory);
 
     async Task loadComponentsAsync(int repoId)

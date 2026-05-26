@@ -288,9 +288,30 @@ public sealed class StorageService : IStorageService, IDisposable
             var dbPath = vectorStore.GetType().GetField("_connectionString", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)?.GetValue(vectorStore) as string;
             if (!string.IsNullOrEmpty(dbPath))
             {
-                var filePath = dbPath!.Replace("Data Source=", "");
-                if (File.Exists(filePath))
-                    File.Delete(filePath);
+                var builder = new System.Data.Common.DbConnectionStringBuilder
+                {
+                    ConnectionString = dbPath
+                };
+                if (builder.TryGetValue("Data Source", out var dataSource))
+                {
+                    var filePath = dataSource?.ToString();
+                    if (!string.IsNullOrEmpty(filePath) && filePath != ":memory:")
+                    {
+                        for (var retry = 0; retry < 3; retry++)
+                        {
+                            try
+                            {
+                                if (File.Exists(filePath))
+                                    File.Delete(filePath);
+                                break;
+                            }
+                            catch (IOException) when (retry < 2)
+                            {
+                                Thread.Sleep(200 * (retry + 1));
+                            }
+                        }
+                    }
+                }
             }
             symbols = null;
             chunks = null;

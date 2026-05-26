@@ -1,0 +1,451 @@
+@page "/Repos/{name}/Metrics"
+@model CodeMemory.AspNet.Pages.Repos.MetricsModel
+@using System.Text.Json
+@using System.Text.Json.Serialization
+@{
+    ViewData["Title"] = Model.Repo?.Name ?? "Metrics";
+    var json = new JsonSerializerOptions
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+    };
+}
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a asp-page="/Index">Repos</a></li>
+        <li class="breadcrumb-item"><a asp-page="/Repos/Components" asp-route-name="@Model.Repo?.Name">@Model.Repo?.Name</a></li>
+        <li class="breadcrumb-item active">Metrics</li>
+    </ol>
+</nav>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1>@Model.Repo?.Name<span class="text-muted fs-4 ms-2">Metrics</span></h1>
+    <div>
+        <a asp-page="/Repos/Components" asp-route-name="@Model.Repo?.Name" class="btn btn-outline-info me-2">
+            <i class="bi bi-boxes"></i> Components
+        </a>
+        <a asp-page="/Index" class="btn btn-secondary">
+            <i class="bi bi-arrow-left"></i> Back
+        </a>
+    </div>
+</div>
+
+@if (Model.NotFoundMessage is not null)
+{
+    <div class="alert alert-warning">@Model.NotFoundMessage</div>
+}
+else if (Model.ErrorMessage is not null)
+{
+    <div class="alert alert-warning">
+        <h5 class="alert-heading"><i class="bi bi-exclamation-triangle"></i> Metrics Unavailable</h5>
+        <p class="mb-0">@Model.ErrorMessage</p>
+    </div>
+}
+else if (Model.Metrics is null)
+{
+    <div class="alert alert-info">No metrics data available.</div>
+}
+else
+{
+    var m = Model.Metrics;
+    var hasSymbols = m.Overview.TotalSymbols > 0;
+
+    @* ── 1. Overview Cards ───────────────────────────────────── *@
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-md-3 col-xl mb-3">
+            <div class="card text-bg-dark h-100">
+                <div class="card-body text-center">
+                    <div class="fs-1 fw-bold">@m.Overview.TotalSymbols.ToString("N0")</div>
+                    <div class="small text-secondary">Total Symbols</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3 col-xl mb-3">
+            <div class="card text-bg-dark h-100">
+                <div class="card-body text-center">
+                    <div class="fs-1 fw-bold">@m.Overview.TotalFiles.ToString("N0")</div>
+                    <div class="small text-secondary">Files</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3 col-xl mb-3">
+            <div class="card text-bg-dark h-100">
+                <div class="card-body text-center">
+                    <div class="fs-1 fw-bold text-info">@m.Overview.Classes.ToString("N0")</div>
+                    <div class="small text-secondary">Classes</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3 col-xl mb-3">
+            <div class="card text-bg-dark h-100">
+                <div class="card-body text-center">
+                    <div class="fs-1 fw-bold text-success">@m.Overview.Methods.ToString("N0")</div>
+                    <div class="small text-secondary">Methods</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3 col-xl mb-3">
+            <div class="card text-bg-dark h-100">
+                <div class="card-body text-center">
+                    <div class="fs-1 fw-bold text-warning">@m.Overview.Interfaces.ToString("N0")</div>
+                    <div class="small text-secondary">Interfaces</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3 col-xl mb-3">
+            <div class="card text-bg-dark h-100">
+                <div class="card-body text-center">
+                    <div class="fs-1 fw-bold text-primary">@m.Overview.Properties.ToString("N0")</div>
+                    <div class="small text-secondary">Properties</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3 col-xl mb-3">
+            <div class="card text-bg-dark h-100">
+                <div class="card-body text-center">
+                    <div class="fs-1 fw-bold text-secondary">@m.Overview.Fields.ToString("N0")</div>
+                    <div class="small text-secondary">Fields</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3 col-xl mb-3">
+            <div class="card text-bg-dark h-100">
+                <div class="card-body text-center">
+                    <div class="fs-1 fw-bold text-danger">@m.Overview.TotalRelationships.ToString("N0")</div>
+                    <div class="small text-secondary">Relationships</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    if (hasSymbols)
+    {
+        @* ── 2. Symbol Kind Distribution ─────────────────────── *@
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h4 class="mb-0">Symbol Kind Distribution</h4>
+                <span class="badge bg-secondary">@m.Overview.TotalSymbols.ToString("N0") total</span>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-lg-8">
+                        <canvas id="kindChart" height="250"></canvas>
+                    </div>
+                    <div class="col-lg-4">
+                        <table class="table table-sm table-borderless mb-0">
+                            <thead>
+                                <tr><th>Kind</th><th class="text-end">Count</th><th class="text-end">%</th></tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var k in m.SymbolKindDistribution)
+                                {
+                                    var pct = (double)k.Count / m.Overview.TotalSymbols * 100;
+                                    <tr>
+                                        <td>@k.Kind</td>
+                                        <td class="text-end">@k.Count.ToString("N0")</td>
+                                        <td class="text-end text-muted">@pct.ToString("F1")%</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        @* ── 3. Method Complexity ────────────────────────────── *@
+        <div class="card mb-4">
+            <div class="card-header">
+                <h4 class="mb-0">Method Complexity</h4>
+            </div>
+            <div class="card-body">
+                <div class="row g-3 mb-3">
+                    <div class="col-md-4">
+                        <div class="card text-bg-dark">
+                            <div class="card-body text-center py-3">
+                                <div class="fs-2 fw-bold text-warning">@m.Complexity.AverageLinesPerMethod.ToString("F1")</div>
+                                <div class="small text-secondary">Avg Lines per Method</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-8">
+                        <canvas id="histogramChart" height="200"></canvas>
+                    </div>
+                </div>
+
+                @if (m.Complexity.LongestMethods.Count > 0)
+                {
+                    <h5 class="mt-3">Longest Methods</h5>
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle table-sm">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th>#</th>
+                                    <th>Method</th>
+                                    <th>File</th>
+                                    <th class="text-end">Lines</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @for (var i = 0; i < m.Complexity.LongestMethods.Count; i++)
+                                {
+                                    var entry = m.Complexity.LongestMethods[i];
+                                    <tr>
+                                        <td class="text-muted">@(i + 1)</td>
+                                        <td><code>@entry.FullName</code></td>
+                                        <td><code>@entry.FilePath</code></td>
+                                        <td class="text-end fw-semibold">@entry.Lines.ToString("N0")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </div>
+
+        @* ── 4. Coupling Analysis ────────────────────────────── *@
+        <div class="card mb-4">
+            <div class="card-header">
+                <h4 class="mb-0">Coupling Analysis</h4>
+            </div>
+            <div class="card-body">
+                <div class="row g-4">
+                    <div class="col-md-6">
+                        <h5><span class="badge bg-warning text-dark me-1">⬆</span> Most Coupled</h5>
+                        <p class="text-muted small">Symbols with the most outgoing relationships (depend on many others)</p>
+                        @if (m.Coupling.MostCoupled.Count > 0)
+                        {
+                            <div class="table-responsive">
+                                <table class="table table-hover align-middle table-sm">
+                                    <thead class="table-dark">
+                                        <tr><th>#</th><th>Symbol</th><th>Kind</th><th class="text-end">Outbound</th></tr>
+                                    </thead>
+                                    <tbody>
+                                        @for (var i = 0; i < m.Coupling.MostCoupled.Count; i++)
+                                        {
+                                            var c = m.Coupling.MostCoupled[i];
+                                            <tr>
+                                                <td class="text-muted">@(i + 1)</td>
+                                                <td><code>@c.FullName</code></td>
+                                                <td>@c.Kind</td>
+                                                <td class="text-end fw-semibold">@c.Count.ToString("N0")</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="text-muted small">No relationship data.</div>
+                        }
+                    </div>
+                    <div class="col-md-6">
+                        <h5><span class="badge bg-success me-1">⬇</span> Most Important</h5>
+                        <p class="text-muted small">Symbols with the most incoming relationships (depended on by many)</p>
+                        @if (m.Coupling.MostImportant.Count > 0)
+                        {
+                            <div class="table-responsive">
+                                <table class="table table-hover align-middle table-sm">
+                                    <thead class="table-dark">
+                                        <tr><th>#</th><th>Symbol</th><th>Kind</th><th class="text-end">Inbound</th></tr>
+                                    </thead>
+                                    <tbody>
+                                        @for (var i = 0; i < m.Coupling.MostImportant.Count; i++)
+                                        {
+                                            var c = m.Coupling.MostImportant[i];
+                                            <tr>
+                                                <td class="text-muted">@(i + 1)</td>
+                                                <td><code>@c.FullName</code></td>
+                                                <td>@c.Kind</td>
+                                                <td class="text-end fw-semibold">@c.Count.ToString("N0")</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="text-muted small">No relationship data.</div>
+                        }
+                    </div>
+                </div>
+
+                @if (m.Coupling.RelationshipTypeDistribution.Count > 0)
+                {
+                    <hr />
+                    <h5>Relationship Type Distribution</h5>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <canvas id="relTypeChart" height="250"></canvas>
+                        </div>
+                        <div class="col-md-6">
+                            <table class="table table-sm table-borderless mb-0">
+                                <thead>
+                                    <tr><th>Type</th><th class="text-end">Count</th><th class="text-end">%</th></tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var r in m.Coupling.RelationshipTypeDistribution)
+                                    {
+                                        var pct = (double)r.Count / m.Overview.TotalRelationships * 100;
+                                        <tr>
+                                            <td>@r.Type</td>
+                                            <td class="text-end">@r.Count.ToString("N0")</td>
+                                            <td class="text-end text-muted">@pct.ToString("F1")%</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+
+        @* ── 5. Top Files by Symbol Count ────────────────────── *@
+        <div class="card mb-4">
+            <div class="card-header">
+                <h4 class="mb-0">Top Files by Symbol Count</h4>
+            </div>
+            <div class="card-body">
+                @if (m.TopFilesBySymbols.Count > 0)
+                {
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle table-sm">
+                            <thead class="table-dark">
+                                <tr><th>#</th><th>File</th><th class="text-end">Symbols</th><th style="width:40%;"></th></tr>
+                            </thead>
+                            <tbody>
+                                @{
+                                    var maxFileCount = m.TopFilesBySymbols.Max(x => x.Count);
+                                }
+                                @for (var i = 0; i < m.TopFilesBySymbols.Count; i++)
+                                {
+                                    var f = m.TopFilesBySymbols[i];
+                                    var pct = (double)f.Count / maxFileCount * 100;
+                                    <tr>
+                                        <td class="text-muted">@(i + 1)</td>
+                                        <td><code>@f.FilePath</code></td>
+                                        <td class="text-end fw-semibold">@f.Count.ToString("N0")</td>
+                                        <td>
+                                            <div class="progress" style="height:12px;" role="progressbar" aria-valuenow="@pct" aria-valuemin="0" aria-valuemax="100">
+                                                <div class="progress-bar progress-bar-striped" style="width: @pct%"></div>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+                else
+                {
+                    <div class="text-muted">No symbols indexed.</div>
+                }
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="alert alert-info">
+            <h5 class="alert-heading"><i class="bi bi-database"></i> No symbols indexed yet</h5>
+            <p class="mb-0">This repository has been indexed but no symbols were found. Check if the repository contains code files with supported languages (C#, TypeScript, JavaScript, Java, Python, Go, Rust, etc.).</p>
+        </div>
+    }
+}
+
+@section Scripts
+{
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <script>
+        (function () {
+            const colors = [
+                '#0d6efd', '#6610f2', '#6f42c1', '#d63384', '#dc3545',
+                '#fd7e14', '#ffc107', '#198754', '#20c997', '#0dcaf0',
+                '#adb5bd', '#495057', '#6c757d', '#343a40', '#0d6efd'
+            ];
+
+            @if (Model.Metrics?.SymbolKindDistribution.Count > 0)
+            {
+                @:const kindLabels = @Html.Raw(JsonSerializer.Serialize(Model.Metrics.SymbolKindDistribution.Select(x => x.Kind), json));
+                @:const kindCounts = @Html.Raw(JsonSerializer.Serialize(Model.Metrics.SymbolKindDistribution.Select(x => x.Count), json));
+                @:new Chart(document.getElementById('kindChart'), {
+                @:    type: 'bar',
+                @:    data: {
+                @:        labels: kindLabels,
+                @:        datasets: [{
+                @:            label: 'Symbols',
+                @:            data: kindCounts,
+                @:            backgroundColor: colors.slice(0, kindLabels.length),
+                @:            borderRadius: 4
+                @:        }]
+                @:    },
+                @:    options: {
+                @:        responsive: true,
+                @:        maintainAspectRatio: false,
+                @:        plugins: { legend: { display: false } },
+                @:        scales: {
+                @:            y: { beginAtZero: true, ticks: { precision: 0 } },
+                @:            x: { grid: { display: false } }
+                @:        }
+                @:    }
+                @:});
+            }
+
+            @if (Model.Metrics?.Complexity.MethodSizeHistogram.Count > 0)
+            {
+                @:const histLabels = @Html.Raw(JsonSerializer.Serialize(Model.Metrics.Complexity.MethodSizeHistogram.Select(x => x.Label), json));
+                @:const histCounts = @Html.Raw(JsonSerializer.Serialize(Model.Metrics.Complexity.MethodSizeHistogram.Select(x => x.Count), json));
+                @:new Chart(document.getElementById('histogramChart'), {
+                @:    type: 'bar',
+                @:    data: {
+                @:        labels: histLabels,
+                @:        datasets: [{
+                @:            label: 'Methods',
+                @:            data: histCounts,
+                @:            backgroundColor: '#0d6efd',
+                @:            borderRadius: 4
+                @:        }]
+                @:    },
+                @:    options: {
+                @:        responsive: true,
+                @:        maintainAspectRatio: false,
+                @:        plugins: { legend: { display: false } },
+                @:        scales: {
+                @:            y: { beginAtZero: true, ticks: { precision: 0 } },
+                @:            x: { grid: { display: false } }
+                @:        }
+                @:    }
+                @:});
+            }
+
+            @if (Model.Metrics?.Coupling.RelationshipTypeDistribution.Count > 0)
+            {
+                @:const relLabels = @Html.Raw(JsonSerializer.Serialize(Model.Metrics.Coupling.RelationshipTypeDistribution.Select(x => x.Type), json));
+                @:const relCounts = @Html.Raw(JsonSerializer.Serialize(Model.Metrics.Coupling.RelationshipTypeDistribution.Select(x => x.Count), json));
+                @:new Chart(document.getElementById('relTypeChart'), {
+                @:    type: 'doughnut',
+                @:    data: {
+                @:        labels: relLabels,
+                @:        datasets: [{
+                @:            data: relCounts,
+                @:            backgroundColor: colors.slice(0, relLabels.length),
+                @:            borderWidth: 2,
+                @:            borderColor: '#212529'
+                @:        }]
+                @:    },
+                @:    options: {
+                @:        responsive: true,
+                @:        maintainAspectRatio: false,
+                @:        plugins: {
+                @:            legend: { position: 'bottom', labels: { padding: 16 } }
+                @:        }
+                @:    }
+                @:});
+            }
+        })();
+    </script>
+}

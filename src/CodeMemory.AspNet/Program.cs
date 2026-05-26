@@ -95,6 +95,9 @@ builder.Services.AddSingleton<ISemanticSearchService, SemanticSearchService>();
 builder.Services.AddSingleton<SymbolQueryService>();
 builder.Services.AddSingleton<RelationshipQueryService>();
 
+// Metrics service
+builder.Services.AddSingleton<MetricsService>();
+
 // Component resolution (build-file-first, directory fallback)
 builder.Services.AddSingleton<ProjectFileDetector>();
 builder.Services.AddSingleton<IComponentResolver, ComponentResolver>();
@@ -170,7 +173,7 @@ builder.Services.AddSingleton<StorageFactory>(sp =>
         {
             var memoryPath = Path.Combine(repoPath, ".codememory");
             Directory.CreateDirectory(memoryPath);
-            var connString = $"Data Source={Path.Combine(memoryPath, "sqlvec.db")}";
+            var connString = $"Data Source={Path.Combine(memoryPath, "sqlvec.db")};Cache=Shared";
             return CodeMemory.AspNet.Storage.ServiceCollectionExtensions.createSqliteStorage(
                 repoPath, repoId, connString, registryDbFactory,
                 loggerFactory.CreateLogger<HybridStorageService>(), embeddingGenerator);

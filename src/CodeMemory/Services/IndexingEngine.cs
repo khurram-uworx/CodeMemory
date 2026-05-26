@@ -238,7 +238,7 @@ public sealed class IndexingEngine
 
         if (allSymbolRecords.Count > 0)
         {
-            var stopwatch = new Stopwatch();
+            var stopwatch = Stopwatch.StartNew();
             await storage.StoreSymbolsAsync(allSymbolRecords, ct);
             logger.LogInformation("Stored {Count} symbol records, took {Elapsed}",
                 allSymbolRecords.Count, stopwatch.Elapsed);
@@ -258,7 +258,7 @@ public sealed class IndexingEngine
 
             if (allRelationships.Count > 0)
             {
-                var stopWatch = new Stopwatch();
+                var stopWatch = Stopwatch.StartNew();
                 await storage.StoreRelationshipsAsync(
                     allRelationships.Select(r => mapToRelationshipRecord(r, fullNameToGuid)).ToList(), ct);
                 logger.LogInformation("Stored {Count} relationship records, took {Elapsed}",

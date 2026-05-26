@@ -81,8 +81,11 @@
                     <td class="repo-last-indexed">@(repo.LastIndexedAt?.ToString("g") ?? "—")</td>
                     <td><code>/api/mcp/@repo.Name</code></td>
                     <td>
-                        <a asp-page="/Repos/Detail" asp-route-name="@repo.Name" class="btn btn-sm btn-outline-info" title="Components">
+                        <a asp-page="/Repos/Components" asp-route-name="@repo.Name" class="btn btn-sm btn-outline-info" title="Components">
                             <i class="bi bi-boxes"></i>
+                        </a>
+                        <a asp-page="/Repos/Metrics" asp-route-name="@repo.Name" class="btn btn-sm btn-outline-warning" title="Metrics">
+                            📊
                         </a>
                         <form method="post" asp-page-handler="Reindex" class="d-inline">
                             <input type="hidden" name="name" value="@repo.Name" />

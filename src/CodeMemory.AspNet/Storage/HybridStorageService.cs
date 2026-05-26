@@ -1,5 +1,6 @@
 using CodeMemory.AspNet.Registry;
 using CodeMemory.Storage;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.VectorData;
@@ -253,6 +254,18 @@ public sealed class HybridStorageService : IStorageService, IDisposable
         await using var db = createDbContext();
         await db.Database.EnsureCreatedAsync(ct);
         await ensureRelationalTablesAsync(db, ct);
+
+        var conn = db.Database.GetDbConnection();
+        if (conn.State != System.Data.ConnectionState.Open)
+            await conn.OpenAsync(ct);
+
+        // SQLite-specific PRAGMA tuning — skip for SQL Server, PostgreSQL, etc.
+        if (db.Database.ProviderName?.Contains("Sqlite", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            await using var pragmaCmd = conn.CreateCommand();
+            pragmaCmd.CommandText = "PRAGMA journal_mode=WAL; PRAGMA busy_timeout = 5000;";
+            await pragmaCmd.ExecuteNonQueryAsync(ct);
+        }
 
         initialized = true;
     }
@@ -539,6 +552,14 @@ public sealed class HybridStorageService : IStorageService, IDisposable
         await using var db = createDbContext();
         await dropTableIfExistsAsync(db, "relationships", ct);
         await dropTableIfExistsAsync(db, "symbols", ct);
+
+        // Release pooled SQLite handles so the db file can be deleted if needed
+        var connString = db.Database.GetConnectionString();
+        if (!string.IsNullOrEmpty(connString) && connString.Contains("sqlvec.db"))
+        {
+            using var clearConn = new SqliteConnection(connString);
+            SqliteConnection.ClearPool(clearConn);
+        }
 
         chunks = null;
         initialized = false;

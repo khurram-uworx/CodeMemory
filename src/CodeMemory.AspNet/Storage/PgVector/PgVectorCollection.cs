@@ -162,7 +162,7 @@ sealed class PgVectorCollection<TKey, TRecord> : VectorStoreCollection<TKey, TRe
         // so that the 'vector' type is resolved for the CREATE TABLE below.
         await using (var extCmd = new NpgsqlCommand("CREATE EXTENSION IF NOT EXISTS vector", conn))
             await extCmd.ExecuteNonQueryAsync(ct);
-        conn.ReloadTypes();
+        dataSource.ReloadTypes();
 
         // Create schema if it doesn't exist (e.g. "test" schema during integration tests).
         // Catch duplicate-key race from concurrent connections.

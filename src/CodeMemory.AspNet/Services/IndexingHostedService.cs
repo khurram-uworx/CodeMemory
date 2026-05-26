@@ -79,6 +79,9 @@ public sealed class IndexingHostedService : BackgroundService
 
                     await UpdateCloneStatusAsync(dbFactory, repo.Name, "Cloning", ct: repoCt);
 
+                    // Stale directory from prior deletion may exist; remove it so clone succeeds
+                    DirectoryHelper.ForceDelete(repo.LocalPath);
+
                     var psi = new ProcessStartInfo("git")
                     {
                         Arguments = string.IsNullOrEmpty(repo.Branch)

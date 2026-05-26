@@ -6,10 +6,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.VectorData;
-using Microsoft.SemanticKernel.Connectors.PgVector;
 using Microsoft.SemanticKernel.Connectors.SqliteVec;
 using Microsoft.SemanticKernel.Connectors.SqlServer;
-using Npgsql;
 
 namespace CodeMemory.AspNet.Storage;
 
@@ -103,21 +101,7 @@ public static class ServiceCollectionExtensions
         IEmbeddingGenerator<string, Embedding<float>>? embeddingGenerator = null,
         int configuredDimension = 1536)
     {
-        var dataSourceBuilder = new NpgsqlDataSourceBuilder(connectionString);
-        dataSourceBuilder.UseVector();
-        var dataSource = dataSourceBuilder.Build();
-
-        // Ensure the per-repo schema exists
-        using (var conn = dataSource.CreateConnection())
-        {
-            conn.Open();
-            using var cmd = conn.CreateCommand();
-            cmd.CommandText = $"CREATE SCHEMA IF NOT EXISTS \"{schema}\"";
-            cmd.ExecuteNonQuery();
-        }
-
-        var options = new PostgresVectorStoreOptions { Schema = schema };
-        var store = new PostgresVectorStore(dataSource, ownsDataSource: true, options);
+        var store = new PgVectorStore(connectionString, new PgVectorOptions { Schema = schema });
         return new HybridStorageService(
             repoRoot,
             registeredRepoId,
@@ -205,7 +189,7 @@ public static class ServiceCollectionExtensions
             var memoryPath = Path.Combine(repoRoot, ".codememory");
             Directory.CreateDirectory(memoryPath);
 
-            var sqliteConnectionString = $"Data Source={Path.Combine(memoryPath, "sqlvec.db")}";
+            var sqliteConnectionString = $"Data Source={Path.Combine(memoryPath, "sqlvec.db")};Cache=Shared";
             storageService = createSqliteStorage(
                 repoRoot, registeredRepoId, sqliteConnectionString, registryDbFactory!,
                 loggerFactory.CreateLogger<HybridStorageService>(), embeddingGenerator);

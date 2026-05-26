@@ -10,6 +10,17 @@ using System.Diagnostics;
 
 namespace CodeMemory.AspNet.Services;
 
+static class DirectoryHelper
+{
+    public static void ForceDelete(string path)
+    {
+        if (!Directory.Exists(path)) return;
+        foreach (var file in Directory.GetFiles(path, "*", SearchOption.AllDirectories))
+            File.SetAttributes(file, FileAttributes.Normal);
+        Directory.Delete(path, recursive: true);
+    }
+}
+
 public sealed class CloneIndexService
 {
     readonly IDbContextFactory<RepoRegistryDbContext> contextFactory;
@@ -75,6 +86,9 @@ public sealed class CloneIndexService
                     await UpdateCloneStatusAsync(repoName, "Cloning");
 
                     using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(registryOptions.CloneTimeoutSeconds));
+
+                    // Stale directory from prior deletion may exist; remove it so clone succeeds
+                    DirectoryHelper.ForceDelete(clonePath);
 
                     var psi = new ProcessStartInfo("git")
                     {
@@ -167,9 +181,9 @@ public sealed class CloneIndexService
 
         storageRegistry.Unregister(repoName);
 
-        if (Directory.Exists(repo.LocalPath) && !string.IsNullOrEmpty(repo.GitUrl))
+        if (!string.IsNullOrEmpty(repo.GitUrl))
         {
-            try { Directory.Delete(repo.LocalPath, recursive: true); }
+            try { DirectoryHelper.ForceDelete(repo.LocalPath); }
             catch (Exception ex) { logger.LogWarning(ex, "Failed to delete cloned directory for '{Repo}'", repoName); }
         }
 
