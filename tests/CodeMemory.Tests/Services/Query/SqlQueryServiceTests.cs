@@ -947,6 +947,55 @@ public sealed class SqlQueryServiceTests
     }
 
     [Test]
+    public async Task IntersectQuery_Works()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT Name FROM SymbolRecord WHERE Kind = 'Class' INTERSECT SELECT Name FROM SymbolRecord WHERE Modifiers LIKE '%public%'");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(1));
+        Assert.That(result.Rows![0]["Name"], Is.EqualTo("MyClass"));
+    }
+
+    [Test]
+    public async Task ExceptQuery_Works()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT Name FROM SymbolRecord WHERE Kind = 'Class' EXCEPT SELECT Name FROM SymbolRecord WHERE Modifiers LIKE '%public%'");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(1));
+        Assert.That(result.Rows![0]["Name"], Is.EqualTo("Helper"));
+    }
+
+    [Test]
+    public async Task WhereInSubquery_ReturnsMatchingRows()
+    {
+        var (store, registry, service) = createServices();
+        var sym = store.GetCollection<string, SymbolRecord>("symbols");
+        await sym.UpsertAsync(new SymbolRecord { Id = "s:Helper", Name = "Helper", Kind = "Class", FilePath = "/src/Helper.cs", FullName = "Helper", LineStart = 1, LineEnd = 50, Modifiers = "internal" });
+        await sym.UpsertAsync(new SymbolRecord { Id = "s:IOld", Name = "IOld", Kind = "Interface", FilePath = "/src/IOld.cs", FullName = "IOld", LineStart = 1, LineEnd = 10, Modifiers = "public" });
+        await sym.UpsertAsync(new SymbolRecord { Id = "s:Other", Name = "Other", Kind = "Class", FilePath = "/src/Other.cs", FullName = "Other", LineStart = 1, LineEnd = 20, Modifiers = "public" });
+        var rel = store.GetCollection<string, RelationshipRecord>("relationships");
+        await rel.UpsertAsync(new RelationshipRecord { Id = "r:ref1", SourceSymbolId = "s:IOld", TargetSymbolId = "s:Helper", RelationshipType = "References" });
+        await rel.UpsertAsync(new RelationshipRecord { Id = "r:ref2", SourceSymbolId = "s:Helper", TargetSymbolId = "s:Other", RelationshipType = "References" });
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT Name FROM SymbolRecord WHERE Id IN (SELECT SourceSymbolId FROM RelationshipRecord) ORDER BY Name");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(2));
+        Assert.That(result.Rows![0]["Name"], Is.EqualTo("Helper"));
+        Assert.That(result.Rows[1]["Name"], Is.EqualTo("IOld"));
+    }
+
+    [Test]
     public async Task CaseExpression_EvaluatesSearchedCase()
     {
         var (store, registry, service) = createServices();
@@ -1766,5 +1815,60 @@ public sealed class SqlQueryServiceTests
         Assert.That(result.RowCount, Is.EqualTo(1));
         Assert.That(Convert.ToDouble(result.Rows![0]["doubled"]), Is.EqualTo(20.0));
         Assert.That(Convert.ToDouble(result.Rows[0]["halved"]), Is.EqualTo(5.0));
+    }
+
+    [Test]
+    public async Task GroupBy_LargeCardinality_Over10kGroups_ReturnsCorrectCounts()
+    {
+        var (store, registry, service) = createServices();
+        var coll = store.GetCollection<string, SymbolRecord>("symbols");
+        int groupCount = 10_001;
+        int recordsPerGroup = 3;
+        for (int g = 0; g < groupCount; g++)
+        {
+            for (int r = 0; r < recordsPerGroup; r++)
+            {
+                await coll.UpsertAsync(new SymbolRecord
+                {
+                    Id = $"s:g{g}_r{r}",
+                    Name = $"Item{g}",
+                    Kind = "Class",
+                    FilePath = $"/src/group{g}.cs",
+                    FullName = $"Group{g}",
+                    LineStart = g,
+                    LineEnd = g + 10,
+                    Modifiers = "public"
+                });
+            }
+        }
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT FilePath, COUNT(*) AS cnt FROM SymbolRecord GROUP BY FilePath ORDER BY FilePath",
+            maxResults: groupCount);
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(groupCount));
+        foreach (var row in result.Rows!)
+        {
+            Assert.That((long)row["cnt"]!, Is.EqualTo(recordsPerGroup));
+            Assert.That(row["FilePath"], Does.StartWith("/src/group"));
+        }
+    }
+
+    [Test]
+    public async Task ExecuteAsync_ConcurrentQueries_AllSucceed()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+        int concurrency = 20;
+
+        var tasks = Enumerable.Range(0, concurrency).Select(_ =>
+            service.ExecuteAsync(store, "SELECT Name, Kind FROM SymbolRecord WHERE Kind = 'Class' ORDER BY Name"));
+
+        var results = await Task.WhenAll(tasks);
+
+        Assert.That(results, Has.All.Matches<SqlQueryResult>(r => r.Success));
+        foreach (var r in results)
+            Assert.That(r.RowCount, Is.EqualTo(2));
     }
 }
