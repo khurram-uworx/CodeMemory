@@ -21,7 +21,7 @@ public sealed class AspNetMcpTools
         CodeMemoryMetrics.ToolInvocations.Add(1, new("tool", "ping"), new("host", "aspnet"));
         var repoName = repoContext.CurrentRepoName;
         if (repoName is null)
-            return new PingResult("ok", false, null, null, "No repo context available.");
+            return new PingResult("ok", false, null, null, "No repo context available.", IndexingState.Version);
 
         if (!IndexingState.IsCompleted(repoName))
         {
@@ -30,9 +30,11 @@ public sealed class AspNetMcpTools
                 null, repoName,
                 percent is > 0
                     ? $"Indexing in progress — {percent * 100:F0}% complete"
-                    : "Indexing in progress. Retry tools in a few seconds.");
+                    : "Indexing in progress. Retry tools in a few seconds.",
+                IndexingState.Version);
         }
 
-        return new PingResult("ok", true, null, repoName);
+        return new PingResult("ok", true, null, repoName,
+            null, IndexingState.Version, IndexingState.GetRelationshipCount(repoName));
     }
 }

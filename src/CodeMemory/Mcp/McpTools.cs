@@ -23,9 +23,11 @@ public sealed class McpTools
                 null, null,
                 percent > 0
                     ? $"Indexing in progress — {percent * 100:F0}% complete"
-                    : "Indexing in progress. Retry tools in a few seconds.");
+                    : "Indexing in progress. Retry tools in a few seconds.",
+                IndexingState.Version);
         }
 
-        return new PingResult("ok", true, IndexingState.IsFileWatcherActive);
+        return new PingResult("ok", true, IndexingState.IsFileWatcherActive,
+            null, null, IndexingState.Version, IndexingState.GetRelationshipCount(null));
     }
 }

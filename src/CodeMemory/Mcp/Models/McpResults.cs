@@ -5,7 +5,9 @@ public sealed record PingResult(
     bool IndexingCompleted,
     bool? FileWatcherActive = null,
     string? Repo = null,
-    string? Message = null
+    string? Message = null,
+    string? Version = null,
+    int? RelationshipCount = null
 );
 
 public sealed record AdminRescanResult(

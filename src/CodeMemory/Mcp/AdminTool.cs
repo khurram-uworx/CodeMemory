@@ -39,9 +39,10 @@ public sealed class AdminTool
 
         using var scope = scopeFactory.CreateScope();
         var engine = scope.ServiceProvider.GetRequiredService<IndexingEngine>();
-        await engine.RunIndexingAsync(repoRoot, ct);
+        var result = await engine.RunIndexingAsync(repoRoot, ct);
 
         IndexingState.MarkCompleted(repoRoot);
+        IndexingState.StoreRelationshipCount(repoRoot, result.RelationshipCount);
 
         return new AdminRescanResult("ok", repoRoot, "Repository re-indexed successfully");
     }

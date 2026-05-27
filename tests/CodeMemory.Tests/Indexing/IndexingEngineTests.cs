@@ -82,7 +82,9 @@ public sealed class IndexingEngineTests
                 tsExtractor, tsRelExtractor,
                 chunker, storage, detector);
 
-            await engine.RunIndexingAsync(repoDir, default);
+            var result = await engine.RunIndexingAsync(repoDir, default);
+
+            Assert.That(result.RelationshipCount, Is.GreaterThan(0));
 
             var allSymbols = await storage.GetSymbolsByKindAsync("Class", 100);
             Assert.That(allSymbols, Is.Not.Empty);

@@ -22,6 +22,8 @@ var version = Assembly.GetExecutingAssembly()
     ?? Assembly.GetExecutingAssembly().GetName().Version?.ToString()
     ?? "unknown";
 
+IndexingState.SetVersion(version);
+
 if (args is ["--help"] or ["-h"] or ["--version"] or ["-v"])
 {
     Console.WriteLine($"CodeMemory MCP v{version}");
@@ -123,8 +125,9 @@ if (debugMode)
     {
         var engine = app.Services.GetRequiredService<IndexingEngine>();
         var progress = new Progress<double>(p => IndexingState.UpdateProgress(repoRoot, p));
-        await engine.RunIndexingAsync(repoRoot, CancellationToken.None, progress);
+        var result = await engine.RunIndexingAsync(repoRoot, CancellationToken.None, progress);
         IndexingState.MarkCompleted(repoRoot);
+        IndexingState.StoreRelationshipCount(repoRoot, result.RelationshipCount);
         Console.Out.WriteLine();
         Console.Out.WriteLine("=== Indexing Complete ===");
         Console.Out.WriteLine($"  Repo: {repoRoot}");
@@ -146,8 +149,9 @@ _ = Task.Run(async () =>
     {
         var engine = app.Services.GetRequiredService<IndexingEngine>();
         var progress = new Progress<double>(p => IndexingState.UpdateProgress(repoRoot, p));
-        await engine.RunIndexingAsync(repoRoot, CancellationToken.None, progress);
+        var result = await engine.RunIndexingAsync(repoRoot, CancellationToken.None, progress);
         IndexingState.MarkCompleted(repoRoot);
+        IndexingState.StoreRelationshipCount(repoRoot, result.RelationshipCount);
 
         var watcher = app.Services.GetRequiredService<FileWatcherService>();
         await watcher.StartAsync(CancellationToken.None);
