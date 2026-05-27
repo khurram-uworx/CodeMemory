@@ -1816,4 +1816,59 @@ public sealed class SqlQueryServiceTests
         Assert.That(Convert.ToDouble(result.Rows![0]["doubled"]), Is.EqualTo(20.0));
         Assert.That(Convert.ToDouble(result.Rows[0]["halved"]), Is.EqualTo(5.0));
     }
+
+    [Test]
+    public async Task GroupBy_LargeCardinality_Over10kGroups_ReturnsCorrectCounts()
+    {
+        var (store, registry, service) = createServices();
+        var coll = store.GetCollection<string, SymbolRecord>("symbols");
+        int groupCount = 10_001;
+        int recordsPerGroup = 3;
+        for (int g = 0; g < groupCount; g++)
+        {
+            for (int r = 0; r < recordsPerGroup; r++)
+            {
+                await coll.UpsertAsync(new SymbolRecord
+                {
+                    Id = $"s:g{g}_r{r}",
+                    Name = $"Item{g}",
+                    Kind = "Class",
+                    FilePath = $"/src/group{g}.cs",
+                    FullName = $"Group{g}",
+                    LineStart = g,
+                    LineEnd = g + 10,
+                    Modifiers = "public"
+                });
+            }
+        }
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT FilePath, COUNT(*) AS cnt FROM SymbolRecord GROUP BY FilePath ORDER BY FilePath",
+            maxResults: groupCount);
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(groupCount));
+        foreach (var row in result.Rows!)
+        {
+            Assert.That((long)row["cnt"]!, Is.EqualTo(recordsPerGroup));
+            Assert.That(row["FilePath"], Does.StartWith("/src/group"));
+        }
+    }
+
+    [Test]
+    public async Task ExecuteAsync_ConcurrentQueries_AllSucceed()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+        int concurrency = 20;
+
+        var tasks = Enumerable.Range(0, concurrency).Select(_ =>
+            service.ExecuteAsync(store, "SELECT Name, Kind FROM SymbolRecord WHERE Kind = 'Class' ORDER BY Name"));
+
+        var results = await Task.WhenAll(tasks);
+
+        Assert.That(results, Has.All.Matches<SqlQueryResult>(r => r.Success));
+        foreach (var r in results)
+            Assert.That(r.RowCount, Is.EqualTo(2));
+    }
 }

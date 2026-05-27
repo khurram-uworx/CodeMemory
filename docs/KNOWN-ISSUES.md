@@ -1,12 +1,3 @@
-# SQL Query — Known Issues & Limitations
-
-## Testing Gaps
-
-- ❌ No test for very large GROUP BY key cardinality (>10k groups)
-- ❌ No concurrent SQL query execution test
-- ❌ No benchmark baseline for query latency at various row counts
-- ❌ No stress test against a store with >100K records
-
 # Known Issues
 
 ---
