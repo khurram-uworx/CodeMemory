@@ -17,6 +17,7 @@ using CodeMemory.Storage;
 using Memori.Embeddings;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Caching.Memory;
 using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -83,6 +84,7 @@ var storageRegistry = new ServiceRegistry();
 builder.Services.AddSingleton<IServiceRegistry>(storageRegistry);
 builder.Services.AddSingleton<IRepoContextAccessor, RepoContextAccessor>();
 builder.Services.AddSingleton<IStorageService, StorageServiceRouter>();
+builder.Services.AddMemoryCache();
 
 builder.Services.AddScoped<IndexingEngine>();
 builder.Services.AddHostedService<IndexingHostedService>();
@@ -129,7 +131,8 @@ builder.Services.AddMcpServer()
         };
     })
     .WithToolsFromAssembly(typeof(CodeMemory.AspNet.Tools.AspNetMcpTools).Assembly)
-    .WithToolsFromAssembly(typeof(CodeMemory.Mcp.McpTools).Assembly);
+    .WithToolsFromAssembly(typeof(CodeMemory.Mcp.McpTools).Assembly)
+    .WithResourcesFromAssembly(typeof(CodeMemory.Mcp.McpTools).Assembly);
 
 // CORS — origins configured in appsettings.json:Cors:AllowedOrigins
 var corsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>();
@@ -159,6 +162,7 @@ builder.Services.AddSingleton<StorageFactory>(sp =>
     var embeddingGenerator = sp.GetRequiredService<IEmbeddingGenerator<string, Embedding<float>>>();
     var configuration = sp.GetRequiredService<IConfiguration>();
     var registryDbFactory = sp.GetRequiredService<IDbContextFactory<RepoRegistryDbContext>>();
+    var cache = sp.GetService<IMemoryCache>();
 
     return (repoName, repoPath, repoId) =>
     {
@@ -176,7 +180,7 @@ builder.Services.AddSingleton<StorageFactory>(sp =>
             var connString = $"Data Source={Path.Combine(memoryPath, "sqlvec.db")};Cache=Shared";
             return CodeMemory.AspNet.Storage.ServiceCollectionExtensions.createSqliteStorage(
                 repoPath, repoId, connString, registryDbFactory,
-                loggerFactory.CreateLogger<HybridStorageService>(), embeddingGenerator);
+                loggerFactory.CreateLogger<HybridStorageService>(), embeddingGenerator, cache: cache);
         }
 
         if (string.Equals(provider, "pgvector", StringComparison.OrdinalIgnoreCase))
@@ -187,7 +191,7 @@ builder.Services.AddSingleton<StorageFactory>(sp =>
             var schema = CodeMemory.AspNet.Storage.ServiceCollectionExtensions.sanitizeSchemaName(repoName);
             return CodeMemory.AspNet.Storage.ServiceCollectionExtensions.CreatePgVectorStorage(
                 repoPath, repoId, connString, schema, registryDbFactory,
-                loggerFactory.CreateLogger<HybridStorageService>(), embeddingGenerator);
+                loggerFactory.CreateLogger<HybridStorageService>(), embeddingGenerator, cache: cache);
         }
 
         if (string.Equals(provider, "sqlserver", StringComparison.OrdinalIgnoreCase))
@@ -198,7 +202,7 @@ builder.Services.AddSingleton<StorageFactory>(sp =>
             var schema = CodeMemory.AspNet.Storage.ServiceCollectionExtensions.sanitizeSchemaName(repoName);
             return CodeMemory.AspNet.Storage.ServiceCollectionExtensions.createSqlServerStorage(
                 repoPath, repoId, connString, schema, registryDbFactory,
-                loggerFactory.CreateLogger<HybridStorageService>(), embeddingGenerator);
+                loggerFactory.CreateLogger<HybridStorageService>(), embeddingGenerator, cache: cache);
         }
 
         throw new InvalidOperationException(

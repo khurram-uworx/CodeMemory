@@ -73,6 +73,9 @@ sealed class MockStorageService : IStorageService
     public Task<IReadOnlyList<SymbolRecord>> GetSymbolsByKindAsync(string kind, int top = 100, CancellationToken ct = default)
         => Task.FromResult<IReadOnlyList<SymbolRecord>>([]);
 
+    public Task<SymbolsByKindResult> GetSymbolsByKindWithCountAsync(string kind, int top = 100, CancellationToken ct = default)
+        => Task.FromResult(new SymbolsByKindResult([], 0));
+
     public Task<IReadOnlyList<ChunkRecord>> GetChunksBySymbolAsync(string symbolId, CancellationToken ct = default)
     {
         return Task.FromResult<IReadOnlyList<ChunkRecord>>([

@@ -233,6 +233,15 @@ public sealed class StorageService : IStorageService, IDisposable
         return await symbols!.GetAsync(filter, top, options: null, ct).ToListAsync(ct);
     }
 
+    public async Task<SymbolsByKindResult> GetSymbolsByKindWithCountAsync(
+        string kind, int top = 100, CancellationToken ct = default)
+    {
+        throwIfNotInitialized();
+        Expression<Func<SymbolRecord, bool>> filter = s => s.Kind == kind;
+        var all = await symbols!.GetAsync(filter, top: int.MaxValue, options: null, ct).ToListAsync(ct);
+        return new SymbolsByKindResult(all.Take(top).ToList(), all.Count);
+    }
+
     public async Task<IReadOnlyList<ChunkRecord>> GetChunksBySymbolAsync(
         string symbolId, CancellationToken ct = default)
     {

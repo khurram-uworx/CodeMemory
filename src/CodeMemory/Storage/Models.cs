@@ -92,3 +92,8 @@ public sealed class ChunkRecord
     [VectorStoreVector(1536, DistanceFunction = DistanceFunction.CosineDistance)]
     public ReadOnlyMemory<float>? Embedding { get; set; }
 }
+
+public sealed record SymbolsByKindResult(
+    IReadOnlyList<SymbolRecord> Symbols,
+    int TotalCount
+);

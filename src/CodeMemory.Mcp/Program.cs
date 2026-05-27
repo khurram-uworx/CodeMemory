@@ -106,7 +106,8 @@ if (!debugMode)
     builder.Services.AddMcpServer()
         .WithStdioServerTransport()
         .WithToolsFromAssembly(typeof(CodeMemory.Mcp.McpTools).Assembly)
-        .WithToolsFromAssembly(typeof(CodeMemory.Mcp.Tools.SqlQueryTool).Assembly);
+        .WithToolsFromAssembly(typeof(CodeMemory.Mcp.Tools.SqlQueryTool).Assembly)
+        .WithResourcesFromAssembly(typeof(CodeMemory.Mcp.McpTools).Assembly);
 }
 
 var app = builder.Build();

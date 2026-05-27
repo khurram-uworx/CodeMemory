@@ -29,18 +29,20 @@ public sealed class ArchitectureService : IArchitectureService
         string? path = null, int depth = 1, CancellationToken ct = default)
     {
         var allSymbols = new List<SymbolRecord>();
+        var totalSymbolsUnfiltered = 0;
 
         foreach (var kind in knownKinds)
         {
-            var symbols = await storage.GetSymbolsByKindAsync(kind, 100000, ct);
-            allSymbols.AddRange(symbols);
+            var result = await storage.GetSymbolsByKindWithCountAsync(kind, 100000, ct);
+            allSymbols.AddRange(result.Symbols);
+            totalSymbolsUnfiltered += result.TotalCount;
         }
 
         var filtered = path != null
             ? allSymbols.Where(s => s.FilePath.StartsWith(path, StringComparison.OrdinalIgnoreCase)).ToList()
             : allSymbols;
 
-        var totalSymbols = filtered.Count;
+        var totalSymbols = path != null ? filtered.Count : totalSymbolsUnfiltered;
         var distinctFiles = filtered.Select(s => s.FilePath).Distinct().ToList();
         var totalFiles = distinctFiles.Count;
 
