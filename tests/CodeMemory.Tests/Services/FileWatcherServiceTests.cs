@@ -315,7 +315,7 @@ public sealed class FileWatcherServiceTests
 
     static IStorageService CreateInMemoryStorage(string repoRoot)
     {
-        var store = new InMemoryVectorStore();
+        var store = new InMemoriVectorStore();
         return new StorageService(repoRoot, NullLogger<StorageService>.Instance, store);
     }
 

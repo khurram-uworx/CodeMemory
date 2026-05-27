@@ -13,7 +13,7 @@ namespace CodeMemory.Tests.Services.Query;
 [SimpleJob(launchCount: 1, warmupCount: 2, iterationCount: 5)]
 public class SqlQueryBenchmarks
 {
-    private InMemoryVectorStore? _store;
+    private InMemoriVectorStore? _store;
     private SqlQueryService? _service;
     private string _fullScanSql = "";
 
@@ -23,7 +23,7 @@ public class SqlQueryBenchmarks
     [GlobalSetup]
     public async Task Setup()
     {
-        var store = new InMemoryVectorStore();
+        var store = new InMemoriVectorStore();
         var registry = new CollectionRegistry();
         var embeddingGenerator = new NgramEmbeddingGenerator();
         var logger = NullLogger<SqlQueryService>.Instance;
