@@ -947,6 +947,55 @@ public sealed class SqlQueryServiceTests
     }
 
     [Test]
+    public async Task IntersectQuery_Works()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT Name FROM SymbolRecord WHERE Kind = 'Class' INTERSECT SELECT Name FROM SymbolRecord WHERE Modifiers LIKE '%public%'");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(1));
+        Assert.That(result.Rows![0]["Name"], Is.EqualTo("MyClass"));
+    }
+
+    [Test]
+    public async Task ExceptQuery_Works()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT Name FROM SymbolRecord WHERE Kind = 'Class' EXCEPT SELECT Name FROM SymbolRecord WHERE Modifiers LIKE '%public%'");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(1));
+        Assert.That(result.Rows![0]["Name"], Is.EqualTo("Helper"));
+    }
+
+    [Test]
+    public async Task WhereInSubquery_ReturnsMatchingRows()
+    {
+        var (store, registry, service) = createServices();
+        var sym = store.GetCollection<string, SymbolRecord>("symbols");
+        await sym.UpsertAsync(new SymbolRecord { Id = "s:Helper", Name = "Helper", Kind = "Class", FilePath = "/src/Helper.cs", FullName = "Helper", LineStart = 1, LineEnd = 50, Modifiers = "internal" });
+        await sym.UpsertAsync(new SymbolRecord { Id = "s:IOld", Name = "IOld", Kind = "Interface", FilePath = "/src/IOld.cs", FullName = "IOld", LineStart = 1, LineEnd = 10, Modifiers = "public" });
+        await sym.UpsertAsync(new SymbolRecord { Id = "s:Other", Name = "Other", Kind = "Class", FilePath = "/src/Other.cs", FullName = "Other", LineStart = 1, LineEnd = 20, Modifiers = "public" });
+        var rel = store.GetCollection<string, RelationshipRecord>("relationships");
+        await rel.UpsertAsync(new RelationshipRecord { Id = "r:ref1", SourceSymbolId = "s:IOld", TargetSymbolId = "s:Helper", RelationshipType = "References" });
+        await rel.UpsertAsync(new RelationshipRecord { Id = "r:ref2", SourceSymbolId = "s:Helper", TargetSymbolId = "s:Other", RelationshipType = "References" });
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT Name FROM SymbolRecord WHERE Id IN (SELECT SourceSymbolId FROM RelationshipRecord) ORDER BY Name");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(2));
+        Assert.That(result.Rows![0]["Name"], Is.EqualTo("Helper"));
+        Assert.That(result.Rows[1]["Name"], Is.EqualTo("IOld"));
+    }
+
+    [Test]
     public async Task CaseExpression_EvaluatesSearchedCase()
     {
         var (store, registry, service) = createServices();
