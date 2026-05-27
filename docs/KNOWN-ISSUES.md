@@ -4,12 +4,6 @@ Patterns that add friction, hide bugs, or waste tokens.
 
 ---
 
-## 2. `MockServices.cs` Will Not Scale
-
-Hand-written stubs for ~10 interfaces in a single 239-line file. Every interface change requires manual updates. No call verification. No per-invocation behavior customization. The stated reason ("no mocking library dependency") trades a NuGet package for ongoing maintenance cost.
-
-**Fix:** Adopt NSubstitute (already a transitive dependency through ASP.NET Core test infrastructure). Replace `MockServices.cs` with lightweight NSubstitute-based test setup methods.
-
 ## 4. `IndexingEngine` Lifetime Inconsistency
 
 - **AspNet:** `AddScoped` (wrapped in per-repo scope inside `IndexingHostedService`)

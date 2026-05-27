@@ -43,7 +43,7 @@ public sealed class ArchitectureOverviewToolTests : BaseToolTests
             {
                 b.ConfigureServices(s =>
                 {
-                    s.AddSingleton<IArchitectureService>(new MockArchitectureService());
+                    s.AddSingleton<IArchitectureService>(MockServices.CreateArchitectureService());
                 });
             });
         var client = factory.CreateClient();

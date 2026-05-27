@@ -115,7 +115,7 @@ MCP tools use three patterns — follow the one matching your return type:
 ## Testing
 
 - **Framework:** NUnit 4.x — `[Test]`, `Assert.That(...)`, `Assert.ThrowsAsync`, no `[TestCase]`
-- **Mocking:** Hand-written stubs in `MockServices.cs` — no mocking library dependency
+- **Mocking:** NSubstitute-based factory methods in `MockServices.cs` — use `MockServices.CreateXxxService()` in tests. For unique test scenarios, configure inline with `Substitute.For<IService>()` instead of extending the shared factory.
 - **Naming:** `Method_Scenario_ExpectedBehavior` PascalCase
 - **Pattern:** Arrange-Act-Aggregate (AAA, no explicit comments needed)
 - **Organization:** Mirror `src/` layout; one class per file, `*Tests.cs` suffix

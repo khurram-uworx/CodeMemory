@@ -1,9 +1,4 @@
-using CodeMemory.Indexing.Architecture;
-using CodeMemory.Indexing.Git;
-using CodeMemory.Indexing.Graph;
-using CodeMemory.Indexing.Search;
 using CodeMemory.Mcp;
-using CodeMemory.Mcp.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Text.Json;
