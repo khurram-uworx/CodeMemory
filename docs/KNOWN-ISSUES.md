@@ -10,12 +10,6 @@ Hand-written stubs for ~10 interfaces in a single 239-line file. Every interface
 
 **Fix:** Adopt NSubstitute (already a transitive dependency through ASP.NET Core test infrastructure). Replace `MockServices.cs` with lightweight NSubstitute-based test setup methods.
 
-## 3. No Error-Path Test Coverage
-
-Tests cover happy paths (storage round-trips, parsing, query results) but none verify error handling — null service guards, storage failures, invalid inputs. The Error Handling conventions documented in `AGENTS.md` are untested and will silently drift.
-
-**Fix:** Add `ErrorHandlingTests` that verifies each MCP tool's degraded/null-service behavior. Coverage target: every guard clause in every tool method.
-
 ## 4. `IndexingEngine` Lifetime Inconsistency
 
 - **AspNet:** `AddScoped` (wrapped in per-repo scope inside `IndexingHostedService`)
