@@ -5,6 +5,7 @@ using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.VectorData;
 using Microsoft.SemanticKernel.Connectors.SqliteVec;
 using Microsoft.SemanticKernel.Connectors.SqlServer;
@@ -51,7 +52,8 @@ public static class ServiceCollectionExtensions
         IDbContextFactory<RepoRegistryDbContext> registryDbFactory,
         ILogger logger,
         IEmbeddingGenerator<string, Embedding<float>>? embeddingGenerator = null,
-        int configuredDimension = 1536)
+        int configuredDimension = 1536,
+        IMemoryCache? cache = null)
     {
         var store = new SqliteVectorStore(connectionString);
         return new HybridStorageService(
@@ -62,7 +64,8 @@ public static class ServiceCollectionExtensions
             createSqliteDbContextFactory(connectionString, "main"),
             registryDbFactory,
             embeddingGenerator,
-            configuredDimension);
+            configuredDimension,
+            cache);
     }
 
     internal static IStorageService createSqlServerStorage(
@@ -73,7 +76,8 @@ public static class ServiceCollectionExtensions
         IDbContextFactory<RepoRegistryDbContext> registryDbFactory,
         ILogger logger,
         IEmbeddingGenerator<string, Embedding<float>>? embeddingGenerator = null,
-        int configuredDimension = 1536)
+        int configuredDimension = 1536,
+        IMemoryCache? cache = null)
     {
         ensureSqlServerSchemaExists(connectionString, schema);
 
@@ -87,7 +91,8 @@ public static class ServiceCollectionExtensions
             createSqlServerDbContextFactory(connectionString, schema),
             registryDbFactory,
             embeddingGenerator,
-            configuredDimension);
+            configuredDimension,
+            cache);
     }
 
     // public because of tests
@@ -99,7 +104,8 @@ public static class ServiceCollectionExtensions
         IDbContextFactory<RepoRegistryDbContext> registryDbFactory,
         ILogger logger,
         IEmbeddingGenerator<string, Embedding<float>>? embeddingGenerator = null,
-        int configuredDimension = 1536)
+        int configuredDimension = 1536,
+        IMemoryCache? cache = null)
     {
         var store = new PgVectorStore(connectionString, new PgVectorOptions { Schema = schema });
         return new HybridStorageService(
@@ -110,7 +116,8 @@ public static class ServiceCollectionExtensions
             createNpgsqlDbContextFactory(connectionString, schema),
             registryDbFactory,
             embeddingGenerator,
-            configuredDimension);
+            configuredDimension,
+            cache);
     }
 
     static Func<CodeMemoryDbContext> createNpgsqlDbContextFactory(string connectionString, string schema)

@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Running;
 using CodeMemory.Mcp.SqlQuery;
@@ -6,6 +5,7 @@ using CodeMemory.Storage;
 using Memori.Embeddings;
 using Memori.Storage;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Diagnostics;
 
 namespace CodeMemory.Tests.Services.Query;
 
