@@ -109,7 +109,8 @@ if (!debugMode)
         .WithStdioServerTransport()
         .WithToolsFromAssembly(typeof(CodeMemory.Mcp.McpTools).Assembly)
         .WithToolsFromAssembly(typeof(CodeMemory.Mcp.Tools.SqlQueryTool).Assembly)
-        .WithResourcesFromAssembly(typeof(CodeMemory.Mcp.McpTools).Assembly);
+        .WithResourcesFromAssembly(typeof(CodeMemory.Mcp.McpTools).Assembly)
+        .WithPromptsFromAssembly(typeof(CodeMemory.Mcp.McpTools).Assembly);
 }
 
 var app = builder.Build();

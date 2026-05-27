@@ -8,9 +8,9 @@ namespace CodeMemory.Tests.Services.Query;
 
 public sealed class SqlQueryServiceTests
 {
-    internal static (InMemoryVectorStore Store, CollectionRegistry Registry, SqlQueryService Service) createServices()
+    internal static (InMemoriVectorStore Store, CollectionRegistry Registry, SqlQueryService Service) createServices()
     {
-        var store = new InMemoryVectorStore();
+        var store = new InMemoriVectorStore();
         var registry = new CollectionRegistry();
         var embeddingGenerator = new NgramEmbeddingGenerator();
         var logger = NullLogger<SqlQueryService>.Instance;
@@ -18,7 +18,7 @@ public sealed class SqlQueryServiceTests
         return (store, registry, service);
     }
 
-    internal static async Task seedSymbolsAsync(InMemoryVectorStore store)
+    internal static async Task seedSymbolsAsync(InMemoriVectorStore store)
     {
         var coll = store.GetCollection<string, SymbolRecord>("symbols");
         await coll.UpsertAsync(new SymbolRecord
@@ -78,7 +78,7 @@ public sealed class SqlQueryServiceTests
         });
     }
 
-    internal static async Task seedChunksAsync(InMemoryVectorStore store)
+    internal static async Task seedChunksAsync(InMemoriVectorStore store)
     {
         var coll = store.GetCollection<string, ChunkRecord>("chunks");
         var gen = new NgramEmbeddingGenerator();

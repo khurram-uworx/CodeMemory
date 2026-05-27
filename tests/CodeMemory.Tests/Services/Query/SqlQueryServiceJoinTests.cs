@@ -5,7 +5,7 @@ namespace CodeMemory.Tests.Services.Query;
 
 public sealed class SqlQueryServiceJoinTests
 {
-    static async Task seedJoinDataAsync(InMemoryVectorStore store)
+    static async Task seedJoinDataAsync(InMemoriVectorStore store)
     {
         var sym = store.GetCollection<string, SymbolRecord>("symbols");
         await sym.UpsertAsync(new SymbolRecord { Id = "s:MyClass", Name = "MyClass", Kind = "Class", FilePath = "/src/MyClass.cs", FullName = "MyClass", LineStart = 1, LineEnd = 100, Modifiers = "public" });

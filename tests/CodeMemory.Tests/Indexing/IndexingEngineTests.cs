@@ -60,7 +60,7 @@ public sealed class IndexingEngineTests
         var repoDir = createTempDirWithFile("test.cs", source);
         try
         {
-            var store = new InMemoryVectorStore();
+            var store = new InMemoriVectorStore();
             var storage = new StorageService(repoDir,
                 NullLogger<StorageService>.Instance, store);
 
