@@ -4,17 +4,6 @@ Patterns that add friction, hide bugs, or waste tokens.
 
 ---
 
-## 1. Two Error-Handling Patterns Remain for MCP Tools
-
-| Return Type | Pattern | Where Used |
-|---|---|---|
-| `string` | `try/catch` → `JsonSerializer.Serialize(new { status="error", message })` | `AdminTool`, `McpTools.Ping` |
-| Typed record | Null-service guard → `[]` / sentinel with `Warning` field | All `CodeMemory` library tools, `AspNetSqlQueryTool` |
-
-Writing a new tool requires deciding which pattern fits the return type. The typed-record pattern is strictly better — the MCP SDK handles serialization, null-service guards produce clear signals, and unexpected exceptions become proper JSON-RPC errors. The string pattern adds no value that typed records don't already provide.
-
-**Fix:** Converge to typed records everywhere. Replace `AdminTool` string returns with a record type. (`AspNetSqlQueryTool` migrated to typed `AspNetSqlQueryResult` record.)
-
 ## 2. `MockServices.cs` Will Not Scale
 
 Hand-written stubs for ~10 interfaces in a single 239-line file. Every interface change requires manual updates. No call verification. No per-invocation behavior customization. The stated reason ("no mocking library dependency") trades a NuGet package for ongoing maintenance cost.

@@ -1,8 +1,8 @@
 using CodeMemory.Diagnostics;
 using CodeMemory.Indexing;
+using CodeMemory.Mcp.Models;
 using ModelContextProtocol.Server;
 using System.ComponentModel;
-using System.Text.Json;
 
 namespace CodeMemory.Mcp;
 
@@ -10,7 +10,7 @@ namespace CodeMemory.Mcp;
 public sealed class McpTools
 {
     [McpServerTool, Description("Ping the server. Returns indexing status — agents should back off and retry if still building the index.")]
-    public string Ping()
+    public PingResult Ping()
     {
         CodeMemoryMetrics.ToolInvocations.Add(1, new("tool", "ping"), new("host", "mcp"));
 
@@ -19,21 +19,13 @@ public sealed class McpTools
             var allProgress = IndexingState.GetAllProgress();
             var percent = allProgress.Count > 0 ? allProgress.Values.Min() : 0.0;
 
-            return JsonSerializer.Serialize(new
-            {
-                status = "ok",
-                indexingCompleted = false,
-                message = percent > 0
+            return new PingResult("ok", false,
+                null, null,
+                percent > 0
                     ? $"Indexing in progress — {percent * 100:F0}% complete"
-                    : "Indexing in progress. Retry tools in a few seconds."
-            });
+                    : "Indexing in progress. Retry tools in a few seconds.");
         }
 
-        return JsonSerializer.Serialize(new
-        {
-            status = "ok",
-            indexingCompleted = true,
-            fileWatcherActive = IndexingState.IsFileWatcherActive
-        });
+        return new PingResult("ok", true, IndexingState.IsFileWatcherActive);
     }
 }

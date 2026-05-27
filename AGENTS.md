@@ -131,6 +131,7 @@ MCP tools use three patterns — follow the one matching your return type:
 - **`readonly` fields:** All DI-injected services
 - **Collection expressions:** `[]` for empty/static, `new List<T>()` for mutable
 - **Private fields:** No underscore prefix (`logger` not `_logger`)
+- **MCP tool return types:** Always use typed records/classes, never `string`. The MCP SDK serializes typed returns automatically into the JSON-RPC envelope. Manual `JsonSerializer.Serialize` + `string` return (the old pattern) bypasses SDK serialization, swallows exceptions into success responses instead of proper JSON-RPC errors, and hides the response schema from `tools/list`. Define result types in the tool file (like `AspNetSqlQueryResult`) or under `Mcp/Models/` for shared types.
 
 ## DI Conventions
 
