@@ -6,7 +6,6 @@
   </Folder>
   <Folder Name="/docs/">
     <File Path="docs/IDEA.md" />
-    <File Path="docs/KNOWN-ISSUES.md" />
     <File Path="docs/TASKS-TEMPLATE.md" />
   </Folder>
   <Folder Name="/docs/adr/">

@@ -162,9 +162,10 @@ public sealed class CloneIndexService
 
             using var scope = scopeFactory.CreateScope();
             var engine = scope.ServiceProvider.GetRequiredService<IndexingEngine>();
-            await engine.RunIndexingAsync(repoPath, CancellationToken.None);
+            var result = await engine.RunIndexingAsync(repoPath, CancellationToken.None);
 
             IndexingState.MarkCompleted(repoName);
+            IndexingState.StoreRelationshipCount(repoName, result.RelationshipCount);
             await UpdateIndexStatusAsync(repoName, "Indexed");
         }
         finally

@@ -115,7 +115,7 @@ MCP tools use three patterns — follow the one matching your return type:
 ## Testing
 
 - **Framework:** NUnit 4.x — `[Test]`, `Assert.That(...)`, `Assert.ThrowsAsync`, no `[TestCase]`
-- **Mocking:** Hand-written stubs in `MockServices.cs` — no mocking library dependency
+- **Mocking:** NSubstitute-based factory methods in `MockServices.cs` — use `MockServices.CreateXxxService()` in tests. For unique test scenarios, configure inline with `Substitute.For<IService>()` instead of extending the shared factory.
 - **Naming:** `Method_Scenario_ExpectedBehavior` PascalCase
 - **Pattern:** Arrange-Act-Aggregate (AAA, no explicit comments needed)
 - **Organization:** Mirror `src/` layout; one class per file, `*Tests.cs` suffix
@@ -131,6 +131,7 @@ MCP tools use three patterns — follow the one matching your return type:
 - **`readonly` fields:** All DI-injected services
 - **Collection expressions:** `[]` for empty/static, `new List<T>()` for mutable
 - **Private fields:** No underscore prefix (`logger` not `_logger`)
+- **MCP tool return types:** Always use typed records/classes, never `string`. The MCP SDK serializes typed returns automatically into the JSON-RPC envelope. Manual `JsonSerializer.Serialize` + `string` return (the old pattern) bypasses SDK serialization, swallows exceptions into success responses instead of proper JSON-RPC errors, and hides the response schema from `tools/list`. Define result types in the tool file (like `AspNetSqlQueryResult`) or under `Mcp/Models/` for shared types.
 
 ## DI Conventions
 

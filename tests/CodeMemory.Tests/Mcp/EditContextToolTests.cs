@@ -44,8 +44,8 @@ public sealed class EditContextToolTests : BaseToolTests
             {
                 b.ConfigureServices(s =>
                 {
-                    s.AddSingleton<IStorageService>(new MockStorageService());
-                    s.AddSingleton<IDependencyGraphService>(new MockGraphService());
+                    s.AddSingleton<IStorageService>(MockServices.CreateStorageService());
+                    s.AddSingleton<IDependencyGraphService>(MockServices.CreateGraphService());
                     s.AddSingleton<IEditContextService>(sp =>
                     {
                         var logger = sp.GetRequiredService<ILogger<EditContextService>>();

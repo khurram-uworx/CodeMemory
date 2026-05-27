@@ -18,7 +18,16 @@ using Memori.Embeddings;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Caching.Memory;
+using System.Reflection;
 using System.Text.Json;
+
+var version = Assembly.GetExecutingAssembly()
+    .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+    ?.InformationalVersion
+    ?? Assembly.GetExecutingAssembly().GetName().Version?.ToString()
+    ?? "unknown";
+
+IndexingState.SetVersion(version);
 
 var builder = WebApplication.CreateBuilder(args);
 
