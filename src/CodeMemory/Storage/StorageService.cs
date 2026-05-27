@@ -324,7 +324,7 @@ public sealed class StorageService : IStorageService, IDisposable
     {
         componentMapping.Clear();
         foreach (var component in components)
-            componentMapping[component.BuildFilePath] = component;
+            componentMapping[component.BuildFileDirectory] = component;
         return Task.CompletedTask;
     }
 

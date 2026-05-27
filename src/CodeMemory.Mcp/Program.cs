@@ -85,6 +85,7 @@ builder.Services.AddSingleton(sp => new FileWatcherService(
     repoRoot,
     sp.GetRequiredService<IStorageService>(),
     sp.GetRequiredService<IndexingEngine>(),
+    sp.GetRequiredService<ProjectFileDetector>(),
     sp.GetRequiredService<ILogger<FileWatcherService>>()));
 
 // Query services

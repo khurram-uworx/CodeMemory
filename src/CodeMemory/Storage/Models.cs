@@ -54,7 +54,7 @@ public sealed class SymbolRecord
 }
 
 public sealed record ComponentInformation(
-    string BuildFilePath,
+    string BuildFileDirectory,
     string ComponentName,
     ComponentKind ComponentKind,
     ComponentType ComponentType,

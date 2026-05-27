@@ -50,7 +50,7 @@ See ARCHITECTURE.md §Project Structure. Key rules:
 
 ### Multi-Repo Architecture
 
-See ARCHITECTURE.md §Multi-Repo Architecture. Key constraints:
+See ARCHITECTURE.md §Multi-Repo Architecture (AspNet). Key constraints:
 - `IStorageService` is the **only** per-repo concern — all other services stay non-keyed singletons
 - `Stateless = true` (Streamable HTTP) — no session affinity
 - `PerSessionExecutionContext = true` preserves `AsyncLocal` flow to tool handlers

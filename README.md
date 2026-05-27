@@ -81,6 +81,7 @@ Each repo gets its own MCP endpoint at `http://localhost:4792/api/mcp/{repoName}
 
 - [GETTING-STARTED](GETTING-STARTED.md) — install, configure, and query your first repo
 - [ARCHITECTURE](ARCHITECTURE.md) — system architecture, data flow, dependency layering, storage providers
+- [AspNet Host README](src/CodeMemory.AspNet/README.md) — Repository Portal UI, multi-repo architecture, Metrics & Components pages
 
 ## License
 
