@@ -580,7 +580,7 @@ public sealed class HybridStorageService : IStorageService, IDisposable
 
         foreach (var c in detected)
         {
-            if (existingByPath.TryGetValue(c.BuildFilePath, out var existingEntity))
+            if (existingByPath.TryGetValue(c.BuildFileDirectory, out var existingEntity))
             {
                 if (!existingEntity.IsDeleted)
                 {
@@ -594,7 +594,7 @@ public sealed class HybridStorageService : IStorageService, IDisposable
                 toInsert.Add(new Components
                 {
                     RepositoryId = repoId,
-                    BuildFilePath = c.BuildFilePath,
+                    BuildFilePath = c.BuildFileDirectory,
                     ComponentName = c.ComponentName,
                     ComponentKindString = c.ComponentKind.ToString(),
                     ComponentTypeString = c.ComponentType.ToString(),

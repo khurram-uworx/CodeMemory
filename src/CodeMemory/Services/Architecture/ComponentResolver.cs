@@ -39,7 +39,7 @@ public sealed class ComponentResolver : IComponentResolver
 
         foreach (var component in components)
         {
-            var normalizedPrefix = component.BuildFilePath.Replace('\\', '/').TrimEnd('/') + '/';
+            var normalizedPrefix = component.BuildFileDirectory.Replace('\\', '/').TrimEnd('/') + '/';
             if (normalized.StartsWith(normalizedPrefix, StringComparison.OrdinalIgnoreCase)
                 && normalizedPrefix.Length > bestLength)
             {

@@ -170,10 +170,10 @@ public sealed class HybridStorageServiceTests
         var loaded = await storage.LoadComponentMappingAsync();
 
         Assert.That(loaded, Has.Count.EqualTo(3));
-        Assert.That(loaded.Any(c => c.BuildFilePath == "src/CodeMemory" && c.ComponentKind == ComponentKind.MsBuild), Is.True);
+        Assert.That(loaded.Any(c => c.BuildFileDirectory == "src/CodeMemory" && c.ComponentKind == ComponentKind.MsBuild), Is.True);
         Assert.That(loaded.Any(c => c.ComponentType == ComponentType.Test), Is.True);
-        Assert.That(loaded.First(c => c.BuildFilePath == "tests/CodeMemory.Tests").ComponentType, Is.EqualTo(ComponentType.Test));
-        Assert.That(loaded.First(c => c.BuildFilePath == "src/CodeMemory").FileCount, Is.EqualTo(42));
+        Assert.That(loaded.First(c => c.BuildFileDirectory == "tests/CodeMemory.Tests").ComponentType, Is.EqualTo(ComponentType.Test));
+        Assert.That(loaded.First(c => c.BuildFileDirectory == "src/CodeMemory").FileCount, Is.EqualTo(42));
 
         Cleanup(tempDir);
     }
@@ -230,7 +230,7 @@ public sealed class HybridStorageServiceTests
         var loaded = await storage.LoadComponentMappingAsync();
 
         // User edits should survive — Kind is still Maven, Type is still Tool
-        var lib = loaded.First(c => c.BuildFilePath == "src/Lib");
+        var lib = loaded.First(c => c.BuildFileDirectory == "src/Lib");
         Assert.That(lib.ComponentKind, Is.EqualTo(ComponentKind.Maven));
         Assert.That(lib.ComponentType, Is.EqualTo(ComponentType.Tool));
 
