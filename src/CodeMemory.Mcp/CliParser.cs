@@ -1,6 +1,6 @@
 namespace CodeMemory.Mcp;
 
-public static class CliParser
+static class CliParser
 {
     public static (string? RepoRoot, bool Debug, bool Help, bool Version) Parse(string[] args)
     {
