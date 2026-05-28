@@ -3,6 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="..\CodeMemory\CodeMemory.csproj" />
     <ProjectReference Include="..\CodeMemory.ServiceDefaults\CodeMemory.ServiceDefaults.csproj" />
+
   </ItemGroup>
 
   <ItemGroup>

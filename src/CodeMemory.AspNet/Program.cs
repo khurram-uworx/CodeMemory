@@ -52,17 +52,17 @@ builder.Services.AddSingleton<SemanticChunker>();
 var embeddingProvider = builder.Configuration.GetValue<string>("Embedding:Provider") ?? "ngram";
 switch (embeddingProvider)
 {
-    //case "onnx":
-    //    {
-    //        var modelPath = Path.GetFullPath(
-    //            builder.Configuration.GetValue<string>("Embedding:OnnxModelPath")
-    //            ?? "models/bge-micro-v2/model.onnx");
-    //        var vocabPath = Path.GetFullPath(
-    //            builder.Configuration.GetValue<string>("Embedding:OnnxVocabPath")
-    //            ?? "models/bge-micro-v2/vocab.txt");
-    //        builder.Services.AddCodeMemoryOnnxEmbeddingGenerator(modelPath, vocabPath);
-    //        break;
-    //    }
+    case "onnx":
+        {
+            var modelPath = Path.GetFullPath(
+                builder.Configuration.GetValue<string>("Embedding:OnnxModelPath")
+                ?? "models/bge-micro-v2/model.onnx");
+            var vocabPath = Path.GetFullPath(
+                builder.Configuration.GetValue<string>("Embedding:OnnxVocabPath")
+                ?? "models/bge-micro-v2/vocab.txt");
+            LoadOnnxExtension(builder.Services, modelPath, vocabPath);
+            break;
+        }
     //case "sk-connector-onnx":
     //    {
     //        var modelPath = Path.GetFullPath(
@@ -375,3 +375,39 @@ app.MapGet("/api/repos/{name}/status", async (string name, RepoRegistryService r
     });
 });
 app.Run();
+
+static void LoadOnnxExtension(
+    IServiceCollection services,
+    string modelPath,
+    string vocabPath)
+{
+    try
+    {
+        var assemblyPath = Path.Combine(AppContext.BaseDirectory, "CodeMemory.AspNet.Extensions.dll");
+        if (!File.Exists(assemblyPath))
+            throw new FileNotFoundException(
+                "CodeMemory.AspNet.Extensions.dll not found at expected path. " +
+                "In Docker: ensure docker-compose.yml builds with --build. " +
+                "Local: run 'dotnet publish src/CodeMemory.AspNet.Extensions' first.",
+                assemblyPath);
+
+        var assembly = Assembly.LoadFrom(assemblyPath);
+        var type = assembly.GetType("CodeMemory.AspNet.Extensions.ServiceCollectionExtensions")
+            ?? throw new InvalidOperationException("Type ServiceCollectionExtensions not found");
+        var method = type.GetMethod("AddCodeMemoryOnnxEmbeddingGenerator",
+            BindingFlags.Public | BindingFlags.Static,
+            null,
+            [typeof(IServiceCollection), typeof(string), typeof(string)],
+            null)
+            ?? throw new InvalidOperationException("Method AddCodeMemoryOnnxEmbeddingGenerator not found");
+
+        method.Invoke(null, [services, modelPath, vocabPath]);
+    }
+    catch (Exception ex)
+    {
+        throw new InvalidOperationException(
+            "Failed to load ONNX embedding extension (CodeMemory.AspNet.Extensions). " +
+            "Build with: dotnet publish src/CodeMemory.AspNet.Extensions " +
+            "or use Embedding:Provider=ngram for zero-dependency mode.", ex);
+    }
+}

@@ -38,21 +38,6 @@ if (help)
           --version            Show version
           --help, -h           Show this help
 
-        MCP Tools:
-          ping                 Server health check (poll until indexingCompleted=true)
-          semantic_search      Find code related to a natural language query
-          sql_query            Execute SELECT-only SQL against the indexed repository
-          get_architecture_overview      High-level repo structure overview
-          get_component_clusters         Component grouping by dependency density
-          get_hotspots                   Most frequently changed files
-          get_symbol_history             Git commit history for a symbol
-          trace_dependency               Follow dependency chains
-          impact_analysis                What breaks if I change a symbol
-          get_edit_context               Comprehensive edit context for a symbol
-          find_related_code              Related symbols by relation type
-          get_repository_root            Active repository root path
-          rescan_repository              Trigger full re-index
-
         Examples:
           code-memory
           code-memory --repo C:\Projects\MyApp
