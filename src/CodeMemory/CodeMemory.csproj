@@ -5,12 +5,12 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
 
-    <Version>0.5.1</Version>
+    <Version>0.5.2</Version>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <Authors>CodeMemory Contributors</Authors>
     <Company>uWorx</Company>
     <Description>Transform repositories into queryable intelligence — a persistent, semantic memory layer for codebases exposed via MCP.</Description>
-    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <RepositoryUrl>https://github.com/khurram-uworx/CodeMemory</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PublishRepositoryUrl>true</PublishRepositoryUrl>

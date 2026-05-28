@@ -71,4 +71,4 @@ Storage is registered via factory methods (see `CodeMemory.Storage.ServiceCollec
 
 ## License
 
-Apache-2.0
+MIT

@@ -3,6 +3,7 @@ using CodeMemory.Indexing.Chunking;
 using CodeMemory.Indexing.Extraction;
 using CodeMemory.Indexing.Parsing;
 using CodeMemory.Indexing.Search;
+using CodeMemory.Mcp;
 using CodeMemory.Services;
 using CodeMemory.Services.Architecture;
 using CodeMemory.Services.Git;
@@ -24,34 +25,69 @@ var version = Assembly.GetExecutingAssembly()
 
 IndexingState.SetVersion(version);
 
-if (args is ["--help"] or ["-h"] or ["--version"] or ["-v"])
+var (repoRootArg, debug, help, versionFlag) = CliParser.Parse(args);
+
+if (help)
 {
-    Console.WriteLine($"CodeMemory MCP v{version}");
-    Console.WriteLine();
-    Console.WriteLine("Configure your Coding Agent / IDE with command \"npx -y @uworx/code-memory\"");
+    Console.WriteLine($$"""
+        CodeMemory MCP Server v{{version}}
+
+        Usage:
+          --repo, -r <path>    Repository root path (default: current directory)
+          --debug              Index synchronously with verbose logging (no MCP server)
+          --version            Show version
+          --help, -h           Show this help
+
+        MCP Tools:
+          ping                 Server health check (poll until indexingCompleted=true)
+          semantic_search      Find code related to a natural language query
+          sql_query            Execute SELECT-only SQL against the indexed repository
+          get_architecture_overview      High-level repo structure overview
+          get_component_clusters         Component grouping by dependency density
+          get_hotspots                   Most frequently changed files
+          get_symbol_history             Git commit history for a symbol
+          trace_dependency               Follow dependency chains
+          impact_analysis                What breaks if I change a symbol
+          get_edit_context               Comprehensive edit context for a symbol
+          find_related_code              Related symbols by relation type
+          get_repository_root            Active repository root path
+          rescan_repository              Trigger full re-index
+
+        Examples:
+          code-memory
+          code-memory --repo C:\Projects\MyApp
+          code-memory --repo ./my-project --debug
+
+        Configure your agent with:
+          npx -y @uworx/code-memory
+        """);
     return;
 }
 
-var debugMode = args.Contains("--debug");
-
-var repoRoot = args switch
+if (versionFlag)
 {
-    ["--repo", var path] => Path.GetFullPath(path),
-    [_, "--repo", var path] when debugMode => Path.GetFullPath(path),
-    _ => Environment.CurrentDirectory
-};
+    Console.WriteLine($"code-memory v{version}");
+    return;
+}
 
-var mode = debugMode ? "debug" : "stdio";
+var repoRoot = repoRootArg is not null ? Path.GetFullPath(repoRootArg) : Environment.CurrentDirectory;
+var mode = debug ? "debug" : "stdio";
 Console.Error.WriteLine($"CodeMemory MCP v{version} ({mode}) — repo: {repoRoot}");
 
 var builder = Host.CreateApplicationBuilder(args);
 
-if (debugMode)
+builder.Services.AddCodeMemoryMcp(options =>
+{
+    options.RepoRoot = repoRoot;
+    options.DebugMode = debug;
+    options.Version = version;
+});
+
+if (debug)
     builder.Logging.SetMinimumLevel(LogLevel.Debug);
 else
 {
     builder.Logging.ClearProviders();
-    //builder.Logging.AddConsole(options => options.LogToStandardErrorThreshold = LogLevel.Trace);
     builder.Logging.AddProvider(new CodeMemory.Mcp.CodeMemoryFileLoggerProvider(repoRoot, version));
 }
 
@@ -103,7 +139,7 @@ builder.Services.AddSingleton<CodeMemory.Indexing.Git.IGitHistoryService, GitHis
 builder.Services.AddSingleton<CodeMemory.Mcp.Services.IEditContextService, CodeMemory.Mcp.Services.EditContextService>();
 
 // MCP server (stdio transport) — only in normal mode, not --debug
-if (!debugMode)
+if (!debug)
 {
     builder.Services.AddMcpServer()
         .WithStdioServerTransport()
@@ -118,8 +154,7 @@ var app = builder.Build();
 var loggerFactory = app.Services.GetRequiredService<ILoggerFactory>();
 var embeddingGenerator = app.Services.GetRequiredService<IEmbeddingGenerator<string, Embedding<float>>>();
 
-
-if (debugMode)
+if (debug)
 {
     // Debug mode: index synchronously with verbose console logging, then exit
     try

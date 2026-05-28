@@ -85,4 +85,4 @@ Each repo gets its own MCP endpoint at `http://localhost:4792/api/mcp/{repoName}
 
 ## License
 
-Apache-2.0
+MIT
