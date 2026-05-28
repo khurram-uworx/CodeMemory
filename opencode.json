@@ -11,7 +11,7 @@
         "npx",
         "-y",
         "@uworx/memori",
-        "--long"
+        "--markdown"
       ]
     },
     //"tree-sitter": {

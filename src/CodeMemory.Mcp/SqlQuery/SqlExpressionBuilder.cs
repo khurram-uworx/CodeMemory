@@ -7,7 +7,7 @@ using ParameterExpression = System.Linq.Expressions.ParameterExpression;
 
 namespace CodeMemory.Mcp.SqlQuery;
 
-public sealed partial class SqlExpressionBuilder
+sealed partial class SqlExpressionBuilder
 {
     static System.Linq.Expressions.Expression resolveColumn(AstExpr expr, ParameterExpression param, Type recordType)
         => expr switch
