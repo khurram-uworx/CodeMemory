@@ -64,11 +64,8 @@ public sealed class FileCrawlerTests
         var files = await crawler.WalkAsync(repoRoot).ToListAsync();
 
         Assert.That(files, Has.None.Matches<FileEntry>(f =>
-            f.RelativePath.StartsWith("bin\\") ||
             f.RelativePath.StartsWith("bin/") ||
-            f.RelativePath.StartsWith("obj\\") ||
             f.RelativePath.StartsWith("obj/") ||
-            f.RelativePath.StartsWith(".git\\") ||
             f.RelativePath.StartsWith(".git/")));
     }
 

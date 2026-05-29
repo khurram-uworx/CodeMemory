@@ -7,6 +7,40 @@ namespace CodeMemory.Mcp;
 [McpServerPromptType]
 public static class CodeMemoryPrompts
 {
+    [McpServerPrompt(Name = "discover-schema", Title = "Discover SQL Schema")]
+    [Description("Discover the schema of queryable SQL tables (SymbolRecord, ChunkRecord, RelationshipRecord) and learn how to explore them.")]
+    public static GetPromptResult DiscoverSchema()
+    {
+        return new GetPromptResult
+        {
+            Messages =
+            [
+                new PromptMessage
+                {
+                    Role = Role.User,
+                    Content = new TextContentBlock
+                    {
+                        Text =
+                            "Discover the SQL schema available through the sql_query tool.\n\n" +
+                            "Steps:\n" +
+                            "1. Fetch available tables and their schemas from the MCP resources at codememory://schema/tables, " +
+                            "codememory://schema/SymbolRecord, codememory://schema/ChunkRecord, and codememory://schema/RelationshipRecord.\n" +
+                            "2. Alternatively, use the sql_query tool directly:\n" +
+                            "   - DESCRIBE TABLES — list all tables\n" +
+                            "   - DESCRIBE SymbolRecord (or DESC, PRAGMA table_info) — get column schema\n" +
+                            "3. Run exploratory queries such as:\n" +
+                            "   - SELECT DISTINCT Kind FROM SymbolRecord\n" +
+                            "   - SELECT COUNT(*) FROM SymbolRecord WHERE Kind = 'Class'\n" +
+                            "   - SELECT * FROM SymbolRecord LIMIT 5\n\n" +
+                            "All three tables are queryable: SymbolRecord (code symbols), ChunkRecord (text/code chunks with vectors), " +
+                            "RelationshipRecord (dependency relationships)."
+                    }
+                }
+            ],
+            Description = "SQL schema exploration guide"
+        };
+    }
+
     [McpServerPrompt(Name = "architecture-overview", Title = "Architecture Overview")]
     [Description("Get a high-level overview of the repository structure, including top-level components, language breakdown, file counts, and symbol counts.")]
     public static GetPromptResult GetArchitectureOverview(

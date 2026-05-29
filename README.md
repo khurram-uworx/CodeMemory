@@ -83,6 +83,12 @@ Each repo gets its own MCP endpoint at `http://localhost:4792/api/mcp/{repoName}
 - [ARCHITECTURE](ARCHITECTURE.md) — system architecture, data flow, dependency layering, storage providers
 - [AspNet Host README](src/CodeMemory.AspNet/README.md) — Repository Portal UI, multi-repo architecture, Metrics & Components pages
 
+Blog Posts
+
+- [Transform Repositories into Queryable Intelligence](https://khurram-uworx.github.io/2026/05/20/CodeMemory.html)
+- [From Files to Structured Intelligence](https://khurram-uworx.github.io/2026/05/23/CodeMemory2.html)
+- [SQL, Extensibility, and the Democratization of Infrastructure](https://khurram-uworx.github.io/2026/05/29/CodeMemory3.html)
+
 ## License
 
 MIT

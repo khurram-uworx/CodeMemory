@@ -51,6 +51,10 @@ public sealed class SymbolRecord
 
     [VectorStoreData]
     public string? Documentation { get; set; }
+
+    public bool IsPublic => Modifiers?.Contains("public") ?? false;
+    public bool IsStatic => Modifiers?.Contains("static") ?? false;
+    public bool IsSealed => Modifiers?.Contains("sealed") ?? false;
 }
 
 public sealed record ComponentInformation(

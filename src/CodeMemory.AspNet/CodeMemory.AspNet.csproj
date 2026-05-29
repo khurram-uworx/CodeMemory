@@ -26,9 +26,9 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Version>0.5.3</Version>
-    <FileVersion>0.5.3.0</FileVersion>
-    <InformationalVersion>0.5.3</InformationalVersion>
+    <Version>0.5.6</Version>
+    <FileVersion>0.5.6.0</FileVersion>
+    <InformationalVersion>0.5.6</InformationalVersion>
   </PropertyGroup>
 
   <ItemGroup>

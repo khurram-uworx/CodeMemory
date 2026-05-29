@@ -340,8 +340,7 @@ public sealed class IndexingEngine
         {
             var textRootUri = new Uri(storage.RepoRoot + Path.DirectorySeparatorChar);
             var textFileUri = new Uri(filePath);
-            var textRelPath = Uri.UnescapeDataString(textRootUri.MakeRelativeUri(textFileUri).ToString())
-                .Replace('/', Path.DirectorySeparatorChar);
+            var textRelPath = Uri.UnescapeDataString(textRootUri.MakeRelativeUri(textFileUri).ToString());
 
             var textContent = await File.ReadAllTextAsync(filePath, ct);
 
@@ -407,8 +406,7 @@ public sealed class IndexingEngine
 
         var rootUri = new Uri(storage.RepoRoot + Path.DirectorySeparatorChar);
         var fileUri = new Uri(filePath);
-        var relativePath = Uri.UnescapeDataString(rootUri.MakeRelativeUri(fileUri).ToString())
-            .Replace('/', Path.DirectorySeparatorChar);
+        var relativePath = Uri.UnescapeDataString(rootUri.MakeRelativeUri(fileUri).ToString());
 
         var effectiveLang = result.Language;
         var (symbolExtractor, relationshipExtractor) = extractors[effectiveLang];

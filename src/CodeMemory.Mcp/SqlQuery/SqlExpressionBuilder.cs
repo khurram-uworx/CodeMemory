@@ -72,13 +72,38 @@ sealed partial class SqlExpressionBuilder
             Value.Null => LinqExpr.Constant(null, targetType),
             Value.Boolean b => LinqExpr.Constant(b.Value, targetType),
             Value.Number n => convertNumber(n.Value, targetType),
-            Value.SingleQuotedString s => LinqExpr.Constant(s.Value, targetType),
+            Value.SingleQuotedString s => convertStringConstant(s.Value, targetType),
             _ => throw new NotSupportedException($"Literal type '{value.GetType().Name}' is not supported")
         };
+
+    static System.Linq.Expressions.Expression convertStringConstant(string value, Type targetType)
+    {
+        var actualType = Nullable.GetUnderlyingType(targetType) ?? targetType;
+
+        if (actualType == typeof(bool))
+        {
+            if (string.Equals(value, "true", StringComparison.OrdinalIgnoreCase))
+                return LinqExpr.Constant(true, targetType);
+            if (string.Equals(value, "false", StringComparison.OrdinalIgnoreCase))
+                return LinqExpr.Constant(false, targetType);
+            throw new InvalidOperationException(
+                $"Cannot convert string '{value}' to bool. Use 'true' or 'false' for boolean comparison.");
+        }
+
+        return LinqExpr.Constant(value, targetType);
+    }
 
     static System.Linq.Expressions.Expression convertNumber(string text, Type targetType)
     {
         var actualType = Nullable.GetUnderlyingType(targetType) ?? targetType;
+
+        if (actualType == typeof(bool))
+        {
+            if (text == "0") return LinqExpr.Constant(false, targetType);
+            if (text == "1") return LinqExpr.Constant(true, targetType);
+            throw new InvalidOperationException(
+                $"Cannot convert number '{text}' to bool. Use 0 or 1 for boolean comparison.");
+        }
 
         if (actualType == typeof(int)) return LinqExpr.Constant(int.Parse(text), targetType);
         if (actualType == typeof(long)) return LinqExpr.Constant(long.Parse(text), targetType);
@@ -88,7 +113,8 @@ sealed partial class SqlExpressionBuilder
         if (actualType == typeof(byte)) return LinqExpr.Constant(byte.Parse(text), targetType);
         if (actualType == typeof(decimal)) return LinqExpr.Constant(decimal.Parse(text));
 
-        return LinqExpr.Constant(int.Parse(text), targetType);
+        throw new InvalidOperationException(
+            $"Cannot convert number '{text}' to target type '{targetType.Name}'. Type mismatch in comparison.");
     }
 
     static string getConstantString(System.Linq.Expressions.Expression expr, string context)

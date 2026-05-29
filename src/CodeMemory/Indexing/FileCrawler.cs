@@ -19,7 +19,7 @@ public sealed class FileCrawler
     {
         var fileUri = new Uri(fullPath);
         var relative = rootUri.MakeRelativeUri(fileUri).ToString();
-        return Uri.UnescapeDataString(relative).Replace('/', Path.DirectorySeparatorChar);
+        return Uri.UnescapeDataString(relative);
     }
 
     static GitIgnoreParser loadGitIgnore(string rootPath)
@@ -33,7 +33,7 @@ public sealed class FileCrawler
         if (string.IsNullOrEmpty(relDir))
             return false;
 
-        var dirName = relDir.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+        var dirName = relDir.Split('/', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
         if (dirName != null && AlwaysIgnored.Contains(dirName))
             return true;
 

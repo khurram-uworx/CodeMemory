@@ -197,8 +197,7 @@ public sealed class GitHistoryService : IGitHistoryService, IDisposable
         if (cache.TryGetValue(cacheKey, out var cached) && cached.Result is SymbolHistoryResult cachedResult)
             return cachedResult;
 
-        var filePath = symbol.FilePath.Replace('/', Path.DirectorySeparatorChar);
-        var result = await runGitHistoryAsync(filePath, maxCommits, ct);
+        var result = await runGitHistoryAsync(symbol.FilePath, maxCommits, ct);
         if (result != null)
             cache[cacheKey] = new CacheEntry(result, DateTime.UtcNow);
 

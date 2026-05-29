@@ -34,6 +34,8 @@ public sealed class SqlQueryTool
     [McpServerTool, Description(@"
 Execute SELECT-only SQL queries against the indexed repository.
 
+SCHEMA DISCOVERY: Use DESCRIBE {tablename}, DESC {tablename}, DESCRIBE TABLES, or PRAGMA table_info({tablename}) to discover available columns, types, and keys.
+
 Only SELECT is supported. No INSERT/UPDATE/DELETE/CREATE.
 
 TABLES: SymbolRecord, ChunkRecord (incl. vector search & text files), RelationshipRecord

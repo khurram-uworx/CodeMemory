@@ -997,6 +997,88 @@ public sealed class SqlQueryService
         return new SqlQueryResult(false, 0, sw.ElapsedMilliseconds, null, null, error);
     }
 
+    static string unwrapMessage(Exception ex)
+        => ex.InnerException?.Message ?? ex.Message;
+
+    static SqlQueryResult? tryPragma(string sql, Stopwatch sw, TableSchemaProvider schemaProvider)
+    {
+        var trimmed = sql.Trim();
+
+        if (!trimmed.StartsWith("PRAGMA ", StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        var pragmaMatch = System.Text.RegularExpressions.Regex.Match(trimmed,
+            @"PRAGMA\s+table_info\s*\(\s*(\w+)\s*\)",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        if (!pragmaMatch.Success)
+            return fail("Unsupported PRAGMA. Only PRAGMA table_info(tablename) is supported.", sw);
+
+        var tableName = pragmaMatch.Groups[1].Value;
+        var allSchemas = schemaProvider.GetAll();
+
+        if (!allSchemas.TryGetValue(tableName, out var columns))
+            return fail($"Unknown table '{tableName}'. Available: {string.Join(", ", allSchemas.Keys)}", sw);
+
+        var rows = columns.Select((c, i) => new Dictionary<string, object?>
+        {
+            ["cid"] = i,
+            ["name"] = c.Name,
+            ["type"] = c.Type,
+            ["notnull"] = c.IsNullable ? 0 : 1,
+            ["dflt_value"] = null,
+            ["pk"] = c.IsKey ? 1 : 0,
+        }).ToList();
+
+        sw.Stop();
+        return new SqlQueryResult(true, rows.Count, sw.ElapsedMilliseconds,
+            ["cid", "name", "type", "notnull", "dflt_value", "pk"], rows);
+    }
+
+    static SqlQueryResult? tryDescribe(string sql, Stopwatch sw, TableSchemaProvider schemaProvider)
+    {
+        var trimmed = sql.Trim();
+        ReadOnlySpan<char> rest;
+
+        if (trimmed.StartsWith("DESCRIBE ", StringComparison.OrdinalIgnoreCase))
+            rest = trimmed.AsSpan(9).Trim();
+        else if (trimmed.StartsWith("DESC ", StringComparison.OrdinalIgnoreCase))
+            rest = trimmed.AsSpan(5).Trim();
+        else
+            return null;
+
+        var allSchemas = schemaProvider.GetAll();
+
+        if (rest.Equals("TABLES", StringComparison.OrdinalIgnoreCase))
+        {
+            var rows = new List<Dictionary<string, object?>>();
+            foreach (var (table, _) in allSchemas)
+                rows.Add(new Dictionary<string, object?> { ["Name"] = table });
+
+            sw.Stop();
+            return new SqlQueryResult(true, rows.Count, sw.ElapsedMilliseconds,
+                ["Name"], rows);
+        }
+
+        var tableName = rest.ToString();
+        if (!allSchemas.TryGetValue(tableName, out var columns))
+            return SqlQueryService.fail($"Unknown table '{tableName}'. Available: {string.Join(", ", allSchemas.Keys)}", sw);
+
+        var resultRows = columns.Select(c => new Dictionary<string, object?>
+        {
+            ["Name"] = c.Name,
+            ["Type"] = c.Type,
+            ["IsKey"] = c.IsKey,
+            ["IsVector"] = c.IsVector,
+            ["IsNullable"] = c.IsNullable,
+            ["StorageName"] = c.StorageName
+        }).ToList();
+
+        sw.Stop();
+        return new SqlQueryResult(true, resultRows.Count, sw.ElapsedMilliseconds,
+            ["Name", "Type", "IsKey", "IsVector", "IsNullable", "StorageName"], resultRows);
+    }
+
     //
     static readonly GenericDialect Dialect = new();
     static readonly ConcurrentDictionary<Type, MethodInfo?> GetAsyncMethodCache = new();
@@ -1006,15 +1088,17 @@ public sealed class SqlQueryService
     readonly CollectionRegistry registry;
     readonly IEmbeddingGenerator<string, Embedding<float>> embeddingGenerator;
     readonly ILogger<SqlQueryService> logger;
+    readonly TableSchemaProvider schemaProvider;
     readonly SqlExpressionBuilder builder = new();
     readonly SqlQueryParser parser = new();
 
     /// <summary>Initializes a new instance of SqlQueryService.</summary>
     public SqlQueryService(CollectionRegistry registry,
         IEmbeddingGenerator<string, Embedding<float>> embeddingGenerator,
-        ILogger<SqlQueryService> logger)
+        ILogger<SqlQueryService> logger,
+        TableSchemaProvider schemaProvider)
 
-        => (this.registry, this.embeddingGenerator, this.logger) = (registry, embeddingGenerator, logger);
+        => (this.registry, this.embeddingGenerator, this.logger, this.schemaProvider) = (registry, embeddingGenerator, logger, schemaProvider);
 
     List<Dictionary<string, object?>> applyOrderBy(
         List<Dictionary<string, object?>> rows,
@@ -1892,7 +1976,7 @@ public sealed class SqlQueryService
                 }
                 catch (Exception ex)
                 {
-                    return fail(ex.Message, sw);
+                    return fail(unwrapMessage(ex), sw);
                 }
             }
             else
@@ -1977,7 +2061,7 @@ public sealed class SqlQueryService
             CodeMemoryMetrics.SqlQueryDuration.Record(sw.Elapsed.TotalMilliseconds);
 
             logger.LogError(ex, "SQL UNION query execution failed");
-            return fail($"UNION execution error: {ex.Message}", sw);
+            return fail($"UNION execution error: {unwrapMessage(ex)}", sw);
         }
     }
 
@@ -1991,6 +2075,14 @@ public sealed class SqlQueryService
 
         try
         {
+            var describeResult = tryDescribe(sql, sw, schemaProvider);
+            if (describeResult is not null)
+                return describeResult;
+
+            var pragmaResult = tryPragma(sql, sw, schemaProvider);
+            if (pragmaResult is not null)
+                return pragmaResult;
+
             Sequence<Statement> statements;
 
             try
@@ -2000,7 +2092,7 @@ public sealed class SqlQueryService
             catch (Exception ex)
             {
                 logger.LogWarning(ex, "SQL parse error");
-                return fail($"Parse error: {ex.Message}", sw);
+                return fail($"Parse error: {unwrapMessage(ex)}", sw);
             }
 
             if (statements.Count != 1)
@@ -2036,7 +2128,7 @@ public sealed class SqlQueryService
                 }
                 catch (Exception ex)
                 {
-                    return fail(ex.Message, sw);
+                    return fail(unwrapMessage(ex), sw);
                 }
             }
             else
@@ -2246,7 +2338,7 @@ public sealed class SqlQueryService
             CodeMemoryMetrics.SqlQueryDuration.Record(sw.ElapsedMilliseconds);
 
             logger.LogError(ex, "SQL query execution failed: {Sql}", sql);
-            return fail($"Execution error at stage '{sw.Elapsed}' for SQL '{sql}': {ex.Message}", sw);
+            return fail($"Execution error at stage '{sw.Elapsed}' for SQL '{sql}': {unwrapMessage(ex)}", sw);
         }
     }
 }

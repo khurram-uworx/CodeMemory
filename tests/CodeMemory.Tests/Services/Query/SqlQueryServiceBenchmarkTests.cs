@@ -13,9 +13,9 @@ namespace CodeMemory.Tests.Services.Query;
 [SimpleJob(launchCount: 1, warmupCount: 2, iterationCount: 5)]
 public class SqlQueryBenchmarks
 {
-    private InMemoriVectorStore? _store;
-    private SqlQueryService? _service;
-    private string _fullScanSql = "";
+    InMemoriVectorStore? store;
+    SqlQueryService? service;
+    string fullScanSql = "";
 
     [Params(1_000, 10_000, 100_000)]
     public int RowCount { get; set; }
@@ -27,8 +27,9 @@ public class SqlQueryBenchmarks
         var registry = new CollectionRegistry();
         var embeddingGenerator = new NgramEmbeddingGenerator();
         var logger = NullLogger<SqlQueryService>.Instance;
-        _service = new SqlQueryService(registry, embeddingGenerator, logger);
-        _store = store;
+        var schemaProvider = new TableSchemaProvider();
+        service = new SqlQueryService(registry, embeddingGenerator, logger, schemaProvider);
+        this.store = store;
 
         var coll = store.GetCollection<string, SymbolRecord>("symbols");
         for (int i = 0; i < RowCount; i++)
@@ -47,24 +48,24 @@ public class SqlQueryBenchmarks
             });
         }
 
-        _fullScanSql = $"SELECT * FROM SymbolRecord ORDER BY Name LIMIT {RowCount}";
+        fullScanSql = $"SELECT * FROM SymbolRecord ORDER BY Name LIMIT {RowCount}";
     }
 
     [Benchmark]
     public async Task<SqlQueryResult> SimpleSelect() =>
-        await _service!.ExecuteAsync(_store!, "SELECT * FROM SymbolRecord WHERE Kind = 'Class' LIMIT 100");
+        await service!.ExecuteAsync(store!, "SELECT * FROM SymbolRecord WHERE Kind = 'Class' LIMIT 100");
 
     [Benchmark]
     public async Task<SqlQueryResult> GroupBy() =>
-        await _service!.ExecuteAsync(_store!, "SELECT FilePath, COUNT(*) AS cnt FROM SymbolRecord GROUP BY FilePath ORDER BY cnt DESC");
+        await service!.ExecuteAsync(store!, "SELECT FilePath, COUNT(*) AS cnt FROM SymbolRecord GROUP BY FilePath ORDER BY cnt DESC");
 
     [Benchmark]
     public async Task<SqlQueryResult> FullScanOrderBy() =>
-        await _service!.ExecuteAsync(_store!, _fullScanSql);
+        await service!.ExecuteAsync(store!, fullScanSql);
 
     [Benchmark]
     public async Task<SqlQueryResult> Aggregate() =>
-        await _service!.ExecuteAsync(_store!, "SELECT Kind, AVG(LineEnd - LineStart) AS avgLen FROM SymbolRecord GROUP BY Kind");
+        await service!.ExecuteAsync(store!, "SELECT Kind, AVG(LineEnd - LineStart) AS avgLen FROM SymbolRecord GROUP BY Kind");
 }
 
 public sealed class SqlQueryServiceBenchmarkTests

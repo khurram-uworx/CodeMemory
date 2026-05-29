@@ -14,7 +14,8 @@ public sealed class SqlQueryServiceTests
         var registry = new CollectionRegistry();
         var embeddingGenerator = new NgramEmbeddingGenerator();
         var logger = NullLogger<SqlQueryService>.Instance;
-        var service = new SqlQueryService(registry, embeddingGenerator, logger);
+        var schemaProvider = new TableSchemaProvider();
+        var service = new SqlQueryService(registry, embeddingGenerator, logger, schemaProvider);
         return (store, registry, service);
     }
 

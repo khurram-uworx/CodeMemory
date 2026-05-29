@@ -30,7 +30,7 @@ var (repoRootArg, debug, help, versionFlag) = CliParser.Parse(args);
 if (help)
 {
     Console.WriteLine($$"""
-        CodeMemory MCP Server v{{version}}
+        Code Memory MCP Server v{{version}}
 
         Usage:
           --repo, -r <path>    Repository root path (default: current directory)
@@ -46,18 +46,18 @@ if (help)
         Configure your agent with:
           npx -y @uworx/code-memory
         """);
-    return;
+    return 0;
 }
 
 if (versionFlag)
 {
-    Console.WriteLine($"code-memory v{version}");
-    return;
+    Console.WriteLine($"Code Memory MCP Server v{version}");
+    return 0;
 }
 
 var repoRoot = repoRootArg is not null ? Path.GetFullPath(repoRootArg) : Environment.CurrentDirectory;
 var mode = debug ? "debug" : "stdio";
-Console.Error.WriteLine($"CodeMemory MCP v{version} ({mode}) — repo: {repoRoot}");
+Console.Error.WriteLine($"Code Memory MCP Server v{version} ({mode}) — repo: {repoRoot}");
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -131,6 +131,7 @@ if (!debug)
         .WithToolsFromAssembly(typeof(CodeMemory.Mcp.McpTools).Assembly)
         .WithToolsFromAssembly(typeof(CodeMemory.Mcp.Tools.SqlQueryTool).Assembly)
         .WithResourcesFromAssembly(typeof(CodeMemory.Mcp.McpTools).Assembly)
+        .WithResourcesFromAssembly(typeof(SchemaResources).Assembly)
         .WithPromptsFromAssembly(typeof(CodeMemory.Mcp.McpTools).Assembly);
 }
 
@@ -158,8 +159,9 @@ if (debug)
     catch (Exception ex)
     {
         Console.Error.WriteLine($"Indexing failed: {ex.Message}");
+        return 1;
     }
-    return;
+    return 0;
 }
 
 // Normal MCP mode: non-blocking indexing in background, serve tools immediately
@@ -186,3 +188,5 @@ _ = Task.Run(async () =>
 
 // Start MCP server loop immediately (reads JSON-RPC from stdin, writes to stdout)
 await app.RunAsync();
+
+return 0;

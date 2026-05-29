@@ -198,6 +198,32 @@ public sealed class AspNetSqlQueryTool
 
     static readonly GenericDialect Dialect = new();
 
+    static readonly Dictionary<string, List<(string Name, string Type, bool IsKey, bool IsNullable)>> DescribeSchemas = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["SymbolRecord"] =
+        [
+            ("Id", "string", true, false),
+            ("Name", "string", false, false),
+            ("Kind", "string", false, false),
+            ("FilePath", "string", false, false),
+            ("LineStart", "int", false, false),
+            ("LineEnd", "int", false, false),
+            ("FullName", "string", false, false),
+            ("Modifiers", "string", false, true),
+            ("Documentation", "string", false, true),
+        ],
+        ["RelationshipRecord"] =
+        [
+            ("Id", "string", true, false),
+            ("SourceSymbolId", "string", false, false),
+            ("TargetSymbolId", "string", false, false),
+            ("RelationshipType", "string", false, false),
+        ],
+    };
+
+    static string unwrapMessage(Exception ex)
+        => ex.InnerException?.Message ?? ex.Message;
+
     readonly SqlQueryParser parser = new();
     readonly IStorageService storageService;
     readonly ILogger<AspNetSqlQueryTool> logger;
@@ -206,6 +232,49 @@ public sealed class AspNetSqlQueryTool
     {
         this.storageService = storageService;
         this.logger = logger;
+    }
+
+    static AspNetSqlQueryResult? tryDescribe(string sql, Stopwatch sw)
+    {
+        var trimmed = sql.Trim();
+        ReadOnlySpan<char> rest;
+
+        if (trimmed.StartsWith("DESCRIBE ", StringComparison.OrdinalIgnoreCase))
+            rest = trimmed.AsSpan(9).Trim();
+        else if (trimmed.StartsWith("DESC ", StringComparison.OrdinalIgnoreCase))
+            rest = trimmed.AsSpan(5).Trim();
+        else
+            return null;
+
+        if (rest.Equals("TABLES", StringComparison.OrdinalIgnoreCase))
+        {
+            var rows = new List<Dictionary<string, object?>>();
+            foreach (var (table, _) in DescribeSchemas)
+                rows.Add(new Dictionary<string, object?> { ["Name"] = table });
+
+            sw.Stop();
+            return new AspNetSqlQueryResult(true, rows.Count, sw.ElapsedMilliseconds, ["Name"], rows, null);
+        }
+
+        var tableName = rest.ToString();
+        if (!DescribeSchemas.TryGetValue(tableName, out var columns))
+        {
+            sw.Stop();
+            return new AspNetSqlQueryResult(false, 0, sw.ElapsedMilliseconds, null, null,
+                $"Unknown table '{tableName}'. Available tables: SymbolRecord, RelationshipRecord (ChunkRecord is not queryable via SQL in this backend — use semantic_search tool).");
+        }
+
+        var resultRows = columns.Select(c => new Dictionary<string, object?>
+        {
+            ["Name"] = c.Name,
+            ["Type"] = c.Type,
+            ["IsKey"] = c.IsKey,
+            ["IsNullable"] = c.IsNullable,
+        }).ToList();
+
+        sw.Stop();
+        return new AspNetSqlQueryResult(true, resultRows.Count, sw.ElapsedMilliseconds,
+            ["Name", "Type", "IsKey", "IsNullable"], resultRows, null);
     }
 
     HybridStorageService? resolveHybridStorage()
@@ -332,6 +401,10 @@ RETURNS JSON: success, rowCount, executionTimeMs, columns, rows, error
 
         try
         {
+            var describeResult = tryDescribe(query, sw);
+            if (describeResult is not null)
+                return describeResult;
+
             var (error, isValid) = validateQuery(query);
             if (!isValid)
             {
@@ -365,7 +438,7 @@ RETURNS JSON: success, rowCount, executionTimeMs, columns, rows, error
         {
             logger.LogError(ex, "SQL query execution failed: {Query}", query);
             sw.Stop();
-            return new AspNetSqlQueryResult(false, 0, sw.ElapsedMilliseconds, null, null, $"Query execution failed: {ex.Message}");
+            return new AspNetSqlQueryResult(false, 0, sw.ElapsedMilliseconds, null, null, $"Query execution failed: {unwrapMessage(ex)}");
         }
     }
 }
