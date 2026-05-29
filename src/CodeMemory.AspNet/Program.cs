@@ -17,7 +17,17 @@ using CodeMemory.Storage;
 using Memori.Embeddings;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Caching.Memory;
+using System.Reflection;
 using System.Text.Json;
+
+var version = Assembly.GetExecutingAssembly()
+    .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+    ?.InformationalVersion
+    ?? Assembly.GetExecutingAssembly().GetName().Version?.ToString()
+    ?? "unknown";
+
+IndexingState.SetVersion(version);
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -42,17 +52,17 @@ builder.Services.AddSingleton<SemanticChunker>();
 var embeddingProvider = builder.Configuration.GetValue<string>("Embedding:Provider") ?? "ngram";
 switch (embeddingProvider)
 {
-    //case "onnx":
-    //    {
-    //        var modelPath = Path.GetFullPath(
-    //            builder.Configuration.GetValue<string>("Embedding:OnnxModelPath")
-    //            ?? "models/bge-micro-v2/model.onnx");
-    //        var vocabPath = Path.GetFullPath(
-    //            builder.Configuration.GetValue<string>("Embedding:OnnxVocabPath")
-    //            ?? "models/bge-micro-v2/vocab.txt");
-    //        builder.Services.AddCodeMemoryOnnxEmbeddingGenerator(modelPath, vocabPath);
-    //        break;
-    //    }
+    case "onnx":
+        {
+            var modelPath = Path.GetFullPath(
+                builder.Configuration.GetValue<string>("Embedding:OnnxModelPath")
+                ?? "models/bge-micro-v2/model.onnx");
+            var vocabPath = Path.GetFullPath(
+                builder.Configuration.GetValue<string>("Embedding:OnnxVocabPath")
+                ?? "models/bge-micro-v2/vocab.txt");
+            LoadOnnxExtension(builder.Services, modelPath, vocabPath);
+            break;
+        }
     //case "sk-connector-onnx":
     //    {
     //        var modelPath = Path.GetFullPath(
@@ -83,6 +93,7 @@ var storageRegistry = new ServiceRegistry();
 builder.Services.AddSingleton<IServiceRegistry>(storageRegistry);
 builder.Services.AddSingleton<IRepoContextAccessor, RepoContextAccessor>();
 builder.Services.AddSingleton<IStorageService, StorageServiceRouter>();
+builder.Services.AddMemoryCache();
 
 builder.Services.AddScoped<IndexingEngine>();
 builder.Services.AddHostedService<IndexingHostedService>();
@@ -129,7 +140,9 @@ builder.Services.AddMcpServer()
         };
     })
     .WithToolsFromAssembly(typeof(CodeMemory.AspNet.Tools.AspNetMcpTools).Assembly)
-    .WithToolsFromAssembly(typeof(CodeMemory.Mcp.McpTools).Assembly);
+    .WithToolsFromAssembly(typeof(CodeMemory.Mcp.McpTools).Assembly)
+    .WithResourcesFromAssembly(typeof(CodeMemory.Mcp.McpTools).Assembly)
+    .WithPromptsFromAssembly(typeof(CodeMemory.Mcp.McpTools).Assembly);
 
 // CORS — origins configured in appsettings.json:Cors:AllowedOrigins
 var corsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>();
@@ -159,6 +172,7 @@ builder.Services.AddSingleton<StorageFactory>(sp =>
     var embeddingGenerator = sp.GetRequiredService<IEmbeddingGenerator<string, Embedding<float>>>();
     var configuration = sp.GetRequiredService<IConfiguration>();
     var registryDbFactory = sp.GetRequiredService<IDbContextFactory<RepoRegistryDbContext>>();
+    var cache = sp.GetService<IMemoryCache>();
 
     return (repoName, repoPath, repoId) =>
     {
@@ -166,7 +180,7 @@ builder.Services.AddSingleton<StorageFactory>(sp =>
         {
             return new StorageService(repoPath,
                 loggerFactory.CreateLogger<StorageService>(),
-                new Memori.Storage.InMemoryVectorStore(), embeddingGenerator);
+                new Memori.Storage.InMemoriVectorStore(), embeddingGenerator);
         }
 
         if (string.Equals(provider, "sqlite", StringComparison.OrdinalIgnoreCase))
@@ -176,7 +190,7 @@ builder.Services.AddSingleton<StorageFactory>(sp =>
             var connString = $"Data Source={Path.Combine(memoryPath, "sqlvec.db")};Cache=Shared";
             return CodeMemory.AspNet.Storage.ServiceCollectionExtensions.createSqliteStorage(
                 repoPath, repoId, connString, registryDbFactory,
-                loggerFactory.CreateLogger<HybridStorageService>(), embeddingGenerator);
+                loggerFactory.CreateLogger<HybridStorageService>(), embeddingGenerator, cache: cache);
         }
 
         if (string.Equals(provider, "pgvector", StringComparison.OrdinalIgnoreCase))
@@ -187,7 +201,7 @@ builder.Services.AddSingleton<StorageFactory>(sp =>
             var schema = CodeMemory.AspNet.Storage.ServiceCollectionExtensions.sanitizeSchemaName(repoName);
             return CodeMemory.AspNet.Storage.ServiceCollectionExtensions.CreatePgVectorStorage(
                 repoPath, repoId, connString, schema, registryDbFactory,
-                loggerFactory.CreateLogger<HybridStorageService>(), embeddingGenerator);
+                loggerFactory.CreateLogger<HybridStorageService>(), embeddingGenerator, cache: cache);
         }
 
         if (string.Equals(provider, "sqlserver", StringComparison.OrdinalIgnoreCase))
@@ -198,7 +212,7 @@ builder.Services.AddSingleton<StorageFactory>(sp =>
             var schema = CodeMemory.AspNet.Storage.ServiceCollectionExtensions.sanitizeSchemaName(repoName);
             return CodeMemory.AspNet.Storage.ServiceCollectionExtensions.createSqlServerStorage(
                 repoPath, repoId, connString, schema, registryDbFactory,
-                loggerFactory.CreateLogger<HybridStorageService>(), embeddingGenerator);
+                loggerFactory.CreateLogger<HybridStorageService>(), embeddingGenerator, cache: cache);
         }
 
         throw new InvalidOperationException(
@@ -361,3 +375,39 @@ app.MapGet("/api/repos/{name}/status", async (string name, RepoRegistryService r
     });
 });
 app.Run();
+
+static void LoadOnnxExtension(
+    IServiceCollection services,
+    string modelPath,
+    string vocabPath)
+{
+    try
+    {
+        var assemblyPath = Path.Combine(AppContext.BaseDirectory, "CodeMemory.AspNet.Extensions.dll");
+        if (!File.Exists(assemblyPath))
+            throw new FileNotFoundException(
+                "CodeMemory.AspNet.Extensions.dll not found at expected path. " +
+                "In Docker: ensure docker-compose.yml builds with --build. " +
+                "Local: run 'dotnet publish src/CodeMemory.AspNet.Extensions' first.",
+                assemblyPath);
+
+        var assembly = Assembly.LoadFrom(assemblyPath);
+        var type = assembly.GetType("CodeMemory.AspNet.Extensions.ServiceCollectionExtensions")
+            ?? throw new InvalidOperationException("Type ServiceCollectionExtensions not found");
+        var method = type.GetMethod("AddCodeMemoryOnnxEmbeddingGenerator",
+            BindingFlags.Public | BindingFlags.Static,
+            null,
+            [typeof(IServiceCollection), typeof(string), typeof(string)],
+            null)
+            ?? throw new InvalidOperationException("Method AddCodeMemoryOnnxEmbeddingGenerator not found");
+
+        method.Invoke(null, [services, modelPath, vocabPath]);
+    }
+    catch (Exception ex)
+    {
+        throw new InvalidOperationException(
+            "Failed to load ONNX embedding extension (CodeMemory.AspNet.Extensions). " +
+            "Build with: dotnet publish src/CodeMemory.AspNet.Extensions " +
+            "or use Embedding:Provider=ngram for zero-dependency mode.", ex);
+    }
+}

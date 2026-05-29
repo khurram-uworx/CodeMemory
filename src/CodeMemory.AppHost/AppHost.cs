@@ -15,7 +15,7 @@ var codememory = builder.AddProject<Projects.CodeMemory_AspNet>("codememory-aspn
     .WithEnvironment("ConnectionStrings__PgVector",
         postgresDb.Resource.ConnectionStringExpression)
     .WithEnvironment("Storage__Provider", "pgvector")
-    .WithEnvironment("RepoRegistry__CloneBasePath", Path.Combine(Directory.GetCurrentDirectory(), "cloned-repos"))
+    .WithEnvironment("RepoRegistry__CloneBasePath", Path.Combine(Directory.GetCurrentDirectory(), "../../../.cloned-repos"))
     //.WaitFor(postgres);
     .WaitFor(postgresDb);
 

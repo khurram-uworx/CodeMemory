@@ -3,243 +3,148 @@ using CodeMemory.Indexing.Git;
 using CodeMemory.Indexing.Graph;
 using CodeMemory.Indexing.Search;
 using CodeMemory.Storage;
-using Microsoft.Extensions.VectorData;
+using NSubstitute;
 
 namespace CodeMemory.Tests;
 
-sealed class MockStorageService : IStorageService
+static class MockServices
 {
-    public string RepoRoot => Environment.CurrentDirectory;
-
-    public VectorStore? Store => null;
-
-    public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
-
-    public Task StoreSymbolsAsync(IReadOnlyList<SymbolRecord> symbols, CancellationToken ct = default)
-        => Task.CompletedTask;
-
-    public Task StoreChunksAsync(IReadOnlyList<ChunkRecord> chunks, CancellationToken ct = default)
-        => Task.CompletedTask;
-
-    public Task StoreRelationshipsAsync(IReadOnlyList<RelationshipRecord> relationships, CancellationToken ct = default)
-        => Task.CompletedTask;
-
-    static readonly string myClassGuid = Guid.NewGuid().ToString("N");
-
-    public Task<SymbolRecord?> GetSymbolAsync(string id, CancellationToken ct = default)
+    public static IStorageService CreateStorageService()
     {
-        if (id == myClassGuid)
-            return Task.FromResult<SymbolRecord?>(new SymbolRecord
-            {
-                Id = myClassGuid,
-                Name = "MyClass",
-                Kind = "Class",
-                FilePath = "/src/MyClass.cs",
-                FullName = "MyClass",
-                LineStart = 1,
-                LineEnd = 50
-            });
-        return Task.FromResult<SymbolRecord?>(null);
-    }
+        var storage = Substitute.For<IStorageService>();
+        storage.RepoRoot.Returns(Environment.CurrentDirectory);
 
-    public Task<SymbolRecord?> GetSymbolByFullNameAsync(string fullName, CancellationToken ct = default)
-    {
-        if (fullName == "MyClass")
-            return Task.FromResult<SymbolRecord?>(new SymbolRecord
-            {
-                Id = myClassGuid,
-                Name = "MyClass",
-                Kind = "Class",
-                FilePath = "/src/MyClass.cs",
-                FullName = "MyClass",
-                LineStart = 1,
-                LineEnd = 50
-            });
-        return Task.FromResult<SymbolRecord?>(null);
-    }
-
-    public Task<ChunkRecord?> GetChunkAsync(string id, CancellationToken ct = default)
-        => Task.FromResult<ChunkRecord?>(null);
-
-    public Task<RelationshipRecord?> GetRelationshipAsync(string id, CancellationToken ct = default)
-        => Task.FromResult<RelationshipRecord?>(null);
-
-    public Task<IReadOnlyList<SymbolRecord>> GetSymbolsByParentAsync(string parentFullName, CancellationToken ct = default)
-        => Task.FromResult<IReadOnlyList<SymbolRecord>>([]);
-
-    public Task<IReadOnlyList<SymbolRecord>> GetSymbolsByFileAsync(string filePath, int top = 100, CancellationToken ct = default)
-        => Task.FromResult<IReadOnlyList<SymbolRecord>>([]);
-
-    public Task<IReadOnlyList<SymbolRecord>> GetSymbolsByKindAsync(string kind, int top = 100, CancellationToken ct = default)
-        => Task.FromResult<IReadOnlyList<SymbolRecord>>([]);
-
-    public Task<IReadOnlyList<ChunkRecord>> GetChunksBySymbolAsync(string symbolId, CancellationToken ct = default)
-    {
-        return Task.FromResult<IReadOnlyList<ChunkRecord>>([
+        var myClassId = "myclass-guid";
+        var symbol = new SymbolRecord
+        {
+            Id = myClassId,
+            Name = "MyClass",
+            Kind = "Class",
+            FilePath = "/src/MyClass.cs",
+            FullName = "MyClass",
+            LineStart = 1,
+            LineEnd = 50
+        };
+        storage.GetSymbolByFullNameAsync("MyClass", Arg.Any<CancellationToken>()).Returns(symbol);
+        storage.GetSymbolAsync(myClassId, Arg.Any<CancellationToken>()).Returns(symbol);
+        storage.GetChunksBySymbolAsync(myClassId, Arg.Any<CancellationToken>()).Returns([
             new ChunkRecord
-                {
-                    Id = "c1", SymbolId = myClassGuid, FilePath = "/src/MyClass.cs",
-                    Content = "public class MyClass { }", Language = "CSharp",
-                    LineStart = 1, LineEnd = 10
-                }
-        ]);
-    }
-
-    public Task<IReadOnlyList<RelationshipRecord>> GetRelationshipsBySourceAsync(string sourceSymbolId, CancellationToken ct = default)
-        => Task.FromResult<IReadOnlyList<RelationshipRecord>>([]);
-
-    public Task<IReadOnlyList<RelationshipRecord>> GetRelationshipsByTargetAsync(string targetSymbolId, CancellationToken ct = default)
-        => Task.FromResult<IReadOnlyList<RelationshipRecord>>([]);
-
-    public Task<IReadOnlyList<ScoredChunk>> SearchChunksAsync(ReadOnlyMemory<float> embedding, int top = 10, VectorSearchOptions<ChunkRecord>? options = null, CancellationToken ct = default)
-        => Task.FromResult<IReadOnlyList<ScoredChunk>>([]);
-
-    public Task DeleteSymbolsByFileAsync(string filePath, CancellationToken ct = default)
-        => Task.CompletedTask;
-
-    public Task DeleteChunksByFileAsync(string filePath, CancellationToken ct = default)
-        => Task.CompletedTask;
-
-    public Task DeleteRelationshipsBySourceIdsAsync(IReadOnlyList<string> sourceIds, CancellationToken ct = default)
-        => Task.CompletedTask;
-
-    public Task DeleteRelationshipsByTargetIdsAsync(IReadOnlyList<string> targetIds, CancellationToken ct = default)
-        => Task.CompletedTask;
-
-    public Task ClearAllAsync(CancellationToken ct = default)
-        => Task.CompletedTask;
-
-    public Task StoreComponentMappingAsync(IReadOnlyList<ComponentInformation> components, CancellationToken ct = default)
-        => Task.CompletedTask;
-
-    public Task<IReadOnlyList<ComponentInformation>> LoadComponentMappingAsync(CancellationToken ct = default)
-        => Task.FromResult<IReadOnlyList<ComponentInformation>>([]);
-}
-
-sealed class MockGraphService : IDependencyGraphService
-{
-    public Task<IReadOnlyList<DependencyNode>> TraceAsync(
-        string symbolPath, string direction, int depth, CancellationToken ct = default) =>
-        Task.FromResult<IReadOnlyList<DependencyNode>>([
-            new("MyOtherClass", "/src/Other.cs", "Class", "1-30", "references")
-        ]);
-
-    public Task<IReadOnlyList<DependencyNode>> FindRelatedAsync(
-        string symbolPath, string relationType, CancellationToken ct = default) =>
-        Task.FromResult<IReadOnlyList<DependencyNode>>([]);
-
-    public Task<IReadOnlyList<string>> FindTestCoverageAsync(
-        string symbolPath, CancellationToken ct = default) =>
-        Task.FromResult<IReadOnlyList<string>>(["/tests/MyClassTest.cs"]);
-}
-
-sealed class MockSemanticSearchService : ISemanticSearchService
-{
-    public Task<IReadOnlyList<ScoredChunk>> SearchAsync(
-        string query, int maxResults = 10, double minimumSimilarity = 0, CancellationToken ct = default)
-    {
-        var results = new List<ScoredChunk>
             {
-                new()
-                {
-                    Chunk = new ChunkRecord
-                    {
-                        Id = "chunk1",
-                        SymbolId = "DatabaseService",
-                        FilePath = "/src/DatabaseService.cs",
-                        Content = "public class DatabaseService { }",
-                        Language = "CSharp",
-                        LineStart = 1,
-                        LineEnd = 10
-                    },
-                    Score = 0.95
-                }
-            };
-        return Task.FromResult<IReadOnlyList<ScoredChunk>>(results);
-    }
-}
-
-sealed class MockDependencyGraphService : IDependencyGraphService
-{
-    public Task<IReadOnlyList<DependencyNode>> TraceAsync(
-        string symbolPath, string direction, int depth, CancellationToken ct = default)
-    {
-        if (symbolPath == "NonExistent")
-            return Task.FromResult<IReadOnlyList<DependencyNode>>([]);
-
-        var chain = new List<DependencyNode>
-            {
-                new(symbolPath, "/src/MyClass.cs", "Method", "10-30", "self"),
-                new("MyOtherClass", "/src/Other.cs", "Class", "1-50", direction == "upstream" ? "imports" : "references")
-            };
-        return Task.FromResult<IReadOnlyList<DependencyNode>>(chain);
-    }
-
-    public Task<IReadOnlyList<DependencyNode>> FindRelatedAsync(
-        string symbolPath, string relationType, CancellationToken ct = default)
-    {
-        if (symbolPath == "NonExistent")
-            return Task.FromResult<IReadOnlyList<DependencyNode>>([]);
-
-        return Task.FromResult<IReadOnlyList<DependencyNode>>([
-            new("RelatedService", "/src/Related.cs", "Class", "1-20", "references")
+                Id = "c1", SymbolId = myClassId, FilePath = "/src/MyClass.cs",
+                Content = "public class MyClass { }", Language = "CSharp",
+                LineStart = 1, LineEnd = 10
+            }
         ]);
+        return storage;
     }
 
-    public Task<IReadOnlyList<string>> FindTestCoverageAsync(
-        string symbolPath, CancellationToken ct = default)
+    public static IDependencyGraphService CreateDependencyGraphService()
     {
-        if (symbolPath == "NonExistent")
-            return Task.FromResult<IReadOnlyList<string>>([]);
-
-        return Task.FromResult<IReadOnlyList<string>>(["/tests/MyClassTest.cs"]);
-    }
-}
-
-sealed class MockClusteringService : IComponentClusteringService
-{
-    public Task<IReadOnlyList<ComponentCluster>> GetClustersAsync(
-        double threshold = 0.3, int depth = 1, CancellationToken ct = default)
-    {
-        return Task.FromResult<IReadOnlyList<ComponentCluster>>([
-            new ComponentCluster("src+tests", ["src", "tests"], 0.75),
-                new ComponentCluster("lib", ["lib"], 1.0)
-        ]);
-    }
-}
-
-sealed class MockGitHistoryService : IGitHistoryService
-{
-    public Task<SymbolHistoryResult?> GetSymbolHistoryAsync(
-        string symbolPath, int maxCommits = 20, CancellationToken ct = default)
-    {
-        return Task.FromResult<SymbolHistoryResult?>(new SymbolHistoryResult(
-            symbolPath, "/src/MyClass.cs", 3, 1,
-            "2024-01-01", "2024-03-15",
-            [
-                new CommitInfo("abc123", "testuser", "2024-03-15", "Fix bug"),
-                    new CommitInfo("def456", "testuser", "2024-02-01", "Add feature"),
-            ]));
+        var graph = Substitute.For<IDependencyGraphService>();
+        graph.TraceAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+             .Returns(args =>
+             {
+                 var symbolPath = args.ArgAt<string>(0);
+                 var direction = args.ArgAt<string>(1);
+                 if (symbolPath == "NonExistent")
+                     return new List<DependencyNode>();
+                 return new List<DependencyNode>
+                 {
+                     new(symbolPath, "/src/MyClass.cs", "Method", "10-30", "self"),
+                     new("MyOtherClass", "/src/Other.cs", "Class", "1-50", direction == "upstream" ? "imports" : "references")
+                 };
+             });
+        graph.FindRelatedAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+             .Returns(args =>
+             {
+                 if (args.ArgAt<string>(0) == "NonExistent")
+                     return new List<DependencyNode>();
+                 return new List<DependencyNode> { new("RelatedService", "/src/Related.cs", "Class", "1-20", "references") };
+             });
+        graph.FindTestCoverageAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+             .Returns(args =>
+             {
+                 if (args.ArgAt<string>(0) == "NonExistent")
+                     return new List<string>();
+                 return new List<string> { "/tests/MyClassTest.cs" };
+             });
+        return graph;
     }
 
-    public Task<IReadOnlyList<HotspotInfo>> GetHotspotsAsync(
-        int top = 10, int maxCommits = 100, CancellationToken ct = default)
+    public static IDependencyGraphService CreateGraphService()
     {
-        return Task.FromResult<IReadOnlyList<HotspotInfo>>([
-            new HotspotInfo("/src/Service.cs", 15, 3, "2024-03-15"),
-                new HotspotInfo("/src/Controller.cs", 8, 2, "2024-03-10"),
-            ]);
+        var graph = Substitute.For<IDependencyGraphService>();
+        graph.TraceAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+             .Returns([new DependencyNode("MyOtherClass", "/src/Other.cs", "Class", "1-30", "references")]);
+        graph.FindRelatedAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+             .Returns([]);
+        graph.FindTestCoverageAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+             .Returns(["/tests/MyClassTest.cs"]);
+        return graph;
     }
-}
 
-sealed class MockArchitectureService : IArchitectureService
-{
-    public Task<ArchitectureOverview> GetOverviewAsync(string? path = null, int depth = 1, CancellationToken ct = default)
+    public static ISemanticSearchService CreateSemanticSearchService()
     {
-        return Task.FromResult(new ArchitectureOverview(
-            [new ComponentInfo("src", 5, 20), new ComponentInfo("tests", 3, 2)],
-            new Dictionary<string, int> { ["C#"] = 8, ["JavaScript"] = 2 },
-            10, 42
-        ));
+        var search = Substitute.For<ISemanticSearchService>();
+        search.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<double>(), Arg.Any<CancellationToken>())
+              .Returns([
+                  new ScoredChunk
+                  {
+                      Chunk = new ChunkRecord
+                      {
+                          Id = "chunk1",
+                          SymbolId = "DatabaseService",
+                          FilePath = "/src/DatabaseService.cs",
+                          Content = "public class DatabaseService { }",
+                          Language = "CSharp",
+                          LineStart = 1,
+                          LineEnd = 10
+                      },
+                      Score = 0.95
+                  }
+              ]);
+        return search;
+    }
+
+    public static IArchitectureService CreateArchitectureService()
+    {
+        var arch = Substitute.For<IArchitectureService>();
+        arch.GetOverviewAsync(Arg.Any<string?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new ArchitectureOverview(
+                [new ComponentInfo("src", 5, 20), new ComponentInfo("tests", 3, 2)],
+                new Dictionary<string, int> { ["C#"] = 8, ["JavaScript"] = 2 },
+                10, 42
+            ));
+        return arch;
+    }
+
+    public static IComponentClusteringService CreateClusteringService()
+    {
+        var cluster = Substitute.For<IComponentClusteringService>();
+        cluster.GetClustersAsync(Arg.Any<double>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+               .Returns([
+                   new ComponentCluster("src+tests", ["src", "tests"], 0.75),
+                   new ComponentCluster("lib", ["lib"], 1.0)
+               ]);
+        return cluster;
+    }
+
+    public static IGitHistoryService CreateGitHistoryService()
+    {
+        var git = Substitute.For<IGitHistoryService>();
+        git.GetSymbolHistoryAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+           .Returns(new SymbolHistoryResult(
+               "MyClass", "/src/MyClass.cs", 3, 1,
+               "2024-01-01", "2024-03-15",
+               [
+                   new CommitInfo("abc123", "testuser", "2024-03-15", "Fix bug"),
+                   new CommitInfo("def456", "testuser", "2024-02-01", "Add feature"),
+               ]));
+        git.GetHotspotsAsync(Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+           .Returns([
+               new HotspotInfo("/src/Service.cs", 15, 3, "2024-03-15"),
+               new HotspotInfo("/src/Controller.cs", 8, 2, "2024-03-10"),
+           ]);
+        return git;
     }
 }

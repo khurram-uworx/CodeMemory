@@ -28,6 +28,8 @@ public interface IStorageService
 
     Task<IReadOnlyList<SymbolRecord>> GetSymbolsByKindAsync(string kind, int top = 100, CancellationToken ct = default);
 
+    Task<SymbolsByKindResult> GetSymbolsByKindWithCountAsync(string kind, int top = 100, CancellationToken ct = default);
+
     Task<IReadOnlyList<SymbolRecord>> GetSymbolsByParentAsync(string parentFullName, CancellationToken ct = default);
 
     Task<IReadOnlyList<ChunkRecord>> GetChunksBySymbolAsync(string symbolId, CancellationToken ct = default);

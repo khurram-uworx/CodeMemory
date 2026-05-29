@@ -1,5 +1,7 @@
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using OllamaSharp;
 
 namespace CodeMemory.AspNet.Extensions;
@@ -20,7 +22,13 @@ public static class ServiceCollectionExtensions
                 throw new FileNotFoundException(
                     "Vocabulary file not found. Run download-models.ps1 or use OnnxModelDownloader.", vocabPath);
 
-            return new BertOnnxEmbeddingGenerator(modelPath, vocabPath);
+            var config = sp.GetRequiredService<IConfiguration>();
+            var logger = sp.GetRequiredService<ILogger<BertOnnxEmbeddingGenerator>>();
+
+            var intraOpThreads = config.GetValue<int>("Embedding:OnnxIntraOpThreads", 1);
+            var inferenceBatchSize = config.GetValue<int>("Embedding:OnnxInferenceBatchSize", 32);
+
+            return new BertOnnxEmbeddingGenerator(modelPath, vocabPath, logger, intraOpThreads, inferenceBatchSize);
         });
 
         return services;

@@ -1,11 +1,11 @@
 using CodeMemory.Diagnostics;
 using CodeMemory.Indexing;
+using CodeMemory.Mcp.Models;
 using CodeMemory.Services;
 using CodeMemory.Storage;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
 using System.ComponentModel;
-using System.Text.Json;
 
 namespace CodeMemory.Mcp;
 
@@ -24,57 +24,34 @@ public sealed class AdminTool
     }
 
     [McpServerTool, Description("Triggers a full re-index of the current repository. Clears all stored symbols, chunks, and relationships, then rescans the entire codebase. Use this after git pull, manual file changes, or to recover from a corrupted index.")]
-    public async Task<string> RescanRepositoryAsync(
+    public async Task<AdminRescanResult> RescanRepositoryAsync(
         [Description("Optional: skip files matching these patterns (e.g., '**/*.generated.cs,**/bin/**')")] string? excludePatterns = null,
         CancellationToken ct = default)
     {
         CodeMemoryMetrics.ToolInvocations.Add(1, new("tool", "rescan"), new("host", "mcp"));
 
-        try
-        {
-            var repoRoot = storage.RepoRoot;
-            logger.LogInformation("Rescan requested for repo {RepoRoot}", repoRoot);
+        var repoRoot = storage.RepoRoot;
+        logger.LogInformation("Rescan requested for repo {RepoRoot}", repoRoot);
 
-            IndexingState.MarkIncomplete(repoRoot);
+        IndexingState.MarkIncomplete(repoRoot);
 
-            await storage.ClearAllAsync(ct);
+        await storage.ClearAllAsync(ct);
 
-            using var scope = scopeFactory.CreateScope();
-            var engine = scope.ServiceProvider.GetRequiredService<IndexingEngine>();
-            await engine.RunIndexingAsync(repoRoot, ct);
+        using var scope = scopeFactory.CreateScope();
+        var engine = scope.ServiceProvider.GetRequiredService<IndexingEngine>();
+        var result = await engine.RunIndexingAsync(repoRoot, ct);
 
-            IndexingState.MarkCompleted(repoRoot);
+        IndexingState.MarkCompleted(repoRoot);
+        IndexingState.StoreRelationshipCount(repoRoot, result.RelationshipCount);
 
-            return JsonSerializer.Serialize(new
-            {
-                status = "ok",
-                repoRoot,
-                message = "Repository re-indexed successfully"
-            });
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Rescan failed");
-            return JsonSerializer.Serialize(new { status = "error", message = ex.Message });
-        }
+        return new AdminRescanResult("ok", repoRoot, "Repository re-indexed successfully");
     }
 
     [McpServerTool, Description("Returns the root path of the currently active repository being indexed and queried.")]
-    public string GetRepositoryRoot()
+    public AdminRepositoryRootResult GetRepositoryRoot()
     {
         CodeMemoryMetrics.ToolInvocations.Add(1, new("tool", "get_repository_root"), new("host", "mcp"));
 
-        try
-        {
-            return JsonSerializer.Serialize(new
-            {
-                status = "ok",
-                repoRoot = storage.RepoRoot
-            });
-        }
-        catch (Exception ex)
-        {
-            return JsonSerializer.Serialize(new { status = "error", message = ex.Message });
-        }
+        return new AdminRepositoryRootResult("ok", storage.RepoRoot);
     }
 }

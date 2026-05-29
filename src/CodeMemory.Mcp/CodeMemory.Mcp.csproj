@@ -5,9 +5,27 @@
     <OutputType>Exe</OutputType>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Version>0.5.0</Version>
-    <FileVersion>0.5.0.0</FileVersion>
-    <InformationalVersion>0.5.0</InformationalVersion>
+    <Version>0.5.3</Version>
+    <FileVersion>0.5.3.0</FileVersion>
+    <InformationalVersion>0.5.3</InformationalVersion>
+
+    <Description>CodeMemory MCP server — exposes repository intelligence as MCP tools over STDIO transport for AI coding agents.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/khurram-uworx/CodeMemory</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <PackageProjectUrl>https://github.com/khurram-uworx/CodeMemory</PackageProjectUrl>
+    <PackageTags>ai;code;mcp;model-context-protocol;agents;codememory</PackageTags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <Copyright>Copyright (c) 2026 uWorx</Copyright>
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>code-memory</ToolCommandName>
+    <PackageOutputPath>./nupkg</PackageOutputPath>
   </PropertyGroup>
 
   <ItemGroup>
@@ -19,6 +37,8 @@
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.8" />
     <PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="10.6.0" />
     <PackageReference Include="System.Numerics.Tensors" Version="10.0.8" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.300" PrivateAssets="All" />
+    <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.8" />
   </ItemGroup>
 
   <ItemGroup>

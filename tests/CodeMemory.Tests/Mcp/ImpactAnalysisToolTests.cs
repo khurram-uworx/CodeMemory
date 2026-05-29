@@ -16,8 +16,8 @@ public sealed class ImpactAnalysisToolTests : BaseToolTests
             {
                 b.ConfigureServices(s =>
                 {
-                    s.AddSingleton<IDependencyGraphService>(new MockDependencyGraphService());
-                    s.AddSingleton<IArchitectureService>(new MockArchitectureService());
+                    s.AddSingleton<IDependencyGraphService>(MockServices.CreateDependencyGraphService());
+                    s.AddSingleton<IArchitectureService>(MockServices.CreateArchitectureService());
                 });
             });
         var client = factory.CreateClient();
@@ -64,8 +64,8 @@ public sealed class ImpactAnalysisToolTests : BaseToolTests
             {
                 b.ConfigureServices(s =>
                 {
-                    s.AddSingleton<IDependencyGraphService>(new MockDependencyGraphService());
-                    s.AddSingleton<IArchitectureService>(new MockArchitectureService());
+                    s.AddSingleton<IDependencyGraphService>(MockServices.CreateDependencyGraphService());
+                    s.AddSingleton<IArchitectureService>(MockServices.CreateArchitectureService());
                 });
             });
         var client = factory.CreateClient();
@@ -91,8 +91,8 @@ public sealed class ImpactAnalysisToolTests : BaseToolTests
             {
                 b.ConfigureServices(s =>
                 {
-                    s.AddSingleton<IDependencyGraphService>(new MockDependencyGraphService());
-                    s.AddSingleton<IArchitectureService>(new MockArchitectureService());
+                    s.AddSingleton<IDependencyGraphService>(MockServices.CreateDependencyGraphService());
+                    s.AddSingleton<IArchitectureService>(MockServices.CreateArchitectureService());
                 });
             });
         var client = factory.CreateClient();

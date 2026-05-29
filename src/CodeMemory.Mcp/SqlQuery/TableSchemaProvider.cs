@@ -3,10 +3,24 @@ using System.Reflection;
 
 namespace CodeMemory.Mcp.SqlQuery;
 
+/// <summary>Provides column schema and join key metadata for indexed tables.</summary>
 public sealed class TableSchemaProvider
 {
+    /// <summary>Describes a single column in a table schema.</summary>
+    /// <param name="Name">The column name.</param>
+    /// <param name="Type">The column type string.</param>
+    /// <param name="IsNullable">Whether the column is nullable.</param>
+    /// <param name="IsKey">Whether the column is a vector store key.</param>
+    /// <param name="IsVector">Whether the column is a vector embedding.</param>
+    /// <param name="StorageName">The storage name override, if any.</param>
     public record ColumnInfo(string Name, string Type, bool IsNullable, bool IsKey, bool IsVector, string? StorageName);
 
+    /// <summary>Describes a foreign-key relationship between two tables.</summary>
+    /// <param name="LeftTable">The left table name.</param>
+    /// <param name="LeftColumn">The left table column name.</param>
+    /// <param name="RightTable">The right table name.</param>
+    /// <param name="RightColumn">The right table column name.</param>
+    /// <param name="Description">A human-readable description of the relationship.</param>
     public sealed record JoinKeyInfo(
         string LeftTable, string LeftColumn,
         string RightTable, string RightColumn,
@@ -30,9 +44,11 @@ public sealed class TableSchemaProvider
             "SymbolRecord.FullName LIKE SymbolRecord.FullName || '.%' — self-join for parent-child symbol nesting"),
     ];
 
+    /// <summary>Gets column info for the specified record type.</summary>
     public List<ColumnInfo> GetColumns<T>()
         => GetColumns(typeof(T));
 
+    /// <summary>Gets column info for the specified type.</summary>
     public List<ColumnInfo> GetColumns(Type type)
         => type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
         .Where(p => p.CanRead)
@@ -65,6 +81,7 @@ public sealed class TableSchemaProvider
         })
         .ToList();
 
+    /// <summary>Gets all table schemas keyed by table name.</summary>
     public Dictionary<string, List<ColumnInfo>> GetAll()
         => new(StringComparer.OrdinalIgnoreCase)
         {
@@ -73,9 +90,11 @@ public sealed class TableSchemaProvider
             ["RelationshipRecord"] = GetColumns<RelationshipRecord>(),
         };
 
+    /// <summary>Gets known join key relationships.</summary>
     public List<JoinKeyInfo> GetJoinKeys()
         => KnownJoinKeys;
 
+    /// <summary>Returns a human-readable description of join key relationships.</summary>
     public string DescribeJoinKeys()
     {
         var sb = new System.Text.StringBuilder();
@@ -85,6 +104,7 @@ public sealed class TableSchemaProvider
         return sb.ToString();
     }
 
+    /// <summary>Returns a human-readable description of all table schemas.</summary>
     public string DescribeAll()
     {
         var sb = new System.Text.StringBuilder();

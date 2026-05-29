@@ -3,6 +3,7 @@ using CodeMemory.Storage;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.VectorData;
 using System.Linq.Expressions;
 
@@ -201,6 +202,8 @@ public sealed class HybridStorageService : IStorageService, IDisposable
     int actualDimension;
     VectorStoreCollection<string, ChunkRecord>? chunks;
     bool initialized;
+    readonly IMemoryCache? cache;
+    int generation;
 
     public HybridStorageService(
         string repoRoot,
@@ -210,7 +213,8 @@ public sealed class HybridStorageService : IStorageService, IDisposable
         Func<CodeMemoryDbContext> createDbContext,
         IDbContextFactory<RepoRegistryDbContext> registryDbFactory,
         IEmbeddingGenerator<string, Embedding<float>>? embeddingGenerator = null,
-        int configuredDimension = 1536)
+        int configuredDimension = 1536,
+        IMemoryCache? cache = null)
     {
         this.repoRoot = repoRoot;
         this.registeredRepoId = registeredRepoId;
@@ -220,6 +224,7 @@ public sealed class HybridStorageService : IStorageService, IDisposable
         this.registryDbFactory = registryDbFactory;
         this.embeddingGenerator = embeddingGenerator;
         this.configuredDimension = configuredDimension;
+        this.cache = cache;
     }
 
     public string RepoRoot => repoRoot;
@@ -484,6 +489,42 @@ public sealed class HybridStorageService : IStorageService, IDisposable
             .ToListAsync(ct);
     }
 
+    public async Task<SymbolsByKindResult> GetSymbolsByKindWithCountAsync(
+        string kind, int top = 100, CancellationToken ct = default)
+    {
+        throwIfNotInitialized();
+
+        if (cache is null)
+            return await querySymbolsByKindAsync(kind, top, ct);
+
+        var key = $"syk:{repoRoot}:{kind}:{top}:v{generation}";
+        return await cache.GetOrCreateAsync(key, entry =>
+        {
+            entry.SlidingExpiration = TimeSpan.FromMinutes(5);
+            entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(30);
+            return querySymbolsByKindAsync(kind, top, ct);
+        }) ?? new SymbolsByKindResult([], 0);
+    }
+
+    async Task<SymbolsByKindResult> querySymbolsByKindAsync(
+        string kind, int top, CancellationToken ct)
+    {
+        await using var db = createDbContext();
+        var total = await db.Symbols
+            .AsNoTracking()
+            .Where(s => s.Kind == kind)
+            .CountAsync(ct);
+
+        var symbols = await db.Symbols
+            .AsNoTracking()
+            .Where(s => s.Kind == kind)
+            .Take(top)
+            .Select(s => s.ToRecord())
+            .ToListAsync(ct);
+
+        return new SymbolsByKindResult(symbols, total);
+    }
+
     public async Task<IReadOnlyList<ChunkRecord>> GetChunksBySymbolAsync(string symbolId, CancellationToken ct = default)
     {
         throwIfNotInitialized();
@@ -546,6 +587,8 @@ public sealed class HybridStorageService : IStorageService, IDisposable
     {
         throwIfNotInitialized();
 
+        Interlocked.Increment(ref generation);
+
         if (chunks is not null)
             await chunks.EnsureCollectionDeletedAsync(ct);
 
@@ -580,7 +623,7 @@ public sealed class HybridStorageService : IStorageService, IDisposable
 
         foreach (var c in detected)
         {
-            if (existingByPath.TryGetValue(c.BuildFilePath, out var existingEntity))
+            if (existingByPath.TryGetValue(c.BuildFileDirectory, out var existingEntity))
             {
                 if (!existingEntity.IsDeleted)
                 {
@@ -594,7 +637,7 @@ public sealed class HybridStorageService : IStorageService, IDisposable
                 toInsert.Add(new Components
                 {
                     RepositoryId = repoId,
-                    BuildFilePath = c.BuildFilePath,
+                    BuildFilePath = c.BuildFileDirectory,
                     ComponentName = c.ComponentName,
                     ComponentKindString = c.ComponentKind.ToString(),
                     ComponentTypeString = c.ComponentType.ToString(),

@@ -5,6 +5,9 @@
 
 CodeMemory transforms repositories into queryable intelligence — extracting symbols, relationships, and semantic understanding — and exposing it through MCP tools designed for AI coding agents.
 
+What's new in 0.5 and what's coming next:
+- [Roadmap & Upcoming Releases](https://github.com/khurram-uworx/CodeMemory/issues/21)
+
 ## When to Use
 
 For AI coding agents that need deep, persistent understanding of a codebase. Not a fit for human-focused search tools, CLI utilities, or standalone chat interfaces.
@@ -47,15 +50,26 @@ Define the MCP tool in your agent's configuration:
 >
 > See the [package docs](packages/code-memory/README.md) for multi-repo configuration and all available options.
 
-### ASP.NET host (Streamable HTTP — experimental)
+### ASP.NET host
 
-Next release focus. Try it now:
+Streamable HTTP MCP host with a Repository Dashboard, dynamic repo management, and multi-provider storage.
 
 ```bash
 dotnet run --project src/CodeMemory.AspNet
 ```
 
-Configure repos in `appsettings.json` with Storage provider (`"inmemory"`, `"sqlite"`, `"pgvector"`, `"sqlserver"`). Each repo gets its own MCP endpoint at `http://localhost:4792/api/mcp/{repoName}`.
+Features:
+
+- **Repository Dashboard** — Razor Pages UI at `http://localhost:4792/` for managing repos (add by local path or GitHub URL), live SSE status updates, per-repo component browser with classification, and code metrics (symbol distributions, method complexity, coupling analysis)
+- **Multi-provider storage** — `"inmemory"`, `"sqlite"`, `"pgvector"`, `"sqlserver"` in `appsettings.json:Storage:Provider`
+- **Embedding backends** — `"ngram"` (default, offline), `"onnx"` (bge-micro-v2 via ONNX Runtime), `"ollama"` (Ollama server) in `appsettings.json:Embedding:Provider`
+- **Scheduled re-indexing** — cron-based periodic rebuild via `RebuildIndex:Cron`
+- **Metrics & Observability** — OpenTelemetry metrics, Prometheus scraping, Grafana dashboards, Aspire Dashboard
+- **Docker deployment** — `docker-compose.yml` with PostgreSQL (pgvector), Prometheus, Grafana, Aspire Dashboard
+
+> The [`CodeMemory.AspNet.Extensions`](src/CodeMemory.AspNet.Extensions/) project contains BERT/ONNX and Ollama embedding generators — available for review although not yet wired into the host pipeline.
+
+Each repo gets its own MCP endpoint at `http://localhost:4792/api/mcp/{repoName}`.
 
 > **For agents:** Indexing is non-blocking in both hosts. Poll the `ping` tool until `indexingCompleted` is `true` before calling other tools, or results will be empty/partial.
 
@@ -67,7 +81,8 @@ Configure repos in `appsettings.json` with Storage provider (`"inmemory"`, `"sql
 
 - [GETTING-STARTED](GETTING-STARTED.md) — install, configure, and query your first repo
 - [ARCHITECTURE](ARCHITECTURE.md) — system architecture, data flow, dependency layering, storage providers
+- [AspNet Host README](src/CodeMemory.AspNet/README.md) — Repository Portal UI, multi-repo architecture, Metrics & Components pages
 
 ## License
 
-Apache-2.0
+MIT

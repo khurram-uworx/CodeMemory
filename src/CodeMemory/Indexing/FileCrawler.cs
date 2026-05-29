@@ -43,7 +43,8 @@ public sealed class FileCrawler
     static readonly FrozenSet<string> AlwaysIgnored = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         ".git",
-        ".codememory",
+        ".codememory", ".memori",
+        "node_modules"
     }.ToFrozenSet();
 
     readonly ILogger<FileCrawler> logger;

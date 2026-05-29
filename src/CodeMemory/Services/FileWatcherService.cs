@@ -1,5 +1,6 @@
 using CodeMemory.Indexing;
 using CodeMemory.Indexing.Parsing;
+using CodeMemory.Services.Architecture;
 using CodeMemory.Storage;
 using Microsoft.Extensions.Logging;
 
@@ -22,9 +23,13 @@ public sealed class FileWatcherService : IDisposable
         return LanguageDetector.SupportedExtensions.Contains(ext);
     }
 
+    static bool isBuildFile(string fullPath)
+        => ProjectFileDetector.IsKnownBuildFile(Path.GetFileName(fullPath)) != null;
+
     readonly string repoRoot;
     readonly IStorageService storage;
     readonly IndexingEngine engine;
+    readonly ProjectFileDetector projectFileDetector;
     readonly ILogger<FileWatcherService> logger;
     readonly object gate = new();
     readonly HashSet<string> pendingCreations = new(StringComparer.OrdinalIgnoreCase);
@@ -42,11 +47,13 @@ public sealed class FileWatcherService : IDisposable
         string repoRoot,
         IStorageService storage,
         IndexingEngine engine,
+        ProjectFileDetector projectFileDetector,
         ILogger<FileWatcherService> logger)
     {
         this.repoRoot = repoRoot;
         this.storage = storage;
         this.engine = engine;
+        this.projectFileDetector = projectFileDetector;
         this.logger = logger;
         gitIgnore = GitIgnoreParser.Empty;
     }
@@ -55,7 +62,7 @@ public sealed class FileWatcherService : IDisposable
     {
         if (disposed) return;
         if (Directory.Exists(e.FullPath)) return;
-        if (!isWatchedExtension(e.FullPath)) return;
+        if (!isWatchedExtension(e.FullPath) && !isBuildFile(e.FullPath)) return;
         if (isGitIgnored(e.FullPath)) return;
         enqueueForReindex(e.FullPath);
     }
@@ -64,7 +71,7 @@ public sealed class FileWatcherService : IDisposable
     {
         if (disposed) return;
         if (Directory.Exists(e.FullPath)) return;
-        if (!isWatchedExtension(e.FullPath)) return;
+        if (!isWatchedExtension(e.FullPath) && !isBuildFile(e.FullPath)) return;
         if (isGitIgnored(e.FullPath)) return;
         enqueueForReindex(e.FullPath);
     }
@@ -72,7 +79,7 @@ public sealed class FileWatcherService : IDisposable
     void OnDeleted(object? sender, FileSystemEventArgs e)
     {
         if (disposed) return;
-        if (!isWatchedExtension(e.FullPath)) return;
+        if (!isWatchedExtension(e.FullPath) && !isBuildFile(e.FullPath)) return;
         if (isGitIgnored(e.FullPath)) return;
 
         lock (gate)
@@ -87,7 +94,7 @@ public sealed class FileWatcherService : IDisposable
     {
         if (disposed) return;
 
-        if (isWatchedExtension(e.OldFullPath) && !isGitIgnored(e.OldFullPath))
+        if ((isWatchedExtension(e.OldFullPath) || isBuildFile(e.OldFullPath)) && !isGitIgnored(e.OldFullPath))
         {
             lock (gate)
             {
@@ -96,7 +103,7 @@ public sealed class FileWatcherService : IDisposable
             }
         }
 
-        if (isWatchedExtension(e.FullPath) && !isGitIgnored(e.FullPath))
+        if ((isWatchedExtension(e.FullPath) || isBuildFile(e.FullPath)) && !isGitIgnored(e.FullPath))
         {
             enqueueForReindex(e.FullPath);
         }
@@ -171,9 +178,18 @@ public sealed class FileWatcherService : IDisposable
 
     async Task processBatchAsync(string[] creates, string[] deletes)
     {
+        bool buildFileChanged = false;
+
         foreach (var fullPath in deletes)
         {
             if (disposed) return;
+
+            if (isBuildFile(fullPath))
+            {
+                buildFileChanged = true;
+                logger.LogDebug("Build file deleted: {Path}", fullPath);
+                continue;
+            }
 
             try
             {
@@ -203,6 +219,13 @@ public sealed class FileWatcherService : IDisposable
         foreach (var fullPath in creates)
         {
             if (disposed) return;
+
+            if (isBuildFile(fullPath))
+            {
+                buildFileChanged = true;
+                logger.LogDebug("Build file changed, will refresh component mappings: {Path}", fullPath);
+                continue;
+            }
 
             try
             {
@@ -239,6 +262,21 @@ public sealed class FileWatcherService : IDisposable
             catch (Exception ex)
             {
                 logger.LogWarning(ex, "Failed to re-index {Path}", fullPath);
+            }
+        }
+
+        if (buildFileChanged)
+        {
+            try
+            {
+                logger.LogInformation("Build files changed — refreshing component mappings");
+                var components = projectFileDetector.Discover(repoRoot);
+                await storage.StoreComponentMappingAsync(components);
+                logger.LogInformation("Component mappings refreshed — {Count} components", components.Count);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to refresh component mappings after build file change");
             }
         }
     }

@@ -75,7 +75,7 @@ public sealed class GitHistoryService : IGitHistoryService, IDisposable
         var (exitCode, stdout) = await runGitAsync(logArgs, ct);
 
         if (exitCode != 0 || string.IsNullOrWhiteSpace(stdout))
-            return [];
+            return null;
 
         var fileCounts = new Dictionary<string, (int commits, HashSet<string> authors, string lastDate)>(StringComparer.OrdinalIgnoreCase);
 
@@ -120,6 +120,7 @@ public sealed class GitHistoryService : IGitHistoryService, IDisposable
         using var activity = CodeMemoryActivitySources.Git.StartActivity("GitCommand");
         activity?.SetTag("git.args", arguments);
 
+        Process? process = null;
         try
         {
             var psi = new ProcessStartInfo("git", arguments)
@@ -127,11 +128,12 @@ public sealed class GitHistoryService : IGitHistoryService, IDisposable
                 WorkingDirectory = repoRoot,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
+                RedirectStandardInput = true,
                 UseShellExecute = false,
                 CreateNoWindow = true,
             };
 
-            using var process = Process.Start(psi);
+            process = Process.Start(psi);
             if (process == null)
                 return (1, "");
 
@@ -139,9 +141,12 @@ public sealed class GitHistoryService : IGitHistoryService, IDisposable
             cts.CancelAfter(TimeSpan.FromSeconds(30));
             var timeoutCt = cts.Token;
 
-            var stdout = await process.StandardOutput.ReadToEndAsync(timeoutCt);
-            var stderr = await process.StandardError.ReadToEndAsync(timeoutCt);
-            await process.WaitForExitAsync(timeoutCt);
+            var stdoutTask = process.StandardOutput.ReadToEndAsync(timeoutCt);
+            var stderrTask = process.StandardError.ReadToEndAsync(timeoutCt);
+            await Task.WhenAll(stdoutTask, stderrTask, process.WaitForExitAsync(timeoutCt));
+
+            var stdout = await stdoutTask;
+            var stderr = await stderrTask;
 
             if (process.ExitCode != 0)
             {
@@ -153,6 +158,12 @@ public sealed class GitHistoryService : IGitHistoryService, IDisposable
         }
         catch (OperationCanceledException)
         {
+            logger.LogWarning("Git command timed out after 30s: {Args}", arguments);
+            if (process is { HasExited: false })
+            {
+                try { process.Kill(); } catch { /* best effort */ }
+                await process.WaitForExitAsync(CancellationToken.None);
+            }
             return (1, "");
         }
         catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)

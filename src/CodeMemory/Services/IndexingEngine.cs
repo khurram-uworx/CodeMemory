@@ -20,6 +20,12 @@ public sealed record FileIndexResult(
     IReadOnlyList<ChunkRecord> Chunks,
     IReadOnlyList<RelationshipRecord> Relationships);
 
+public sealed record IndexingResult(
+    long FileCount,
+    long SymbolCount,
+    long ChunkCount,
+    int RelationshipCount);
+
 public sealed class IndexingEngine
 {
     static SymbolRecord mapToSymbolRecord(Symbol s, string guid)
@@ -130,7 +136,7 @@ public sealed class IndexingEngine
         this.embeddingGenerator = embeddingGenerator;
     }
 
-    public async Task RunIndexingAsync(string repoRoot, CancellationToken ct,
+    public async Task<IndexingResult> RunIndexingAsync(string repoRoot, CancellationToken ct,
         IProgress<double>? progress = null)
     {
         using var activity = CodeMemoryActivitySources.Indexing.StartActivity("RunIndexing");
@@ -244,9 +250,10 @@ public sealed class IndexingEngine
                 allSymbolRecords.Count, stopwatch.Elapsed);
         }
 
+        var allRelationships = new List<Relationship>();
+
         if (allSymbols.Count > 0)
         {
-            var allRelationships = new List<Relationship>();
             foreach (var (result, path) in parseResults)
             {
                 if (extractors.TryGetValue(result.Language, out var pair))
@@ -302,7 +309,8 @@ public sealed class IndexingEngine
         if (partialTextCount > 0)
             parsedInfo += $", partially parsed ({partialTextCount} text)";
 
-        var relationshipsInfo = allSymbols.Count > 0 ? "extracted" : "0";
+        var relationshipCount = allSymbols.Count > 0 ? allRelationships.Count : 0;
+        var relationshipsInfo = relationshipCount > 0 ? relationshipCount.ToString() : "0";
 
         progress?.Report(1.0);
         indexingSw.Stop();
@@ -310,6 +318,7 @@ public sealed class IndexingEngine
         activity?.SetTag("files.count", fileCount);
         activity?.SetTag("symbols.count", symbolCount);
         activity?.SetTag("chunks.count", chunkCount);
+        activity?.SetTag("relationships.count", relationshipCount);
 
         CodeMemoryMetrics.IndexingDuration.Record(indexingSw.Elapsed.TotalMilliseconds);
         CodeMemoryMetrics.FilesIndexed.Add(fileCount);
@@ -318,6 +327,8 @@ public sealed class IndexingEngine
         logger.LogInformation(
             "Indexing complete — {Files} files, {ParsedInfo}, {Symbols} symbols, {Chunks} chunks, {Relationships} relationships",
             fileCount, parsedInfo, symbolCount, chunkCount, relationshipsInfo);
+
+        return new IndexingResult(fileCount, symbolCount, chunkCount, relationshipCount);
     }
 
     public async Task<FileIndexResult> ProcessFileAsync(string filePath, CancellationToken ct)

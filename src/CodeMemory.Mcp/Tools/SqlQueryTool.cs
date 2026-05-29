@@ -6,6 +6,7 @@ using System.ComponentModel;
 
 namespace CodeMemory.Mcp.Tools;
 
+/// <summary>MCP tool that executes SELECT-only SQL queries against the indexed repository.</summary>
 [McpServerToolType]
 public sealed class SqlQueryTool
 {
@@ -16,6 +17,7 @@ public sealed class SqlQueryTool
     readonly TableSchemaProvider schemaProvider;
     readonly ILogger<SqlQueryTool> logger;
 
+    /// <summary>Initializes a new instance of SqlQueryTool.</summary>
     public SqlQueryTool(
         IStorageService storageService,
         SqlQueryService sqlQueryService,
@@ -28,6 +30,7 @@ public sealed class SqlQueryTool
         this.logger = logger;
     }
 
+    /// <summary>Executes a SELECT-only SQL query against the indexed repository.</summary>
     [McpServerTool, Description(@"
 Execute SELECT-only SQL queries against the indexed repository.
 

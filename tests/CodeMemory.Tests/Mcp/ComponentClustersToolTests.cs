@@ -42,7 +42,7 @@ public sealed class ComponentClustersToolTests : BaseToolTests
             {
                 b.ConfigureServices(s =>
                 {
-                    s.AddSingleton<IComponentClusteringService>(new MockClusteringService());
+                    s.AddSingleton<IComponentClusteringService>(MockServices.CreateClusteringService());
                 });
             });
         var client = factory.CreateClient();

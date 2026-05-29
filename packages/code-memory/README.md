@@ -10,10 +10,10 @@
 From your terminal run:
 
 ```bash
-npx -y @uworx/code-memory --version
+npx -y @uworx/code-memory --help
 ```
 
-It should print the installed version and exit. You can then proceed to configure your MCP client (VS Code, Cursor, Claude Desktop, etc.) to use the `code-memory` MCP server as described below.
+It should print usage info and exit. You can then proceed to configure your MCP client (VS Code, Cursor, Claude Desktop, etc.) to use the `code-memory` MCP server as described below.
 
 ## Configuration
 
@@ -42,6 +42,22 @@ This indexes the current working directory. To index a different folder, pass `-
   }
 }
 ```
+
+### Global dotnet tool (alternative)
+
+```bash
+dotnet tool install -g CodeMemory.Mcp --prerelease
+code-memory
+```
+
+### Flags
+
+| Flag | Description |
+|------|-------------|
+| `--repo, -r <path>` | Repository root path (default: current directory) |
+| `--debug` | Index synchronously with verbose logging (no MCP server) |
+| `--help, -h` | Show usage |
+| `--version` | Show version |
 
 ## How It Works
 
@@ -92,4 +108,4 @@ Full documentation: [github.com/khurram-uworx/CodeMemory](https://github.com/khu
 
 ## License
 
-Apache-2.0
+MIT

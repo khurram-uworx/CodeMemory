@@ -12,7 +12,7 @@ Engineering constraints and implementation guidance for AI coding agents contrib
 
 Do not reinvent infrastructure. Prefer existing .NET and ecosystem primitives over custom solutions.
 
-Forbidden: custom LLM clients, custom embedding pipelines (use `IEmbeddingGenerator` — reference implementation in Memori NuGet), custom DI, custom vector DBs, custom chat orchestration.
+Forbidden: custom LLM clients, custom embedding pipelines (use `IEmbeddingGenerator` — reference implementations in Memori NuGet and `CodeMemory.AspNet.Extensions`), custom DI, custom vector DBs, custom chat orchestration.
 
 CodeMemory is NOT: an IDE, a chat assistant, a code generator, or a standalone AI agent runtime. It IS: a repository intelligence and memory substrate exposed via MCP.
 
@@ -50,7 +50,7 @@ See ARCHITECTURE.md §Project Structure. Key rules:
 
 ### Multi-Repo Architecture
 
-See ARCHITECTURE.md §Multi-Repo Architecture. Key constraints:
+See ARCHITECTURE.md §Multi-Repo Architecture (AspNet). Key constraints:
 - `IStorageService` is the **only** per-repo concern — all other services stay non-keyed singletons
 - `Stateless = true` (Streamable HTTP) — no session affinity
 - `PerSessionExecutionContext = true` preserves `AsyncLocal` flow to tool handlers
@@ -87,7 +87,9 @@ or when still indexing:
 
 ## Embedding Limitations & Agent Expectations
 
-code-memory MCP configured for this repo, defaults to the `NgramEmbeddingGenerator` (see [ADR Library-Embeddings-01](docs/adr/Library-Embeddings-01.md)) — a **deterministic character n-gram embedding** that requires no ML model, no API keys, and zero startup cost. It is consistent across processes and sessions. However, it is **not true semantic search**.
+code-memory MCP configured for this repo defaults to the `NgramEmbeddingGenerator` (see [ADR Library-Embeddings-01](docs/adr/Library-Embeddings-01.md)) — a **deterministic character n-gram embedding** that requires no ML model, no API keys, and zero startup cost. It is consistent across processes and sessions. However, it is **not true semantic search**.
+
+> AspNet host supports alternative embedding backends (`"onnx"`, `"ollama"`) that provide true semantic search — see `appsettings.json:Embedding:Provider` and [`CodeMemory.AspNet.Extensions`](ARCHITECTURE.md#embedding-providers).
 
 **Agents using `semantic_search` or `sql_query` with `ORDER BY SIMILARITY` / `VECTOR_SEARCH` must follow these rules:**
 
@@ -113,7 +115,7 @@ MCP tools use three patterns — follow the one matching your return type:
 ## Testing
 
 - **Framework:** NUnit 4.x — `[Test]`, `Assert.That(...)`, `Assert.ThrowsAsync`, no `[TestCase]`
-- **Mocking:** Hand-written stubs in `MockServices.cs` — no mocking library dependency
+- **Mocking:** NSubstitute-based factory methods in `MockServices.cs` — use `MockServices.CreateXxxService()` in tests. For unique test scenarios, configure inline with `Substitute.For<IService>()` instead of extending the shared factory.
 - **Naming:** `Method_Scenario_ExpectedBehavior` PascalCase
 - **Pattern:** Arrange-Act-Aggregate (AAA, no explicit comments needed)
 - **Organization:** Mirror `src/` layout; one class per file, `*Tests.cs` suffix
@@ -129,6 +131,7 @@ MCP tools use three patterns — follow the one matching your return type:
 - **`readonly` fields:** All DI-injected services
 - **Collection expressions:** `[]` for empty/static, `new List<T>()` for mutable
 - **Private fields:** No underscore prefix (`logger` not `_logger`)
+- **MCP tool return types:** Always use typed records/classes, never `string`. The MCP SDK serializes typed returns automatically into the JSON-RPC envelope. Manual `JsonSerializer.Serialize` + `string` return (the old pattern) bypasses SDK serialization, swallows exceptions into success responses instead of proper JSON-RPC errors, and hides the response schema from `tools/list`. Define result types in the tool file (like `AspNetSqlQueryResult`) or under `Mcp/Models/` for shared types.
 
 ## DI Conventions
 
