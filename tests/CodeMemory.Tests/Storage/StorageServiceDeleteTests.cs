@@ -8,7 +8,7 @@ public sealed class StorageServiceDeleteTests
 {
     static StorageService CreateInMemoryStorage()
     {
-        var store = new InMemoryVectorStore();
+        var store = new InMemoriVectorStore();
         var repoRoot = Path.Combine(Path.GetTempPath(), "CodeMemoryDeleteTests", Guid.NewGuid().ToString());
         Directory.CreateDirectory(repoRoot);
         return new StorageService(repoRoot, NullLogger<StorageService>.Instance, store);

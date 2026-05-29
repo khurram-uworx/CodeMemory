@@ -74,9 +74,10 @@ public sealed class RebuildIndexHostedService : BackgroundService
                     repoContext.CurrentRepoName = repo.Name;
                     repoContext.CurrentRepoRoot = repo.LocalPath;
 
-                    await indexWithRetryAsync(repo.Name, repo.LocalPath, repoCt);
+                    var indexResult = await indexWithRetryAsync(repo.Name, repo.LocalPath, repoCt);
 
                     IndexingState.MarkCompleted(repo.Name);
+                    IndexingState.StoreRelationshipCount(repo.Name, indexResult.RelationshipCount);
                     await registry.UpdateIndexStatusAsync(repo.Name, "Indexed");
 
                     logger.LogInformation("Rebuild complete for '{Repo}'", repo.Name);
@@ -106,7 +107,7 @@ public sealed class RebuildIndexHostedService : BackgroundService
         }
     }
 
-    async Task indexWithRetryAsync(string repoName, string repoPath, CancellationToken ct)
+    async Task<IndexingResult> indexWithRetryAsync(string repoName, string repoPath, CancellationToken ct)
     {
         var maxAttempts = Math.Max(1, indexingOptions.RetryCount + 1);
         var baseDelay = TimeSpan.FromSeconds(indexingOptions.RetryBaseDelaySeconds);
@@ -125,8 +126,8 @@ public sealed class RebuildIndexHostedService : BackgroundService
                     IndexingState.UpdateProgress(repoName, p);
                 });
 
-                await engine.RunIndexingAsync(repoPath, ct, progress);
-                return;
+                var result = await engine.RunIndexingAsync(repoPath, ct, progress);
+                return result;
             }
             catch (OperationCanceledException)
             {
@@ -141,6 +142,8 @@ public sealed class RebuildIndexHostedService : BackgroundService
                 await Task.Delay(delay, ct);
             }
         }
+
+        throw new InvalidOperationException($"All {maxAttempts} indexing attempts failed for '{repoName}'");
     }
 
     async Task gitPullAsync(Repositories repo, CancellationToken ct)

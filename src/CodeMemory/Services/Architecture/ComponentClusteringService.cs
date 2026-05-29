@@ -111,8 +111,8 @@ public sealed class ComponentClusteringService : IComponentClusteringService
 
         foreach (var kind in knownKinds)
         {
-            var batch = await storage.GetSymbolsByKindAsync(kind, 100000, ct);
-            symbolsPerKind.AddRange(batch);
+            var result = await storage.GetSymbolsByKindWithCountAsync(kind, 100000, ct);
+            symbolsPerKind.AddRange(result.Symbols);
         }
 
         if (symbolsPerKind.Count == 0)

@@ -54,7 +54,7 @@ public sealed class SymbolRecord
 }
 
 public sealed record ComponentInformation(
-    string BuildFilePath,
+    string BuildFileDirectory,
     string ComponentName,
     ComponentKind ComponentKind,
     ComponentType ComponentType,
@@ -92,3 +92,8 @@ public sealed class ChunkRecord
     [VectorStoreVector(1536, DistanceFunction = DistanceFunction.CosineDistance)]
     public ReadOnlyMemory<float>? Embedding { get; set; }
 }
+
+public sealed record SymbolsByKindResult(
+    IReadOnlyList<SymbolRecord> Symbols,
+    int TotalCount
+);

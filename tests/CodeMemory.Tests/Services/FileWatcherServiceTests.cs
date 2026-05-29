@@ -73,8 +73,9 @@ public sealed class FileWatcherServiceTests
             await storage.InitializeAsync();
 
             var engine = CreateEngine(storage);
+            var detector = new ProjectFileDetector(NullLogger<ProjectFileDetector>.Instance);
             using var watcher = new FileWatcherService(
-                dir, storage, engine, NullLogger<FileWatcherService>.Instance);
+                dir, storage, engine, detector, NullLogger<FileWatcherService>.Instance);
 
             await watcher.StartAsync(CancellationToken.None);
 
@@ -113,8 +114,9 @@ public sealed class FileWatcherServiceTests
             await storage.InitializeAsync();
 
             var engine = CreateEngine(storage);
+            var detector = new ProjectFileDetector(NullLogger<ProjectFileDetector>.Instance);
             using var watcher = new FileWatcherService(
-                dir, storage, engine, NullLogger<FileWatcherService>.Instance);
+                dir, storage, engine, detector, NullLogger<FileWatcherService>.Instance);
 
             await watcher.StartAsync(CancellationToken.None);
 
@@ -188,8 +190,9 @@ public sealed class FileWatcherServiceTests
             await storage.InitializeAsync();
 
             var engine = CreateEngine(storage);
+            var detector = new ProjectFileDetector(NullLogger<ProjectFileDetector>.Instance);
             using var watcher = new FileWatcherService(
-                dir, storage, engine, NullLogger<FileWatcherService>.Instance);
+                dir, storage, engine, detector, NullLogger<FileWatcherService>.Instance);
 
             await watcher.StartAsync(CancellationToken.None);
 
@@ -233,8 +236,9 @@ public sealed class FileWatcherServiceTests
             await storage.InitializeAsync();
 
             var engine = CreateEngine(storage);
+            var detector = new ProjectFileDetector(NullLogger<ProjectFileDetector>.Instance);
             using var watcher = new FileWatcherService(
-                dir, storage, engine, NullLogger<FileWatcherService>.Instance);
+                dir, storage, engine, detector, NullLogger<FileWatcherService>.Instance);
 
             await watcher.StartAsync(CancellationToken.None);
 
@@ -254,9 +258,64 @@ public sealed class FileWatcherServiceTests
         }
     }
 
+    [Test]
+    public async Task StartWatcher_CreateBuildFile_ComponentMappingsUpdated()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "CodeMemoryWatcherTests", Guid.NewGuid().ToString());
+        var srcDir = Path.Combine(dir, "src", "MyProject");
+        Directory.CreateDirectory(srcDir);
+
+        try
+        {
+            var storage = CreateInMemoryStorage(dir);
+            await storage.InitializeAsync();
+
+            var engine = CreateEngine(storage);
+            var detector = new ProjectFileDetector(NullLogger<ProjectFileDetector>.Instance);
+            using var watcher = new FileWatcherService(
+                dir, storage, engine, detector, NullLogger<FileWatcherService>.Instance);
+
+            await watcher.StartAsync(CancellationToken.None);
+
+            // Create a .csproj file (build file) — should trigger component refresh
+            var csprojPath = Path.Combine(srcDir, "MyProject.csproj");
+            File.WriteAllText(csprojPath, """
+                <Project Sdk="Microsoft.NET.Sdk">
+                  <PropertyGroup>
+                    <TargetFramework>net9.0</TargetFramework>
+                  </PropertyGroup>
+                </Project>
+                """);
+
+            // Poll for the component mapping to appear
+            var deadline = DateTime.UtcNow + TimeSpan.FromMilliseconds(TimeoutMs);
+            IReadOnlyList<ComponentInformation>? componentsAfter = null;
+
+            while (DateTime.UtcNow < deadline)
+            {
+                componentsAfter = await storage.LoadComponentMappingAsync();
+                if (componentsAfter.Count > 0)
+                    break;
+                await Task.Delay(PollIntervalMs);
+            }
+
+            Assert.That(componentsAfter, Is.Not.Null.And.Not.Empty,
+                "Component mappings should be populated after creating a .csproj file");
+            Assert.That(componentsAfter.Any(c => c.ComponentName == "MyProject"), Is.True,
+                "Component 'MyProject' should be discovered from the .csproj file");
+            Assert.That(componentsAfter.Any(c => c.BuildFileDirectory == "src/MyProject"), Is.True,
+                "Component directory should be 'src/MyProject'");
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+                Directory.Delete(dir, recursive: true);
+        }
+    }
+
     static IStorageService CreateInMemoryStorage(string repoRoot)
     {
-        var store = new InMemoryVectorStore();
+        var store = new InMemoriVectorStore();
         return new StorageService(repoRoot, NullLogger<StorageService>.Instance, store);
     }
 

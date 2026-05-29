@@ -5,7 +5,7 @@ namespace CodeMemory.Tests.Services.Query;
 
 public sealed class SqlQueryServiceJoinTests
 {
-    static async Task seedJoinDataAsync(InMemoryVectorStore store)
+    static async Task seedJoinDataAsync(InMemoriVectorStore store)
     {
         var sym = store.GetCollection<string, SymbolRecord>("symbols");
         await sym.UpsertAsync(new SymbolRecord { Id = "s:MyClass", Name = "MyClass", Kind = "Class", FilePath = "/src/MyClass.cs", FullName = "MyClass", LineStart = 1, LineEnd = 100, Modifiers = "public" });
@@ -256,5 +256,96 @@ public sealed class SqlQueryServiceJoinTests
         Assert.That(result.RowCount, Is.EqualTo(2));
         foreach (var row in result.Rows!)
             Assert.That(row["s.Name"], Is.EqualTo("MyClass"));
+    }
+
+    [Test]
+    public async Task CrossJoin_RightJoinSyntax_ReturnsRightOuterRows()
+    {
+        var (store, registry, service) = SqlQueryServiceTests.createServices();
+        await seedJoinDataAsync(store);
+        var rel = store.GetCollection<string, RelationshipRecord>("relationships");
+        await rel.UpsertAsync(new RelationshipRecord
+        {
+            Id = "r:orphan",
+            SourceSymbolId = "s:NONEXISTENT",
+            TargetSymbolId = "s:NONEXISTENT",
+            RelationshipType = "Orphan"
+        });
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT s.Name, r.RelationshipType FROM SymbolRecord s RIGHT JOIN RelationshipRecord r ON s.Id = r.SourceSymbolId ORDER BY r.Id");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(4));
+        var lastRow = result.Rows![3];
+        Assert.That(lastRow["s.Name"], Is.Null);
+        Assert.That(lastRow["r.RelationshipType"], Is.EqualTo("Orphan"));
+    }
+
+    [Test]
+    public async Task CrossJoin_FullOuterJoinSyntax_ReturnsAllRows()
+    {
+        var (store, registry, service) = SqlQueryServiceTests.createServices();
+        await seedJoinDataAsync(store);
+        var sym = store.GetCollection<string, SymbolRecord>("symbols");
+        await sym.UpsertAsync(new SymbolRecord
+        {
+            Id = "s:Loner",
+            Name = "Loner",
+            Kind = "Class",
+            FilePath = "/src/Loner.cs",
+            FullName = "Loner",
+            LineStart = 1,
+            LineEnd = 10,
+            Modifiers = "public"
+        });
+        var rel = store.GetCollection<string, RelationshipRecord>("relationships");
+        await rel.UpsertAsync(new RelationshipRecord
+        {
+            Id = "r:orphan",
+            SourceSymbolId = "s:NONEXISTENT",
+            TargetSymbolId = "s:Loner",
+            RelationshipType = "Orphan"
+        });
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT s.Name, r.RelationshipType FROM SymbolRecord s FULL OUTER JOIN RelationshipRecord r ON s.Id = r.SourceSymbolId ORDER BY s.Name");
+
+        Assert.That(result.Success, Is.True);
+        // Loner (left orphan, null right), Helper/IOld/MyClass/etc (matched), orphan (right orphan, null left)
+        var rows = result.Rows!;
+        Assert.That(rows.Any(r => r["s.Name"]?.ToString() == "Loner" && r["r.RelationshipType"] is null), Is.True);
+        Assert.That(rows.Any(r => r["s.Name"] is null && r["r.RelationshipType"]?.ToString() == "Orphan"), Is.True);
+        Assert.That(rows.Any(r => r["s.Name"]?.ToString() == "Helper" && r["r.RelationshipType"]?.ToString() == "References"), Is.True);
+    }
+
+    [Test]
+    public async Task CrossJoin_UsingSyntax_GeneratesEqualityCondition()
+    {
+        var (store, registry, service) = SqlQueryServiceTests.createServices();
+        await seedJoinDataAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT a.Name FROM SymbolRecord a JOIN SymbolRecord b USING(Id) ORDER BY a.Name");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(6));
+        Assert.That(result.Columns, Does.Contain("a.Name"));
+    }
+
+    [Test]
+    public async Task CrossJoin_NestedJoinSyntax_EvaluatesCorrectly()
+    {
+        var (store, registry, service) = SqlQueryServiceTests.createServices();
+        await seedJoinDataAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT a.Name, b.Name FROM SymbolRecord a JOIN (SymbolRecord b JOIN RelationshipRecord r ON b.Id = r.SourceSymbolId) ON a.Id = r.TargetSymbolId");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(3));
+        Assert.That(result.Rows!.Any(r => r["a.Name"]?.ToString() == "MyClass" && r["b.Name"]?.ToString() == "IOld"), Is.True);
+        Assert.That(result.Rows!.Any(r => r["a.Name"]?.ToString() == "MyClass" && r["b.Name"]?.ToString() == "Helper"), Is.True);
+        Assert.That(result.Rows!.Any(r => r["a.Name"]?.ToString() == "Helper" && r["b.Name"]?.ToString() == "IOld"), Is.True);
     }
 }

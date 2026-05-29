@@ -15,7 +15,7 @@ public sealed class GitHistoryToolTests : BaseToolTests
             {
                 b.ConfigureServices(s =>
                 {
-                    s.AddSingleton<IGitHistoryService>(new MockGitHistoryService());
+                    s.AddSingleton<IGitHistoryService>(MockServices.CreateGitHistoryService());
                 });
             });
         var client = factory.CreateClient();
@@ -60,7 +60,7 @@ public sealed class GitHistoryToolTests : BaseToolTests
             {
                 b.ConfigureServices(s =>
                 {
-                    s.AddSingleton<IGitHistoryService>(new MockGitHistoryService());
+                    s.AddSingleton<IGitHistoryService>(MockServices.CreateGitHistoryService());
                 });
             });
         var client = factory.CreateClient();
@@ -109,7 +109,7 @@ public sealed class GitHistoryToolTests : BaseToolTests
             {
                 b.ConfigureServices(s =>
                 {
-                    s.AddSingleton<IGitHistoryService>(new MockGitHistoryService());
+                    s.AddSingleton<IGitHistoryService>(MockServices.CreateGitHistoryService());
                 });
             });
         var client = factory.CreateClient();

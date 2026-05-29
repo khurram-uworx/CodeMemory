@@ -128,9 +128,10 @@ public sealed class IndexingHostedService : BackgroundService
                 repoContext.CurrentRepoName = repo.Name;
                 repoContext.CurrentRepoRoot = repo.LocalPath;
 
-                await indexWithRetryAsync(repo.Name, repo.LocalPath, repoCt);
+                var indexResult = await indexWithRetryAsync(repo.Name, repo.LocalPath, repoCt);
 
                 IndexingState.MarkCompleted(repo.Name);
+                IndexingState.StoreRelationshipCount(repo.Name, indexResult.RelationshipCount);
                 await UpdateIndexStatusAsync(dbFactory, repo.Name, "Indexed", ct: repoCt);
             }
             catch (OperationCanceledException)
@@ -159,7 +160,7 @@ public sealed class IndexingHostedService : BackgroundService
         logger.LogInformation("Indexing hosted service completed");
     }
 
-    async Task indexWithRetryAsync(string repoName, string repoPath, CancellationToken ct)
+    async Task<IndexingResult> indexWithRetryAsync(string repoName, string repoPath, CancellationToken ct)
     {
         var maxAttempts = Math.Max(1, indexingOptions.RetryCount + 1);
         var baseDelay = TimeSpan.FromSeconds(indexingOptions.RetryBaseDelaySeconds);
@@ -178,8 +179,8 @@ public sealed class IndexingHostedService : BackgroundService
                     IndexingState.UpdateProgress(repoName, p);
                 });
 
-                await engine.RunIndexingAsync(repoPath, ct, progress);
-                return;
+                var result = await engine.RunIndexingAsync(repoPath, ct, progress);
+                return result;
             }
             catch (OperationCanceledException)
             {
@@ -194,6 +195,8 @@ public sealed class IndexingHostedService : BackgroundService
                 await Task.Delay(delay, ct);
             }
         }
+
+        throw new InvalidOperationException($"All {maxAttempts} indexing attempts failed for '{repoName}'");
     }
 
     static async Task UpdateCloneStatusAsync(IDbContextFactory<RepoRegistryDbContext> dbFactory,

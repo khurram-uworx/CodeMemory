@@ -17,10 +17,19 @@ using LinqExpr = System.Linq.Expressions.Expression;
 
 namespace CodeMemory.Mcp.SqlQuery;
 
+/// <summary>Result of a SQL query execution.</summary>
+/// <param name="Success">Whether the query succeeded.</param>
+/// <param name="RowCount">Number of rows returned.</param>
+/// <param name="ExecutionTimeMs">Query execution time in milliseconds.</param>
+/// <param name="Columns">Column names in the result set.</param>
+/// <param name="Rows">Result rows as dictionaries.</param>
+/// <param name="Error">Error message if the query failed.</param>
+/// <param name="Warning">Optional warning message.</param>
 public sealed record SqlQueryResult(bool Success, long RowCount, long ExecutionTimeMs,
     List<string>? Columns,
-    List<Dictionary<string, object?>>? Rows, string? Error = null);
+    List<Dictionary<string, object?>>? Rows, string? Error = null, string? Warning = null);
 
+/// <summary>Service that parses and executes SELECT-only SQL queries against the vector store.</summary>
 public sealed class SqlQueryService
 {
     sealed record SelectColumnInfo(string? Name, string? Alias, bool IsAggregate, string? AggregateFunction,
@@ -1000,6 +1009,7 @@ public sealed class SqlQueryService
     readonly SqlExpressionBuilder builder = new();
     readonly SqlQueryParser parser = new();
 
+    /// <summary>Initializes a new instance of SqlQueryService.</summary>
     public SqlQueryService(CollectionRegistry registry,
         IEmbeddingGenerator<string, Embedding<float>> embeddingGenerator,
         ILogger<SqlQueryService> logger)
@@ -1971,6 +1981,7 @@ public sealed class SqlQueryService
         }
     }
 
+    /// <summary>Parses and executes a SELECT-only SQL query, returning the result.</summary>
     public async Task<SqlQueryResult> ExecuteAsync(VectorStore store, string sql, int maxResults = 100, CancellationToken ct = default)
     {
         using var activity = CodeMemoryActivitySources.Sql.StartActivity("Execute");
@@ -2219,14 +2230,20 @@ public sealed class SqlQueryService
 
             sw.Stop();
             activity?.SetTag("rowCount", result.Count);
-            CodeMemoryMetrics.SqlQueryDuration.Record(sw.Elapsed.TotalMilliseconds);
+            CodeMemoryMetrics.SqlQueryDuration.Record(sw.ElapsedMilliseconds);
 
-            return new SqlQueryResult(true, result.Count, sw.ElapsedMilliseconds, columns, result);
+            var warning = singleTableName is not null
+                && string.Equals(singleTableName, "RelationshipRecord", StringComparison.OrdinalIgnoreCase)
+                && result.Count == 0
+                ? "RelationshipRecord contains 0 rows — no relationships extracted or indexing is incomplete."
+                : null;
+
+            return new SqlQueryResult(true, result.Count, sw.ElapsedMilliseconds, columns, result, Warning: warning);
         }
         catch (Exception ex)
         {
             sw.Stop();
-            CodeMemoryMetrics.SqlQueryDuration.Record(sw.Elapsed.TotalMilliseconds);
+            CodeMemoryMetrics.SqlQueryDuration.Record(sw.ElapsedMilliseconds);
 
             logger.LogError(ex, "SQL query execution failed: {Sql}", sql);
             return fail($"Execution error at stage '{sw.Elapsed}' for SQL '{sql}': {ex.Message}", sw);

@@ -11,7 +11,7 @@ public static class ServiceCollectionExtensions
         string repoRoot,
         int configuredDimension = 1536)
     {
-        var memoryStore = new InMemoryVectorStore();
+        var memoryStore = new InMemoriVectorStore();
         services.AddSingleton<VectorStore>(sp => memoryStore);
         services.AddSingleton<IStorageService>(sp =>
         {
@@ -30,7 +30,7 @@ public static class ServiceCollectionExtensions
         IEmbeddingGenerator<string, Embedding<float>>? embeddingGenerator = null,
         int configuredDimension = 1536)
     {
-        var store = new InMemoryVectorStore();
+        var store = new InMemoriVectorStore();
         return new StorageService(repoRoot, logger, store, embeddingGenerator, configuredDimension);
     }
 

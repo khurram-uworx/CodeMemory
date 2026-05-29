@@ -2,6 +2,7 @@ volumes:
   pgvector_data:
   cloned_repos:
   grafana_data:
+  onnx_models:
 
 services:
   aspire-dashboard:
@@ -28,12 +29,35 @@ services:
       timeout: 5s
       retries: 5
 
+  model-downloader:
+    image: alpine:latest
+    command:
+      - /bin/sh
+      - -c
+      - |
+        mkdir -p /models/bge-micro-v2
+        if [ ! -f /models/bge-micro-v2/model.onnx ]; then
+          wget -q https://huggingface.co/TaylorAI/bge-micro-v2/resolve/main/onnx/model.onnx -O /models/bge-micro-v2/model.onnx
+          echo "model.onnx downloaded"
+        fi
+        if [ ! -f /models/bge-micro-v2/vocab.txt ]; then
+          wget -q https://huggingface.co/TaylorAI/bge-micro-v2/resolve/main/vocab.txt -O /models/bge-micro-v2/vocab.txt
+          echo "vocab.txt downloaded"
+        fi
+        echo "Model download complete"
+    volumes:
+      - onnx_models:/models
+    restart: "no"
+
   codememory:
     build:
       context: .
       dockerfile: src/CodeMemory.AspNet/Dockerfile
     ports:
       - "8080:8080"
+    volumes:
+      - cloned_repos:/data/cloned-repos
+      - onnx_models:/app/models
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ConnectionStrings__PgVector: Host=postgres;Port=5432;Database=codememory;Username=codememory;Password=codememory
@@ -42,13 +66,16 @@ services:
       ConnectionStrings__Npgsql: Host=postgres;Port=5432;Database=codememory;Username=codememory;Password=codememory
       OTEL_EXPORTER_OTLP_ENDPOINT: http://aspire-dashboard:18889
       OTEL_SERVICE_NAME: codememory-aspnet
-    volumes:
-      - cloned_repos:/data/cloned-repos
+      Embedding__Provider: onnx
+      Embedding__OnnxIntraOpThreads: "2"
+      Embedding__OnnxInferenceBatchSize: "64"
     depends_on:
       postgres:
         condition: service_healthy
       aspire-dashboard:
         condition: service_started
+      model-downloader:
+        condition: service_completed_successfully
 
   prometheus:
     image: prom/prometheus:latest

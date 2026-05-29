@@ -15,8 +15,7 @@ public sealed class SemanticSearchToolTests : BaseToolTests
             {
                 b.ConfigureServices(s =>
                 {
-                    var mock = new MockSemanticSearchService();
-                    s.AddSingleton<ISemanticSearchService>(mock);
+                    s.AddSingleton<ISemanticSearchService>(MockServices.CreateSemanticSearchService());
                 });
             });
         var client = factory.CreateClient();
@@ -37,8 +36,7 @@ public sealed class SemanticSearchToolTests : BaseToolTests
             {
                 b.ConfigureServices(s =>
                 {
-                    var mock = new MockSemanticSearchService();
-                    s.AddSingleton<ISemanticSearchService>(mock);
+                    s.AddSingleton<ISemanticSearchService>(MockServices.CreateSemanticSearchService());
                 });
             });
         await factory.RegisterRepoAsync();

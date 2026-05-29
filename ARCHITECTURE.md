@@ -37,16 +37,20 @@ CodeMemory/
 │   ├── CodeMemory.AspNet/        # ASP.NET Core host + BackgroundService
 │   │   ├── Configuration/        # ServiceRegistry, StorageServiceRouter, RepoContextAccessor, StorageBootstrapper
 │   │   ├── Registry/             # RepoRegistryDbContext, RepoRegistryService, RepoRegistryOptions
-│   │   ├── Services/             # IndexingHostedService, CloneIndexService
+│   │   ├── Services/             # IndexingHostedService, MetricsService, CloneIndexService, RebuildIndexHostedService
 │   │   ├── Storage/              # HybridStorageService, CodeMemoryDbContext, EF Core models + mappings
 │   │   │   └── PgVector/         # PgVectorCollection, PgVectorStore, PgVectorOptions
 │   │   ├── Tools/                # AspNetSqlQueryTool (relational SQL via EF Core)
-│   │   ├── Pages/                # Razor Pages UI (enterprise portal: repo management, status)
+│   │   ├── Pages/                # Razor Pages UI (enterprise portal: repo management, components, metrics)
 │   │   ├── Program.cs            # Host entry point, DI, MCP + HTTP setup
 │   │   └── appsettings.json
-│   ├── CodeMemory.Tests/         # NUnit tests (moved from src/ to tests/ root)
-│   └── CodeMemory.Mcp/           # Standalone stdio MCP server
-│       └── SqlQuery/             # SQL query engine: SqlParserCS → LINQ over InMemoryVectorStore
+│   ├── CodeMemory.AspNet.Extensions/  # Optional embedding generators (ONNX, Ollama)
+│   │   ├── BertOnnxEmbeddingGenerator.cs
+│   │   ├── BertTokenizer.cs
+│   │   ├── OnnxModelDownloader.cs
+│   │   └── ServiceCollectionExtensions.cs
+│   ├── CodeMemory.AppHost/       # .NET Aspire orchestration host
+│   ├── CodeMemory.ServiceDefaults/  # Shared OpenTelemetry, health checks, service discovery
 ├── packages/
 │   └── code-memory/              # @uworx/code-memory npm package
 │       ├── bin/code-memory.js    # self-contained .NET binary downloader + launch
@@ -74,23 +78,35 @@ CodeMemory (library — no ASP.NET dep)
         ├── Microsoft.SemanticKernel.Connectors.PgVector   (PostgreSQL IVectorStore)
         └── Microsoft.SemanticKernel.Connectors.SqlServer  (SQL Server IVectorStore)
 
+CodeMemory.AspNet.Extensions (optional embedding generators)
+  ├── Microsoft.ML.OnnxRuntime                   (ONNX Runtime for BERT inference)
+  ├── OllamaSharp                                (Ollama API client)
+  └── Microsoft.Extensions.AI.Abstractions       (IEmbeddingGenerator)
+
+CodeMemory.ServiceDefaults (shared Aspire infrastructure)
+  └── OpenTelemetry.Extensions.Hosting           (Prometheus + OTLP exporters)
+
 CodeMemory.AspNet (ASP.NET host)
   ├── CodeMemory                                 (core library)
-  ├── CodeMemory.Storage                         (vector store provider)
+  ├── CodeMemory.Storage                         (vector store providers)
+  ├── CodeMemory.AspNet.Extensions               (optional embedding generators)
+  ├── CodeMemory.ServiceDefaults                 (OpenTelemetry, health checks)
+  ├── CodeMemory.AppHost                         (Aspire orchestration)
   ├── ModelContextProtocol.AspNetCore            (MCP Streamable HTTP transport)
   ├── Microsoft.EntityFrameworkCore              (relational storage for symbols/relationships)
   └── Microsoft.Extensions.AI.Abstractions       (embedding generator DI)
 
 CodeMemory.Mcp (stdio MCP host)
   ├── CodeMemory                                 (core library)
-  └── CodeMemory.Storage                         (vector store providers — InMemoryVectorStore only)
+  ├── CodeMemory.Storage                         (vector store providers — InMemoryVectorStore only)
+  └── CodeMemory.ServiceDefaults                 (OpenTelemetry, health checks)
 ```
 
 Rules:
 - `CodeMemory` is a pure library (`Microsoft.NET.Sdk`, `OutputType Library`) with zero ASP.NET dependency
 - `CodeMemory.AspNet` owns all ASP.NET hosting concerns: `Program.cs`, DI registration, MCP HTTP transport, `BackgroundService` lifecycle
 - `CodeMemory.Storage` holds all vector store providers (in-memory, SQLite, PostgreSQL, SQL Server); swappable via `Storage:Provider` config key
-- `IEmbeddingGenerator<string, Embedding<float>>` is provided by the `Memori` NuGet package via DI — optional in `StorageService` constructor (accepts null, no chunk storage), but always registered in the default DI wiring
+- `IEmbeddingGenerator<string, Embedding<float>>` is provided by the `Memori` NuGet package (default n-gram) or `CodeMemory.AspNet.Extensions` (ONNX/Ollama) via DI — optional in `StorageService` constructor (accepts null, no chunk storage), but always registered in the default DI wiring
 - `IndexingEngine` (logic) lives in `CodeMemory.Services`; `IndexingHostedService` (BackgroundService wrapper) lives in `CodeMemory.AspNet.Services`
 - MCP tool types live in two places: `CodeMemory.Mcp` namespace (core tools) and `CodeMemory.AspNet.Tools` (AspNet-specific). Registration in `CodeMemory.AspNet.Program.cs` uses both `WithToolsFromAssembly(typeof(McpTools).Assembly)` and `WithToolsFromAssembly(typeof(AspNetSqlQueryTool).Assembly)`
 - `CodeMemory.Tests` references all three projects for integration testing
@@ -235,7 +251,27 @@ Indexing completes
             └─ batch complete → next debounce cycle
 ```
 
-The `ping` tool includes `"fileWatcherActive":true` once the watcher is running. Only active in the stdio Mcp host; AspNet host uses full re-index on startup.
+The `ping` tool includes `"fileWatcherActive":true` once the watcher is running. Only active in the stdio Mcp host; AspNet host uses full re-index on startup plus optional cron-based scheduled rebuild (see below).
+
+### Scheduled Re-Indexing (Asp.Net Host)
+
+`RebuildIndexHostedService` provides cron-based periodic full rebuilds in the AspNet host, configured via `RebuildIndex:Cron` in `appsettings.json`:
+
+```
+RebuildIndexHostedService.ExecuteAsync
+  └─ wait for next cron occurrence (via Cronos)
+       └─ rebuildAsync()
+            ├─ SemaphoreSlim gate (prevents overlapping rebuilds)
+            ├─ for each registered repo:
+            │    ├─ git pull --ff-only (if GitUrl set)
+            │    ├─ storage.ClearAllAsync()
+            │    ├─ IndexingState.MarkIncomplete(name)
+            │    ├─ IndexingEngine.RunIndexingAsync(path) with retry
+            │    └─ IndexingState.MarkCompleted(name)
+            └─ wait for next cron occurrence
+```
+
+If no `RebuildIndex:Cron` is configured, the service skips silently. Retry logic (count + exponential backoff) is shared with the startup `IndexingHostedService` via `IndexingOptions`.
 
 ### Architecture Intelligence Queries
 
@@ -353,10 +389,20 @@ Query methods on `IStorageService`:
 
 ---
 
-## Embedding & Normalization Strategy
+## Embedding Providers
+
+Configurable via `Embedding:Provider` in `appsettings.json`. All backends implement `IEmbeddingGenerator<string, Embedding<float>>` and are swappable via DI:
+
+| Provider | Key | Description | Dependencies |
+|---|---|---|---|
+| N-gram (default) | `"ngram"` | Character n-gram hashing with random projection into 1536 dims. Deterministic, offline, no API keys. | `Memori` NuGet |
+| ONNX | `"onnx"` | BERT-based embedding via ONNX Runtime (`bge-micro-v2` model). Requires `download-models.ps1`. | `CodeMemory.AspNet.Extensions`, `Microsoft.ML.OnnxRuntime` |
+| Ollama | `"ollama"` | Ollama server embedding API (default model `all-minilm`). Requires Ollama server. | `CodeMemory.AspNet.Extensions`, `OllamaSharp` |
+
+### Embedding & Normalization Strategy
 
 - **Default**: `NgramEmbeddingGenerator` from the `Memori` NuGet package — character n-gram hashing (2-, 3-, 4-grams) with random projection into 1536 dimensions, L2-normalized. Works completely offline, no API keys, no model downloads.
-- **Optional**: Replace by registering any `IEmbeddingGenerator<string, Embedding<float>>` (OpenAI, Ollama, etc.)
+- **Optional**: Replace by registering any `IEmbeddingGenerator<string, Embedding<float>>` (OpenAI via SK connector, Ollama, etc.)
 - Vectors are L2-normalized after generation using `TensorPrimitives` before storage
 - Query vectors are also normalized before search for consistent cosine distance computation
 - Normalization is a safety net — works correctly whether or not the model returns unit vectors
@@ -399,92 +445,42 @@ Query methods on `IStorageService`:
 - Graceful degradation in non-git repos or when git is unavailable
 - Used by: `get_symbol_history`, `get_hotspots`
 
-## Enterprise Portal (AspNet Razor Pages)
-
-The AspNet host includes a lightweight web UI for managing repositories remotely:
-
-### Features
-- **Add repos** — specify a local path or GitHub URL (auto-cloned to `CloneBasePath`)
-- **Status dashboard** — per-repo indexing status, clone progress, error messages
-- **Registry-backed** — `RepoRegistryDbContext` (SQLite/SQL Server/PostgreSQL) persists repo configurations across restarts
-
-### Architecture
-```
-Razor Pages UI (GET/POST /Repos/Add, GET /)
-  └─ RepoRegistryService
-       ├─ ListAsync / GetAsync — read from RepoRegistryDbContext (EF Core)
-       └─ CreateRepoAsync — insert new repo config
-            └─ CloneIndexService
-                 ├─ git clone (if URL) into CloneBasePath/{repoName}
-                 ├─ create per-repo storage (IStorageService)
-                 ├─ run IndexingEngine → store symbols/chunks/relationships
-                 └─ register in ServiceRegistry for MCP endpoint
-```
-
-REST endpoints (`GET /api/repos`, `GET /api/repos/{name}/status`) expose registry data for external monitoring.
-
-## Multi-Repo Architecture
-
-### Design
+## Multi-Repo Architecture (AspNet)
 
 Multi-repo support uses **`StorageServiceRouter` + `IRepoContextAccessor` (AsyncLocal) + per-repo MCP endpoints** — no keyed DI, no middleware, no `RequestServices` swap.
 
-**How it works:** Each repo gets its own MCP endpoint via `MapMcp("/api/mcp/{repoName}")`. The MCP SDK's `ConfigureSessionOptions` callback extracts the repo name from the URL path and sets `IRepoContextAccessor.CurrentRepoName`. All services remain non-keyed — they depend on `IStorageService` which delegates to the correct per-repo storage via `StorageServiceRouter`.
+Each repo gets its own MCP endpoint via `MapMcp("/api/mcp/{repoName}")`. The MCP SDK's `ConfigureSessionOptions` callback extracts the repo name from the URL path and sets `IRepoContextAccessor.CurrentRepoName`. All services remain non-keyed — they depend on `IStorageService` which delegates to the correct per-repo storage via `StorageServiceRouter`.
 
 ### Data flow (multi-repo request)
 
 ```
 HTTP POST /api/mcp/repo1
-  └─ MCP handler (MapMcp("/api/mcp/repo1"))
+  └─ MapMcp("/api/mcp/repo1") handler
        └─ ConfigureSessionOptions callback
             ├─ extracts "repo1" from URL path segments
             └─ sets IRepoContextAccessor.CurrentRepoName = "repo1"
                  └─ PerSessionExecutionContext preserves AsyncLocal for handler
                       └─ tool resolves IStorageService → StorageServiceRouter
-                            └─ GetStorage() → registry.GetStorage("repo1") → repo1's storage
+                            └─ GetStorage() → registry.GetStorage("repo1")
 ```
 
 ### Key components
 
 | Component | Location | Purpose |
 |---|---|---|
-| `ServiceRegistry` / `IServiceRegistry` | `CodeMemory.AspNet/Configuration/` | Thread-safe `ConcurrentDictionary` of per-repo `IStorageService` instances; generalized from the old `IStorageServiceRegistry` |
-| `StorageServiceRouter` | `CodeMemory.AspNet/Configuration/` | Delegates all 15 `IStorageService` methods via `GetStorage()` using ambient repo context |
-| `IRepoContextAccessor` / `RepoContextAccessor` | `CodeMemory.AspNet/Configuration/` | `AsyncLocal<string?>` — singleton-safe, no scoped DI, flows with ExecutionContext |
-| `ConfigureSessionOptions` | `CodeMemory.AspNet/Program.cs` | MCP SDK callback that extracts repo name from URL path |
+| `ServiceRegistry` / `IServiceRegistry` | `CodeMemory.AspNet/Configuration/` | Thread-safe `ConcurrentDictionary` of per-repo `IStorageService` instances |
+| `StorageServiceRouter` | `CodeMemory.AspNet/Configuration/` | Delegates all `IStorageService` methods via `GetStorage()` using ambient repo context |
+| `IRepoContextAccessor` / `RepoContextAccessor` | `CodeMemory.AspNet/Configuration/` | `AsyncLocal<string?>` — singleton-safe, flows with ExecutionContext |
+| `ConfigureSessionOptions` | `CodeMemory.AspNet/Program.cs` | MCP SDK callback extracting repo name from URL path |
 
 ### Constraints
 
-- `IStorageService` is the **only** per-repo concern. All other services stay non-keyed (singleton).
-- `Stateless = true` (Streamable HTTP) — no session affinity needed, each request is self-contained.
+- `IStorageService` is the **only** per-repo concern. All other services stay non-keyed singletons.
+- `Stateless = true` (Streamable HTTP) — no session affinity, each request self-contained.
 - `PerSessionExecutionContext = true` preserves `AsyncLocal` (and `IRepoContextAccessor`) across the handler chain.
-- No middleware, no path rewriting, no `RequestServices` swap — clean ASP.NET pipeline.
 - If no repos are configured, no MCP endpoints are registered at all.
 
-### Indexing
-
-`IndexingHostedService` sets `IRepoContextAccessor.CurrentRepoName` before each indexing iteration so `StorageServiceRouter` delegates to the correct DB. All storage services are initialized upfront before sequential indexing begins:
-
-```csharp
-// Initialize all storage services upfront
-foreach (var (name, _) in repositories)
-{
-    var storage = registry.GetStorage(name);
-    await storage.InitializeAsync(stoppingToken);
-}
-
-// Then index each repo sequentially
-foreach (var (name, path) in repositories)
-{
-    repoContext.CurrentRepoName = name;
-    repoContext.CurrentRepoRoot = repoPath;
-    using var scope = serviceProvider.CreateScope();
-    var engine = scope.ServiceProvider.GetRequiredService<IndexingEngine>();
-    await engine.RunIndexingAsync(repoPath, stoppingToken);
-}
-```
-
----
+Repository Portal UI details, onboarding workflow, and Metrics/Components pages are documented in [`src/CodeMemory.AspNet/README.md`](src/CodeMemory.AspNet/README.md).
 
 ## Current Constraints & Limitations
 
@@ -504,7 +500,45 @@ foreach (var (name, path) in repositories)
 - SIMD-accelerated normalization via `TensorPrimitives`
 - Dependency graph uses filtered queries per hop (not full collection scans)
 
-## Observability
+## Metrics & Observability
+
+### OpenTelemetry Instrumentation (AspNet + ServiceDefaults)
+
+Both hosts use OpenTelemetry via `CodeMemory.ServiceDefaults`:
+
+```
+AddServiceDefaults()
+  ├─ ConfigureOpenTelemetry()
+  │    ├─ WithMetrics()
+  │    │    ├─ AddAspNetCoreInstrumentation()
+  │    │    ├─ AddHttpClientInstrumentation()
+  │    │    ├─ AddRuntimeInstrumentation()
+  │    │    ├─ AddMeter("CodeMemory")       ← custom instruments
+  │    │    └─ AddPrometheusExporter()      ← /metrics endpoint on port 8080
+  │    └─ WithTracing()
+  │         ├─ AddAspNetCoreInstrumentation()
+  │         └─ AddHttpClientInstrumentation()
+  └─ if OTEL_EXPORTER_OTLP_ENDPOINT set:
+       └─ UseOtlpExporter()                ← Aspire Dashboard
+```
+
+### Custom Instruments
+
+Defined on the `CodeMemory` meter (`src/CodeMemory/Diagnostics/CodeMemoryMetrics.cs`):
+
+| Instrument | Type | Description |
+|---|---|---|
+| `codememory.indexing.duration` | Histogram (ms) | Full indexing pass per repo |
+| `codememory.indexing.files_count` | Counter | Files indexed per repo |
+| `codememory.indexing.symbols_count` | Counter | Symbols stored per repo |
+| `codememory.git.clone.duration` | Histogram (ms) | Git clone operations |
+| `codememory.search.query_duration` | Histogram (ms) | Semantic search queries |
+| `codememory.sql.query_duration` | Histogram (ms) | Custom SQL queries |
+| `codememory.tools.invocations` | Counter | MCP tool invocations (tagged by tool, host) |
+
+See [`METRICS.md`](docs/METRICS.md) for full instrument definitions, Prometheus scrape config, and Grafana dashboard reference.
+
+### Observability
 
 - Structured logging at every pipeline stage (indexing, search, embedding, graph, git)
 - Trace IDs propagated through pipeline
@@ -512,3 +546,4 @@ foreach (var (name, path) in repositories)
 - **Mcp host** uses `CodeMemoryFileLogger` (writes `Log.*.txt` to `.codememory/` folder) + `StdErrorLogger<T>` (stderr mirror, informational-only on stdout)
 - **AspNet host** uses standard `ILogger<T>` via ASP.NET Core logging infrastructure
 - Root route `GET /` returns storage provider (`storageProvider`), per-repo indexing completion (`indexingCompleted`), repo paths, and DB path (or `null` for in-memory)
+- Health check endpoints: `GET /health` (all checks), `GET /alive` (liveness)

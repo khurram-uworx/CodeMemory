@@ -18,7 +18,7 @@ public static class TestRepoHelper
         var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
 
         var storage = new StorageService(".", loggerFactory.CreateLogger<StorageService>(),
-            new InMemoryVectorStore(), embedding);
+            new InMemoriVectorStore(), embedding);
         await storage.InitializeAsync();
 
         registry.Register("codememory", storage);
