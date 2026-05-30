@@ -1,4 +1,5 @@
 using CodeMemory.Indexing.Graph;
+using CodeMemory.Services.Architecture;
 using CodeMemory.Storage;
 using Microsoft.Extensions.Logging;
 
@@ -12,11 +13,14 @@ sealed class BfsCount
 public sealed class DependencyGraphService : IDependencyGraphService
 {
     readonly IStorageService storage;
+    readonly IComponentResolver componentResolver;
     readonly ILogger<DependencyGraphService> logger;
 
-    public DependencyGraphService(IStorageService storage, ILogger<DependencyGraphService> logger)
+    public DependencyGraphService(IStorageService storage, IComponentResolver componentResolver,
+        ILogger<DependencyGraphService> logger)
     {
         this.storage = storage;
+        this.componentResolver = componentResolver;
         this.logger = logger;
     }
 
@@ -187,53 +191,54 @@ public sealed class DependencyGraphService : IDependencyGraphService
             return [];
         }
 
-        var related = await storage.GetRelationshipsByTargetAsync(symbol.Id, ct);
-        var testSourceIds = related
-            .Where(r => r.RelationshipType == "TestCoverage")
-            .Select(r => r.SourceSymbolId)
-            .Distinct()
-            .ToList();
+        // Collect all symbols to check: the symbol itself + its children
+        var symbolsToCheck = new List<SymbolRecord> { symbol };
+        var childSymbols = await storage.GetSymbolsByParentAsync(symbol.FullName, ct);
+        symbolsToCheck.AddRange(childSymbols);
 
-        if (testSourceIds.Count > 0)
+        // Get all inbound relationships for all symbols
+        var inboundRels = new List<RelationshipRecord>();
+        foreach (var s in symbolsToCheck)
         {
-            var testSources = new List<string>(testSourceIds.Count);
-            foreach (var id in testSourceIds)
-            {
-                var sym = await storage.GetSymbolAsync(id, ct);
-                testSources.Add(sym?.Name ?? id);
-            }
-            logger.LogDebug("FindTestCoverageAsync({Symbol}): {Count} test sources (from stored relationships)",
-                symbolPath, testSources.Count);
-
-            return testSources;
+            var rels = await storage.GetRelationshipsByTargetAsync(s.Id, ct);
+            inboundRels.AddRange(rels);
         }
 
-        var downstream = await storage.GetRelationshipsBySourceAsync(symbol.Id, ct);
-        var relatedFiles = new HashSet<string>();
-
-        foreach (var rel in downstream)
+        if (inboundRels.Count == 0)
         {
-            var relSymbol = await storage.GetSymbolAsync(rel.TargetSymbolId, ct);
-            if (relSymbol != null && relSymbol.FilePath.Length > 0)
-                relatedFiles.Add(relSymbol.FilePath);
+            logger.LogDebug("FindTestCoverageAsync({Symbol}): no inbound relationships found", symbolPath);
+            return [];
         }
 
-        foreach (var rel in related)
+        // Load component mappings to identify test components
+        var components = await storage.LoadComponentMappingAsync(ct);
+        var testComponentNames = components
+            .Where(c => c.ComponentType == ComponentType.Test)
+            .Select(c => c.ComponentName)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        if (testComponentNames.Count == 0)
         {
-            var relSymbol = await storage.GetSymbolAsync(rel.SourceSymbolId, ct);
-            if (relSymbol != null && relSymbol.FilePath.Length > 0)
-                relatedFiles.Add(relSymbol.FilePath);
+            logger.LogDebug("FindTestCoverageAsync({Symbol}): no test components found", symbolPath);
+            return [];
         }
 
-        var conventionTests = relatedFiles
-            .Where(f => Path.GetFileNameWithoutExtension(f).EndsWith("Tests", StringComparison.OrdinalIgnoreCase)
-                     || Path.GetFileNameWithoutExtension(f).EndsWith("Test", StringComparison.OrdinalIgnoreCase))
-            .Distinct()
-            .ToList();
+        // For each inbound relationship, check if the source belongs to a test component
+        var testSourceNames = new HashSet<string>();
+        foreach (var rel in inboundRels)
+        {
+            var srcSymbol = await storage.GetSymbolAsync(rel.SourceSymbolId, ct);
+            if (srcSymbol == null || string.IsNullOrEmpty(srcSymbol.FilePath))
+                continue;
 
-        logger.LogDebug("FindTestCoverageAsync({Symbol}): {Count} test files (by convention)",
-            symbolPath, conventionTests.Count);
+            var componentName = await componentResolver.GetComponentNameAsync(srcSymbol.FilePath, ct: ct);
+            if (componentName != null && testComponentNames.Contains(componentName))
+                testSourceNames.Add(srcSymbol.Name);
+        }
 
-        return conventionTests;
+        logger.LogDebug("FindTestCoverageAsync({Symbol}): {Count} test sources (via component inference)",
+            symbolPath, testSourceNames.Count);
+
+        return testSourceNames.ToList();
     }
 }

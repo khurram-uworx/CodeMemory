@@ -1,3 +1,4 @@
+using CodeMemory.Indexing.Graph;
 using CodeMemory.Indexing.Parsing;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -121,7 +122,7 @@ public sealed class RoslynRelationshipExtractor : IRelationshipExtractor
                 if (target == null)
                     continue;
 
-                var relType = target.Kind == CodeSymbolKind.Interface ? "Implements" : "Inherits";
+                var relType = target.Kind == CodeSymbolKind.Interface ? RelationshipTypes.Implements : RelationshipTypes.Inherits;
                 addRelationship(sourceSymbol.FullName, target.FullName, relType, seen, results);
             }
         }
@@ -146,7 +147,7 @@ public sealed class RoslynRelationshipExtractor : IRelationshipExtractor
             if (target == null)
                 continue;
 
-            addRelationship(source.FullName, target.FullName, "Calls", seen, results);
+            addRelationship(source.FullName, target.FullName, RelationshipTypes.Calls, seen, results);
         }
 
         foreach (var creation in root.DescendantNodes().OfType<ObjectCreationExpressionSyntax>())
@@ -159,7 +160,7 @@ public sealed class RoslynRelationshipExtractor : IRelationshipExtractor
             if (target == null)
                 continue;
 
-            addRelationship(source.FullName, target.FullName, "References", seen, results);
+            addRelationship(source.FullName, target.FullName, RelationshipTypes.References, seen, results);
         }
 
         foreach (var variable in root.DescendantNodes().OfType<VariableDeclarationSyntax>())
@@ -172,7 +173,7 @@ public sealed class RoslynRelationshipExtractor : IRelationshipExtractor
             if (target == null)
                 continue;
 
-            addRelationship(source.FullName, target.FullName, "References", seen, results);
+            addRelationship(source.FullName, target.FullName, RelationshipTypes.References, seen, results);
         }
 
         foreach (var property in root.DescendantNodes().OfType<PropertyDeclarationSyntax>())
@@ -185,7 +186,7 @@ public sealed class RoslynRelationshipExtractor : IRelationshipExtractor
             if (target == null)
                 continue;
 
-            addRelationship(source.FullName, target.FullName, "References", seen, results);
+            addRelationship(source.FullName, target.FullName, RelationshipTypes.References, seen, results);
         }
 
         foreach (var parameter in root.DescendantNodes().OfType<ParameterSyntax>())
@@ -201,7 +202,7 @@ public sealed class RoslynRelationshipExtractor : IRelationshipExtractor
             if (target == null)
                 continue;
 
-            addRelationship(source.FullName, target.FullName, "References", seen, results);
+            addRelationship(source.FullName, target.FullName, RelationshipTypes.References, seen, results);
         }
 
         logger.LogDebug("Extracted {Count} relationships from {File}", results.Count, filePath);

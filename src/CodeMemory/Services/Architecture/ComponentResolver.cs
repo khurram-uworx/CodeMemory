@@ -51,9 +51,9 @@ public sealed class ComponentResolver : IComponentResolver
         return bestMatch;
     }
 
-    public async Task<string> GetComponentNameAsync(string filePath, int depth = 1)
+    public async Task<string> GetComponentNameAsync(string filePath, int depth = 1, CancellationToken ct = default)
     {
-        var components = await storage.LoadComponentMappingAsync();
+        var components = await storage.LoadComponentMappingAsync(ct);
 
         var fromMapping = resolveFromMapping(filePath, components);
         if (fromMapping != null)

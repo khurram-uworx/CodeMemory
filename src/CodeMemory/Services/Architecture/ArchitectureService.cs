@@ -73,7 +73,7 @@ public sealed class ArchitectureService : IArchitectureService
 
         foreach (var symbol in filtered)
         {
-            var component = await componentResolver.GetComponentNameAsync(symbol.FilePath, depth);
+            var component = await componentResolver.GetComponentNameAsync(symbol.FilePath, depth, ct);
             if (!componentFiles.ContainsKey(component))
                 componentFiles[component] = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 

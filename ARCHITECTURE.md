@@ -287,7 +287,7 @@ trace_dependency / find_related_code / impact_analysis
   └─ DependencyGraphService
        ├─ TraceAsync(symbol, direction, depth) — BFS with visited-set, depth ≤ 3
        ├─ FindRelatedAsync(symbol, type) — flat filtered query
-       └─ FindTestCoverageAsync(symbol) — convention (*Test.cs) or stored TestCoverage
+        └─ FindTestCoverageAsync(symbol) — component-based (inbound rels from Test components)
 
 get_component_clusters
   └─ ComponentClusteringService.GetClustersAsync(threshold)
@@ -356,7 +356,7 @@ Symbols and relationships stored in relational tables via EF Core (`symbols` / `
 - Id (SHA256 hash), SymbolId, FilePath, Content, Language, LineStart/End, MetadataJson, Embedding
 
 ### RelationshipRecord
-- Id (`sourceId->targetId:type`), SourceSymbolId, TargetSymbolId, RelationshipType (Inherits/Implements/Calls/References/TestCoverage)
+- Id (`sourceId->targetId:type`), SourceSymbolId, TargetSymbolId, RelationshipType (Inherits/Implements/Calls/References)
 
 Query methods on `IStorageService`:
 - `GetRelationshipsBySourceAsync(sourceId)` — what this symbol references
@@ -425,7 +425,7 @@ Configurable via `Embedding:Provider` in `appsettings.json`. All backends implem
 
 ### Dependency Graph (`DependencyGraphService`)
 - BFS traversal with depth limit (capped at 3) and visited-set for cycle safety
-- Three query modes: `TraceAsync` (chain), `FindRelatedAsync` (flat), `FindTestCoverageAsync` (convention)
+- Three query modes: `TraceAsync` (chain), `FindRelatedAsync` (flat), `FindTestCoverageAsync` (component-based)
 - Used by: `trace_dependency`, `find_related_code`, `impact_analysis`, `get_edit_context`
 
 ### Architecture Overview (`ArchitectureService`)

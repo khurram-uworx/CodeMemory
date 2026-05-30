@@ -1,13 +1,16 @@
+using CodeMemory.Services.Architecture;
 using CodeMemory.Services.Graph;
 using CodeMemory.Storage;
+using CodeMemory.Tests.Services.Architecture;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace CodeMemory.Tests.Services.Graph;
 
 public sealed class DependencyGraphServiceTests : BaseServicesTests
 {
-    static DependencyGraphService createGraphService(IStorageService storage)
-        => new DependencyGraphService(storage, NullLogger<DependencyGraphService>.Instance);
+    static DependencyGraphService createGraphService(IStorageService storage, IComponentResolver? resolver = null)
+        => new DependencyGraphService(storage, resolver ?? new TestComponentResolver(),
+            NullLogger<DependencyGraphService>.Instance);
 
     static string makeGuid(string seed)
     {
@@ -15,14 +18,15 @@ public sealed class DependencyGraphServiceTests : BaseServicesTests
         return guid;
     }
 
-    static async Task<SymbolRecord> storeSymbol(IStorageService storage, string fullName, string guid)
+    static async Task<SymbolRecord> storeSymbol(IStorageService storage, string fullName, string guid,
+        string? filePath = null)
     {
         var symbol = new SymbolRecord
         {
             Id = guid,
             Name = fullName,
             Kind = "Class",
-            FilePath = $"/src/{fullName}.cs",
+            FilePath = filePath ?? $"/src/{fullName}.cs",
             FullName = fullName,
             LineStart = 1,
             LineEnd = 10,
@@ -523,8 +527,20 @@ public sealed class DependencyGraphServiceTests : BaseServicesTests
         Assert.That(result[0].SymbolName, Is.EqualTo("IConfig"));
     }
 
+    static async Task storeComponentMapping(IStorageService storage, string dir, ComponentType type)
+    {
+        await storage.StoreComponentMappingAsync([
+            new ComponentInformation(
+                BuildFileDirectory: dir,
+                ComponentName: dir,
+                ComponentKind: ComponentKind.Folder,
+                ComponentType: type,
+                FileCount: 1)
+        ]);
+    }
+
     [Test]
-    public async Task FindTestCoverageAsync_ReturnsEmpty_WhenNoRelationships()
+    public async Task FindTestCoverageAsync_ReturnsEmpty_WhenNoInboundRelationships()
     {
         (var repoRoot, var dbPath) = GetTempDbPath();
         var storage = CreateStorage(repoRoot, dbPath);
@@ -537,6 +553,168 @@ public sealed class DependencyGraphServiceTests : BaseServicesTests
         var result = await graph.FindTestCoverageAsync("MyClass");
 
         Assert.That(result, Is.Empty);
+    }
+
+    [Test]
+    public async Task FindTestCoverageAsync_ReturnsTestSymbols_WhenSourceIsInTestComponent()
+    {
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
+        await storage.InitializeAsync();
+
+        var classGuid = makeGuid("MyClass");
+        await storeSymbol(storage, "MyClass", classGuid,
+            filePath: "/src/MyClass.cs");
+
+        var testGuid = makeGuid("MyClassTests");
+        var testSymbol = new SymbolRecord
+        {
+            Id = testGuid, Name = "MyClassTests", Kind = "Class",
+            FilePath = "/tests/MyClassTests.cs", FullName = "MyClassTests",
+            LineStart = 1, LineEnd = 10
+        };
+        await storage.StoreSymbolsAsync([testSymbol]);
+
+        // Test component references production class
+        await storage.StoreRelationshipsAsync([
+            new RelationshipRecord
+            {
+                Id = "r1", SourceSymbolId = testGuid,
+                TargetSymbolId = classGuid, RelationshipType = "References"
+            },
+        ]);
+
+        // Register test component mapping (directory "tests" is Test type)
+        await storeComponentMapping(storage, "tests", ComponentType.Test);
+
+        var graph = createGraphService(storage);
+        var result = await graph.FindTestCoverageAsync("MyClass");
+
+        Assert.That(result, Has.Count.EqualTo(1));
+        Assert.That(result[0], Is.EqualTo("MyClassTests"));
+    }
+
+    [Test]
+    public async Task FindTestCoverageAsync_ReturnsEmpty_WhenSourceIsInNonTestComponent()
+    {
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
+        await storage.InitializeAsync();
+
+        var classGuid = makeGuid("MyClass");
+        await storeSymbol(storage, "MyClass", classGuid,
+            filePath: "/src/MyClass.cs");
+
+        var loggerGuid = makeGuid("Logger");
+        var loggerSymbol = new SymbolRecord
+        {
+            Id = loggerGuid, Name = "Logger", Kind = "Class",
+            FilePath = "/src/Logger.cs", FullName = "Logger",
+            LineStart = 1, LineEnd = 10
+        };
+        await storage.StoreSymbolsAsync([loggerSymbol]);
+
+        // Logger references MyClass (same non-test component)
+        await storage.StoreRelationshipsAsync([
+            new RelationshipRecord
+            {
+                Id = "r1", SourceSymbolId = loggerGuid,
+                TargetSymbolId = classGuid, RelationshipType = "References"
+            },
+        ]);
+
+        // Only register production component
+        await storeComponentMapping(storage, "src", ComponentType.Component);
+
+        var graph = createGraphService(storage);
+        var result = await graph.FindTestCoverageAsync("MyClass");
+
+        Assert.That(result, Is.Empty);
+    }
+
+    [Test]
+    public async Task FindTestCoverageAsync_ReturnsEmpty_WhenNoTestComponentsRegistered()
+    {
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
+        await storage.InitializeAsync();
+
+        var classGuid = makeGuid("MyClass");
+        await storeSymbol(storage, "MyClass", classGuid,
+            filePath: "/src/MyClass.cs");
+
+        var testGuid = makeGuid("TestClass");
+        var testSymbol = new SymbolRecord
+        {
+            Id = testGuid, Name = "TestClass", Kind = "Class",
+            FilePath = "/tests/TestClass.cs", FullName = "TestClass",
+            LineStart = 1, LineEnd = 10
+        };
+        await storage.StoreSymbolsAsync([testSymbol]);
+
+        await storage.StoreRelationshipsAsync([
+            new RelationshipRecord
+            {
+                Id = "r1", SourceSymbolId = testGuid,
+                TargetSymbolId = classGuid, RelationshipType = "References"
+            },
+        ]);
+
+        // Only production component registered, no test components
+        await storeComponentMapping(storage, "src", ComponentType.Component);
+
+        var graph = createGraphService(storage);
+        var result = await graph.FindTestCoverageAsync("MyClass");
+
+        Assert.That(result, Is.Empty);
+    }
+
+    [Test]
+    public async Task FindTestCoverageAsync_IncludesChildSymbolInboundRelationships()
+    {
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
+        await storage.InitializeAsync();
+
+        var serviceGuid = makeGuid("Service");
+        await storeSymbol(storage, "Service", serviceGuid,
+            filePath: "/src/Service.cs");
+
+        var execMethodGuid = makeGuid("Service.Execute");
+        var execSymbol = new SymbolRecord
+        {
+            Id = execMethodGuid, Name = "Service.Execute", Kind = "Method",
+            FilePath = "/src/Service.cs", FullName = "Service.Execute",
+            LineStart = 5, LineEnd = 8
+        };
+        await storage.StoreSymbolsAsync([execSymbol]);
+
+        var testGuid = makeGuid("ServiceTests");
+        var testSymbol = new SymbolRecord
+        {
+            Id = testGuid, Name = "ServiceTests", Kind = "Class",
+            FilePath = "/tests/ServiceTests.cs", FullName = "ServiceTests",
+            LineStart = 1, LineEnd = 10
+        };
+        await storage.StoreSymbolsAsync([testSymbol]);
+
+        // Test calls Service.Execute (child of Service), not Service directly
+        await storage.StoreRelationshipsAsync([
+            new RelationshipRecord
+            {
+                Id = "r1", SourceSymbolId = testGuid,
+                TargetSymbolId = execMethodGuid, RelationshipType = "Calls"
+            },
+        ]);
+
+        await storeComponentMapping(storage, "tests", ComponentType.Test);
+
+        var graph = createGraphService(storage);
+        var result = await graph.FindTestCoverageAsync("Service");
+
+        // Should find ServiceTests through child method propagation
+        Assert.That(result, Has.Count.EqualTo(1));
+        Assert.That(result[0], Is.EqualTo("ServiceTests"));
     }
 
     [Test]
