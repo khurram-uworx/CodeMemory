@@ -7,6 +7,7 @@ using CodeMemory.Services;
 using Microsoft.EntityFrameworkCore;
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Text.RegularExpressions;
 
 namespace CodeMemory.AspNet.Services;
 
@@ -50,9 +51,16 @@ public sealed class CloneIndexService
         this.storageFactory = storageFactory;
     }
 
+    static readonly Regex GitUrlPattern = new(
+        @"^(https?|git|ssh|ftp|file)://|^[^@:/]+@[^:/]+:",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    public static bool IsGitUrl(string source)
+        => !string.IsNullOrWhiteSpace(source) && GitUrlPattern.IsMatch(source);
+
     public static string ResolveRepoPath(string source, string repoName, RepoRegistryOptions options)
     {
-        var isUrl = source.Contains("://");
+        var isUrl = IsGitUrl(source);
         if (isUrl)
             return Path.GetFullPath(Path.Combine(Path.GetFullPath(options.CloneBasePath), repoName));
         return Path.GetFullPath(source);
@@ -69,7 +77,7 @@ public sealed class CloneIndexService
             return Task.CompletedTask;
         }
 
-        var isUrl = source.Contains("://");
+        var isUrl = IsGitUrl(source);
         var clonePath = isUrl ? Path.GetFullPath(Path.Combine(Path.GetFullPath(registryOptions.CloneBasePath), repoName)) : source;
 
         _ = Task.Run(async () =>

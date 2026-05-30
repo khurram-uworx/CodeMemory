@@ -259,6 +259,11 @@ builder.Services.AddDbContextFactory<RepoRegistryDbContext>(options =>
 });
 
 builder.Services.AddRazorPages();
+var dashboardOptions = builder.Configuration
+    .GetSection(RepositoryDashboardOptions.SectionName)
+    .Get<RepositoryDashboardOptions>() ?? new();
+builder.Services.AddSingleton(dashboardOptions);
+
 builder.Services.AddSingleton<RepoRegistryService>();
 builder.Services.AddSingleton<CloneIndexService>();
 builder.Services.AddSingleton<NotificationService>();

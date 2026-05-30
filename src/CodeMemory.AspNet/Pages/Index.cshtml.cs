@@ -1,3 +1,4 @@
+using CodeMemory.AspNet.Configuration;
 using CodeMemory.AspNet.Registry;
 using CodeMemory.AspNet.Services;
 using CodeMemory.Indexing;
@@ -12,15 +13,18 @@ public sealed class IndexModel : PageModel
     readonly CloneIndexService cloneIndex;
     readonly NotificationService notifications;
     readonly IConfiguration configuration;
+    readonly RepositoryDashboardOptions dashboardOptions;
 
     public List<Repositories> Repos { get; private set; } = [];
     public Dictionary<string, double?> Progress { get; private set; } = [];
     public bool ShowMetricsLink { get; private set; }
+    public bool AllowNewRepos { get; private set; }
 
     public IndexModel(RepoRegistryService registry, CloneIndexService cloneIndex,
-        NotificationService notifications, IConfiguration configuration)
-        => (this.registry, this.cloneIndex, this.notifications, this.configuration) =
-            (registry, cloneIndex, notifications, configuration);
+        NotificationService notifications, IConfiguration configuration,
+        RepositoryDashboardOptions dashboardOptions)
+        => (this.registry, this.cloneIndex, this.notifications, this.configuration, this.dashboardOptions) =
+            (registry, cloneIndex, notifications, configuration, dashboardOptions);
 
     public async Task OnGetAsync()
     {
@@ -31,7 +35,9 @@ public sealed class IndexModel : PageModel
         ShowMetricsLink = localMetricsEnabled
             || !string.Equals(provider, "inmemory", StringComparison.OrdinalIgnoreCase);
 
-        if (Repos.Count == 0)
+        AllowNewRepos = dashboardOptions.AllowNewRepos;
+
+        if (Repos.Count == 0 && AllowNewRepos)
             notifications.PublishInfo("No repositories registered. Click \"Add Repo\" to get started.");
     }
 
@@ -46,7 +52,12 @@ public sealed class IndexModel : PageModel
 
         var remaining = await registry.ListAsync();
         if (remaining.Count == 0)
-            notifications.PublishInfo("No repositories registered. Click \"Add Repo\" to get started.");
+        {
+            var msg = AllowNewRepos
+                ? "No repositories registered. Click \"Add Repo\" to get started."
+                : "No repositories registered.";
+            notifications.PublishInfo(msg);
+        }
 
         return RedirectToPage();
     }

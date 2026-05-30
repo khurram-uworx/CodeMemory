@@ -1,3 +1,4 @@
+using CodeMemory.AspNet.Configuration;
 using CodeMemory.AspNet.Registry;
 using CodeMemory.AspNet.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -26,18 +27,24 @@ public sealed class AddModel : PageModel
     readonly RepoRegistryService registry;
     readonly CloneIndexService cloneIndex;
     readonly RepoRegistryOptions registryOptions;
+    readonly RepositoryDashboardOptions dashboardOptions;
 
-    public AddModel(RepoRegistryService registry, CloneIndexService cloneIndex, RepoRegistryOptions registryOptions)
-        => (this.registry, this.cloneIndex, this.registryOptions) = (registry, cloneIndex, registryOptions);
+    public AddModel(RepoRegistryService registry, CloneIndexService cloneIndex,
+        RepoRegistryOptions registryOptions, RepositoryDashboardOptions dashboardOptions)
+        => (this.registry, this.cloneIndex, this.registryOptions, this.dashboardOptions) =
+            (registry, cloneIndex, registryOptions, dashboardOptions);
 
     [BindProperty]
     public InputModel Input { get; set; } = new();
 
-    public void OnGet()
-    { }
+    public IActionResult OnGet()
+        => dashboardOptions.AllowNewRepos ? Page() : RedirectToPage("/Index");
 
     public async Task<IActionResult> OnPostAsync()
     {
+        if (!dashboardOptions.AllowNewRepos)
+            return RedirectToPage("/Index");
+
         if (!ModelState.IsValid)
             return Page();
 
@@ -48,7 +55,7 @@ public sealed class AddModel : PageModel
             return Page();
         }
 
-        var isUrl = Input.Source.Contains("://");
+        var isUrl = CloneIndexService.IsGitUrl(Input.Source);
 
         var repo = new Repositories
         {
