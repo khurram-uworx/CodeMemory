@@ -4,7 +4,7 @@ namespace CodeMemory.Tests.Services.Architecture;
 
 public sealed class TestComponentResolver : IComponentResolver
 {
-    public Task<string> GetComponentNameAsync(string filePath, int depth = 1)
+    public Task<string> GetComponentNameAsync(string filePath, int depth = 1, CancellationToken ct = default)
     {
         var normalized = filePath.Replace('\\', '/');
         var trimmed = normalized.TrimStart('/');

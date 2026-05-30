@@ -8,16 +8,6 @@ public sealed record DependencyNode(
     string RelationType,
     IReadOnlyList<DependencyNode>? Children = null);
 
-public enum RelationType
-{
-    Calls,
-    Imports,
-    References,
-    Implements,
-    Inherits,
-    TestCoverage
-}
-
 public interface IDependencyGraphService
 {
     Task<IReadOnlyList<DependencyNode>> TraceAsync(

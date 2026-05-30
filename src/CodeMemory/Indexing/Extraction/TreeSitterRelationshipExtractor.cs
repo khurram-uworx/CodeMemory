@@ -1,3 +1,4 @@
+using CodeMemory.Indexing.Graph;
 using CodeMemory.Indexing.Parsing;
 using Microsoft.Extensions.Logging;
 using TreeSitter;
@@ -145,10 +146,10 @@ public sealed class TreeSitterRelationshipExtractor : IRelationshipExtractor
             }
 
             if (child.Type is "heritage_clause" or "extends_clause" or "superclass")
-                processHeritageClause(child, source, "Inherits", byName, byFullName, seen, results);
+                processHeritageClause(child, source, RelationshipTypes.Inherits, byName, byFullName, seen, results);
 
             if (child.Type == "implements_clause")
-                processHeritageClause(child, source, "Implements", byName, byFullName, seen, results);
+                processHeritageClause(child, source, RelationshipTypes.Implements, byName, byFullName, seen, results);
         }
 
         if (language == Parsing.Language.Python)
@@ -185,13 +186,13 @@ public sealed class TreeSitterRelationshipExtractor : IRelationshipExtractor
 
             var interfacesField = node.Fields.FirstOrDefault(f => f.Key == "interfaces");
             if (interfacesField.Key != null)
-                collectTypeRefs(interfacesField.Value, source, "Implements", byName, byFullName, seen, results);
+                collectTypeRefs(interfacesField.Value, source, RelationshipTypes.Implements, byName, byFullName, seen, results);
 
             if (node.Type == "interface_declaration")
             {
                 var extendsField = node.Fields.FirstOrDefault(f => f.Key == "extends");
                 if (extendsField.Key != null)
-                    collectTypeRefs(extendsField.Value, source, "Inherits", byName, byFullName, seen, results);
+                    collectTypeRefs(extendsField.Value, source, RelationshipTypes.Inherits, byName, byFullName, seen, results);
             }
         }
 
@@ -294,11 +295,11 @@ public sealed class TreeSitterRelationshipExtractor : IRelationshipExtractor
         HashSet<string> seen, List<Relationship> results)
     {
         if (clause.Type == "extends_clause")
-            processHeritageClause(clause, source, "Inherits", byName, byFullName, seen, results);
+            processHeritageClause(clause, source, RelationshipTypes.Inherits, byName, byFullName, seen, results);
         else if (clause.Type == "implements_clause")
-            processHeritageClause(clause, source, "Implements", byName, byFullName, seen, results);
+            processHeritageClause(clause, source, RelationshipTypes.Implements, byName, byFullName, seen, results);
         else
-            processHeritageClause(clause, source, "Inherits", byName, byFullName, seen, results);
+            processHeritageClause(clause, source, RelationshipTypes.Inherits, byName, byFullName, seen, results);
     }
 
     void collectTypeRefs(Node typeListNode, Symbol source, string relType,
@@ -363,7 +364,7 @@ public sealed class TreeSitterRelationshipExtractor : IRelationshipExtractor
         if (target == null || target.FullName == source.FullName)
             return;
 
-        addRelationship(source.FullName, target.FullName, "Calls", seen, results);
+        addRelationship(source.FullName, target.FullName, RelationshipTypes.Calls, seen, results);
     }
 
     void processMethodInvocation(Node node,
@@ -388,7 +389,7 @@ public sealed class TreeSitterRelationshipExtractor : IRelationshipExtractor
         if (target == null || target.FullName == source.FullName)
             return;
 
-        addRelationship(source.FullName, target.FullName, "Calls", seen, results);
+        addRelationship(source.FullName, target.FullName, RelationshipTypes.Calls, seen, results);
     }
 
     void processObjectCreation(Node node,
@@ -413,7 +414,7 @@ public sealed class TreeSitterRelationshipExtractor : IRelationshipExtractor
         if (target == null || target.FullName == source.FullName)
             return;
 
-        addRelationship(source.FullName, target.FullName, "References", seen, results);
+        addRelationship(source.FullName, target.FullName, RelationshipTypes.References, seen, results);
     }
 
     void checkTypeAnnotation(Node node,
@@ -447,7 +448,7 @@ public sealed class TreeSitterRelationshipExtractor : IRelationshipExtractor
         if (target == null || target.FullName == source.FullName)
             return;
 
-        addRelationship(source.FullName, target.FullName, "References", seen, results);
+        addRelationship(source.FullName, target.FullName, RelationshipTypes.References, seen, results);
     }
 
     void addRelationship(string sourceId, string targetId, string type,
