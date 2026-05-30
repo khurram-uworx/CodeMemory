@@ -21,10 +21,10 @@ public enum RelationType
 public interface IDependencyGraphService
 {
     Task<IReadOnlyList<DependencyNode>> TraceAsync(
-        string symbolPath, string direction, int depth, CancellationToken ct = default);
+        string symbolPath, string direction, int depth, int? maxResults = null, int offset = 0, CancellationToken ct = default);
 
     Task<IReadOnlyList<DependencyNode>> FindRelatedAsync(
-        string symbolPath, string relationType, CancellationToken ct = default);
+        string symbolPath, string relationType, int? maxResults = null, int offset = 0, CancellationToken ct = default);
 
     Task<IReadOnlyList<string>> FindTestCoverageAsync(
         string symbolPath, CancellationToken ct = default);

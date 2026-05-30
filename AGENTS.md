@@ -8,6 +8,13 @@ Engineering constraints and implementation guidance for AI coding agents contrib
 
 ---
 
+## GitHub
+
+- **Repo:** `khurram-uworx/CodeMemory`
+- All `gh` commands require `--repo khurram-uworx/CodeMemory`
+
+---
+
 ## Domain Boundaries
 
 Do not reinvent infrastructure. Prefer existing .NET and ecosystem primitives over custom solutions.
@@ -72,6 +79,22 @@ or when still indexing:
 ```
 
 **Agents must poll `ping` until `indexingCompleted` is `true` before calling other tools.** Failure to do so will return empty/partial results.
+
+## Repository Configuration (`.codememory.json`)
+
+Per-repo configuration loaded by `IndexingEngine.RunIndexingAsync()` at index time. Place at repo root.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `exclude` | `string[]` | `[]` | Additional file/directory patterns to skip beyond `.gitignore` and built-in ignores |
+| `languageOverrides` | `object` | `{}` | Map of file extension → language name (e.g., `{".myext": "C#"}`) |
+| `clusteringThreshold` | `double?` | `null` | Default threshold for component clustering; `null` means service falls back to 0.3 |
+
+Files excluded by default (hardcoded in `FileCrawler.AlwaysIgnored`): `.git`, `.codememory`, `.memori`, `.codememory.json`, `node_modules`.
+
+### Init Tool
+
+`code-memory --init` (or `InitTool` MCP tool) creates `.codememory.json` with all defaults and adds `.codememory.json` to `.gitignore` (smart coverage detection via `GitIgnoreParser`).
 
 ## Common Pitfalls
 

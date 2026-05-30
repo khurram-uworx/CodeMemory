@@ -80,7 +80,9 @@ public sealed class EditContextService : IEditContextService
         {
             try
             {
-                deps = await graphService.TraceAsync(symbolPath, "both", options.Depth, ct);
+                deps = await graphService.TraceAsync(symbolPath, "both", options.Depth, options.MaxResults, options.DependencyOffset, ct);
+                if (options.MaxResults.HasValue && deps.Count >= options.MaxResults.Value)
+                    warnings.Add($"Dependency trace truncated to {options.MaxResults} nodes");
             }
             catch (Exception ex)
             {
@@ -89,7 +91,9 @@ public sealed class EditContextService : IEditContextService
 
             try
             {
-                related = await graphService.FindRelatedAsync(symbolPath, "all", ct);
+                related = await graphService.FindRelatedAsync(symbolPath, "all", options.MaxResults, options.RelatedOffset, ct);
+                if (options.MaxResults.HasValue && related.Count >= options.MaxResults.Value)
+                    warnings.Add($"Related symbols truncated to {options.MaxResults} nodes");
             }
             catch (Exception ex)
             {
@@ -111,6 +115,20 @@ public sealed class EditContextService : IEditContextService
             ? new TargetInfo(target.SymbolName, target.FilePath, target.LineRange, target.Kind)
             : new TargetInfo(symbolPath, "", "", "");
 
+        string? continuationToken = null;
+        var depTruncated = deps != null && options.MaxResults.HasValue && deps.Count >= options.MaxResults.Value;
+        var relTruncated = related != null && options.MaxResults.HasValue && related.Count >= options.MaxResults.Value;
+        if (depTruncated || relTruncated)
+        {
+            var cursor = new Dictionary<string, int>
+            {
+                ["do"] = options.DependencyOffset + (deps?.Count ?? 0),
+                ["ro"] = options.RelatedOffset + (related?.Count ?? 0)
+            };
+            continuationToken = Convert.ToBase64String(
+                System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(cursor));
+        }
+
         return new EditContext(
             Target: targetInfo,
             SourceCode: sourceCode,
@@ -118,6 +136,7 @@ public sealed class EditContextService : IEditContextService
             RelatedSymbols: related,
             Tests: tests,
             Timestamp: DateTimeOffset.UtcNow,
-            Warnings: warnings.Count > 0 ? warnings : null);
+            Warnings: warnings.Count > 0 ? warnings : null,
+            ContinuationToken: continuationToken);
     }
 }

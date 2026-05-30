@@ -15,4 +15,5 @@ public sealed record EditContext(
     IReadOnlyList<DependencyNode>? RelatedSymbols,
     IReadOnlyList<string>? Tests,
     DateTimeOffset Timestamp,
-    IReadOnlyList<string>? Warnings = null);
+    IReadOnlyList<string>? Warnings = null,
+    string? ContinuationToken = null);

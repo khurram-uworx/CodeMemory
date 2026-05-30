@@ -3,6 +3,7 @@ using CodeMemory.Mcp.Services;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
 using System.ComponentModel;
+using System.Text.Json;
 
 namespace CodeMemory.Mcp;
 
@@ -24,7 +25,9 @@ public sealed class EditContextTool
         [Description("Qualified symbol name to get context for")] string symbolPath,
         [Description("Include dependency and test information")] bool includeDependencies = true,
         [Description("Maximum dependency chain depth (1-3)")] int depth = 1,
-        [Description("Include source code text")] bool includeSourceCode = true)
+        [Description("Include source code text")] bool includeSourceCode = true,
+        [Description("Maximum number of dependency nodes to return (default unlimited)")] int? maxResults = null,
+        [Description("Continuation token from a previous truncated response to get the next page")] string? cursor = null)
     {
         if (editContextService == null)
         {
@@ -36,7 +39,27 @@ public sealed class EditContextTool
                 ["Edit context service not available"]);
         }
 
-        var options = new EditContextOptions(includeDependencies, Math.Clamp(depth, 1, 3), includeSourceCode);
+        var depOffset = 0;
+        var relOffset = 0;
+        if (cursor != null)
+        {
+            try
+            {
+                var data = JsonSerializer.Deserialize<Dictionary<string, int>>(
+                    Convert.FromBase64String(cursor));
+                if (data != null)
+                {
+                    depOffset = data.GetValueOrDefault("do");
+                    relOffset = data.GetValueOrDefault("ro");
+                }
+            }
+            catch
+            {
+                logger.LogWarning("Invalid cursor token, ignoring");
+            }
+        }
+
+        var options = new EditContextOptions(includeDependencies, Math.Clamp(depth, 1, 3), includeSourceCode, maxResults, depOffset, relOffset);
         return await editContextService.GetEditContextAsync(symbolPath, options);
     }
 }
