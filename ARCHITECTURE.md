@@ -536,7 +536,6 @@ Defined on the `CodeMemory` meter (`src/CodeMemory/Diagnostics/CodeMemoryMetrics
 | `codememory.sql.query_duration` | Histogram (ms) | Custom SQL queries |
 | `codememory.tools.invocations` | Counter | MCP tool invocations (tagged by tool, host) |
 
-See [`METRICS.md`](docs/METRICS.md) for full instrument definitions, Prometheus scrape config, and Grafana dashboard reference.
 
 ### Observability
 
