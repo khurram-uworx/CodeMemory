@@ -139,6 +139,12 @@ else
                             <a asp-page="/Repos/Metrics" asp-route-name="@repo.Name" class="btn btn-sm btn-outline-warning" title="Metrics">
                                 📊
                             </a>
+                            @if (Model.LocalMetricsEnabled)
+                            {
+                                <a asp-page="/Repos/RuntimeMetrics" asp-route-name="@repo.Name" class="btn btn-sm btn-outline-info" title="Runtime Metrics">
+                                    ⏱
+                                </a>
+                            }
                             <form method="post" asp-page-handler="Reindex" class="d-inline">
                                 <input type="hidden" name="name" value="@repo.Name" />
                                 <button type="submit" class="btn btn-sm btn-outline-primary" title="Re-index">

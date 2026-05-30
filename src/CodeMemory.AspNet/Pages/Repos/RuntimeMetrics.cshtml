@@ -1,0 +1,379 @@
+@page "/Repos/{name}/RuntimeMetrics"
+@model CodeMemory.AspNet.Pages.Repos.RuntimeMetricsModel
+@using System.Text.Json
+@using System.Text.Json.Serialization
+@{
+    ViewData["Title"] = Model.Repo?.Name ?? "Runtime Metrics";
+    var json = new JsonSerializerOptions
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+    };
+}
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a asp-page="/Index">Repos</a></li>
+        <li class="breadcrumb-item"><a asp-page="/Repos/Components" asp-route-name="@Model.Repo?.Name">@Model.Repo?.Name</a></li>
+        <li class="breadcrumb-item active">Runtime Metrics</li>
+    </ol>
+</nav>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1>@Model.Repo?.Name<span class="text-muted fs-4 ms-2">Runtime Metrics</span></h1>
+    <div>
+        <a asp-page="/Repos/Components" asp-route-name="@Model.Repo?.Name" class="btn btn-outline-info me-2">
+            <i class="bi bi-boxes"></i> Components
+        </a>
+        <a asp-page="/Repos/Metrics" asp-route-name="@Model.Repo?.Name" class="btn btn-outline-warning me-2">
+            Metrics
+        </a>
+        <a asp-page="/Index" class="btn btn-secondary">
+            <i class="bi bi-arrow-left"></i> Back
+        </a>
+    </div>
+</div>
+
+@if (Model.NotFoundMessage is not null)
+{
+    <div class="alert alert-warning">@Model.NotFoundMessage</div>
+}
+else if (!Model.IsEnabled)
+{
+    <div class="alert alert-info">
+        <h5 class="alert-heading"><i class="bi bi-info-circle"></i> Runtime Metrics Not Available</h5>
+        <p class="mb-0">
+            Local (zero-infrastructure) metrics are not enabled.
+            Set <code>LocalMetrics:Enabled: true</code> in <code>appsettings.json</code> to collect and display runtime metrics.
+        </p>
+    </div>
+}
+else if (Model.RepoSnapshot is null)
+{
+    <div class="alert alert-info">
+        <h5 class="alert-heading"><i class="bi bi-graph-up"></i> No Metrics Yet</h5>
+        <p class="mb-0">No runtime metrics have been recorded for this repository. Metrics appear after indexing completes and tools are invoked.</p>
+    </div>
+}
+else
+{
+    var snapshot = Model.RepoSnapshot;
+
+    <div class="text-muted small mb-3">
+        Snapshot collected at: <strong>@snapshot.CollectedAt.ToString("yyyy-MM-dd HH:mm:ss") UTC</strong>
+        &middot; @snapshot.Instruments.Count instrument(s) with repo-scoped data
+    </div>
+
+    @* ── Group instruments by category ────────────────────── *@
+    var toolInstr = snapshot.Instruments.FirstOrDefault(i => i.Name == "codememory.tools.invocations");
+    var indexingInstr = snapshot.Instruments.Where(i => i.Name.StartsWith("codememory.indexing.")).ToList();
+    var searchInstr = snapshot.Instruments.FirstOrDefault(i => i.Name == "codememory.search.query_duration");
+    var sqlInstr = snapshot.Instruments.FirstOrDefault(i => i.Name == "codememory.sql.query_duration");
+    var cloneInstr = snapshot.Instruments.FirstOrDefault(i => i.Name == "codememory.git.clone.duration");
+    var repoGauges = snapshot.Instruments.Where(i => i.Name.StartsWith("codememory.repo.")).ToList();
+
+    @* ── 1. Tool Invocations ──────────────────────────────── *@
+    if (toolInstr is not null && toolInstr.Values.Count > 0)
+    {
+        var totalToolCalls = toolInstr.Values.Sum(v => v.Count ?? 0);
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h4 class="mb-0">Tool Invocations</h4>
+                <span class="badge bg-secondary">@totalToolCalls.ToString("N0") total</span>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle table-sm">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>#</th>
+                                <th>Tool</th>
+                                <th>Host</th>
+                                <th class="text-end">Invocations</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @{
+                                var sortedTools = toolInstr.Values
+                                    .OrderByDescending(v => v.Count ?? 0)
+                                    .ToList();
+                            }
+                            @for (var i = 0; i < sortedTools.Count; i++)
+                            {
+                                var v = sortedTools[i];
+                                var toolTag = v.Tags?.FirstOrDefault(t => t.Key == "tool").Value ?? "?";
+                                var hostTag = v.Tags?.FirstOrDefault(t => t.Key == "host").Value ?? "—";
+                                <tr>
+                                    <td class="text-muted">@(i + 1)</td>
+                                    <td><code>@toolTag</code></td>
+                                    <td><span class="badge bg-info text-dark">@hostTag</span></td>
+                                    <td class="text-end fw-semibold">@(v.Count?.ToString("N0") ?? "0")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    }
+
+    @* ── 2. Indexing Metrics ──────────────────────────────── *@
+    if (indexingInstr.Count > 0)
+    {
+        <div class="card mb-4">
+            <div class="card-header">
+                <h4 class="mb-0">Indexing</h4>
+            </div>
+            <div class="card-body">
+                @foreach (var instr in indexingInstr)
+                {
+                    var displayName = instr.Name.Replace("codememory.indexing.", "");
+                    <h5 class="mt-3 mb-2">@displayName</h5>
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle table-sm">
+                            <thead class="table-dark">
+                                <tr>
+                                    @if (instr.InstrumentType == "histogram")
+                                    {
+                                        <th>Count</th>
+                                        <th class="text-end">Sum</th>
+                                        <th class="text-end">Avg</th>
+                                        <th class="text-end">Min</th>
+                                        <th class="text-end">Max</th>
+                                        <th class="text-end">Last</th>
+                                    }
+                                    else
+                                    {
+                                        <th class="text-end">Value</th>
+                                    }
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var v in instr.Values)
+                                {
+                                    <tr>
+                                        @if (instr.InstrumentType == "histogram")
+                                        {
+                                            <td>@(v.Count?.ToString("N0") ?? "0")</td>
+                                            <td class="text-end">@(v.Sum?.ToString("N2") ?? "—")</td>
+                                            <td class="text-end">@(v.Count > 0 ? (v.Sum / v.Count)?.ToString("N2") : "—")</td>
+                                            <td class="text-end">@(v.Min?.ToString("N2") ?? "—")</td>
+                                            <td class="text-end">@(v.Max?.ToString("N2") ?? "—")</td>
+                                            <td class="text-end">@(v.Last?.ToString("N2") ?? "—")</td>
+                                        }
+                                        else
+                                        {
+                                            <td class="text-end fw-semibold">@(v.Count?.ToString("N0") ?? "0")</td>
+                                        }
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+
+    @* ── 3. Search & SQL Queries ──────────────────────────── *@
+    var queryInstrs = new[] { searchInstr, sqlInstr }.Where(i => i is not null).ToList();
+    if (queryInstrs.Count > 0)
+    {
+        <div class="card mb-4">
+            <div class="card-header">
+                <h4 class="mb-0">Queries</h4>
+            </div>
+            <div class="card-body">
+                @foreach (var instr in queryInstrs)
+                {
+                    var displayName = instr!.Name switch
+                    {
+                        "codememory.search.query_duration" => "Semantic Search",
+                        "codememory.sql.query_duration" => "SQL Query",
+                        var n => n.Replace("codememory.", "")
+                    };
+                    <h5 class="mt-3 mb-2">@displayName (ms)</h5>
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle table-sm">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th>Count</th>
+                                    <th class="text-end">Sum</th>
+                                    <th class="text-end">Avg</th>
+                                    <th class="text-end">Min</th>
+                                    <th class="text-end">Max</th>
+                                    <th class="text-end">Last</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var v in instr.Values)
+                                {
+                                    <tr>
+                                        <td>@(v.Count?.ToString("N0") ?? "0")</td>
+                                        <td class="text-end">@(v.Sum?.ToString("N2") ?? "—")</td>
+                                        <td class="text-end">@(v.Count > 0 ? (v.Sum / v.Count)?.ToString("N2") : "—")</td>
+                                        <td class="text-end">@(v.Min?.ToString("N2") ?? "—")</td>
+                                        <td class="text-end">@(v.Max?.ToString("N2") ?? "—")</td>
+                                        <td class="text-end">@(v.Last?.ToString("N2") ?? "—")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+
+    @* ── 4. Git / Clone ───────────────────────────────────── *@
+    if (cloneInstr is not null && cloneInstr.Values.Count > 0)
+    {
+        <div class="card mb-4">
+            <div class="card-header">
+                <h4 class="mb-0">Git Clone (ms)</h4>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle table-sm">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>Count</th>
+                                <th class="text-end">Sum</th>
+                                <th class="text-end">Avg</th>
+                                <th class="text-end">Min</th>
+                                <th class="text-end">Max</th>
+                                <th class="text-end">Last</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var v in cloneInstr.Values)
+                            {
+                                <tr>
+                                    <td>@(v.Count?.ToString("N0") ?? "0")</td>
+                                    <td class="text-end">@(v.Sum?.ToString("N2") ?? "—")</td>
+                                    <td class="text-end">@(v.Count > 0 ? (v.Sum / v.Count)?.ToString("N2") : "—")</td>
+                                    <td class="text-end">@(v.Min?.ToString("N2") ?? "—")</td>
+                                    <td class="text-end">@(v.Max?.ToString("N2") ?? "—")</td>
+                                    <td class="text-end">@(v.Last?.ToString("N2") ?? "—")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    }
+
+    @* ── 5. Repo Overview Gauges ──────────────────────────── *@
+    if (repoGauges.Count > 0)
+    {
+        <div class="card mb-4">
+            <div class="card-header">
+                <h4 class="mb-0">Repository Overview</h4>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    @foreach (var instr in repoGauges.OrderBy(i => i.Name))
+                    {
+                        var v = instr.Values.FirstOrDefault();
+                        var displayName = instr.Name.Replace("codememory.repo.", "");
+                        var color = displayName switch
+                        {
+                            "classes" => "text-info",
+                            "methods" => "text-success",
+                            "interfaces" => "text-warning",
+                            "properties" => "text-primary",
+                            "fields" => "text-secondary",
+                            "total_symbols" => "",
+                            "total_files" => "",
+                            "total_relationships" => "text-danger",
+                            _ => ""
+                        };
+                        <div class="col-6 col-md-3 col-xl mb-3">
+                            <div class="card text-bg-dark h-100">
+                                <div class="card-body text-center">
+                                    <div class="fs-1 fw-bold @color">@(v?.Count?.ToString("N0") ?? "0")</div>
+                                    <div class="small text-secondary">@displayName</div>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+
+    @* ── 6. Other Instruments ─────────────────────────────── *@
+    var otherInstr = snapshot.Instruments
+        .Where(i => i != toolInstr
+            && i.Name != "codememory.search.query_duration"
+            && i.Name != "codememory.sql.query_duration"
+            && i.Name != "codememory.git.clone.duration"
+            && !i.Name.StartsWith("codememory.indexing.")
+            && !i.Name.StartsWith("codememory.repo."))
+        .ToList();
+
+    if (otherInstr.Count > 0)
+    {
+        <div class="card mb-4">
+            <div class="card-header">
+                <h4 class="mb-0">Other Instruments</h4>
+            </div>
+            <div class="card-body">
+                @foreach (var instr in otherInstr)
+                {
+                    <h5 class="mt-3 mb-2"><code>@instr.Name</code> <span class="badge bg-secondary">@instr.InstrumentType</span></h5>
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle table-sm">
+                            <thead class="table-dark">
+                                <tr>
+                                    @if (instr.InstrumentType == "histogram")
+                                    {
+                                        <th>Count</th>
+                                        <th class="text-end">Sum</th>
+                                        <th class="text-end">Avg</th>
+                                        <th class="text-end">Min</th>
+                                        <th class="text-end">Max</th>
+                                        <th class="text-end">Last</th>
+                                    }
+                                    else
+                                    {
+                                        <th class="text-end">Value</th>
+                                    }
+                                    @if (instr.Values.Any(v => v.Tags?.Count > 0))
+                                    {
+                                        <th>Tags</th>
+                                    }
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var v in instr.Values)
+                                {
+                                    <tr>
+                                        @if (instr.InstrumentType == "histogram")
+                                        {
+                                            <td>@(v.Count?.ToString("N0") ?? "0")</td>
+                                            <td class="text-end">@(v.Sum?.ToString("N2") ?? "—")</td>
+                                            <td class="text-end">@(v.Count > 0 ? (v.Sum / v.Count)?.ToString("N2") : "—")</td>
+                                            <td class="text-end">@(v.Min?.ToString("N2") ?? "—")</td>
+                                            <td class="text-end">@(v.Max?.ToString("N2") ?? "—")</td>
+                                            <td class="text-end">@(v.Last?.ToString("N2") ?? "—")</td>
+                                        }
+                                        else
+                                        {
+                                            <td class="text-end fw-semibold">@(v.Count?.ToString("N0") ?? "0")</td>
+                                        }
+                                        @if (v.Tags?.Count > 0)
+                                        {
+                                            <td><code>@string.Join(", ", v.Tags.Select(t => $"{t.Key}={t.Value}"))</code></td>
+                                        }
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+}
