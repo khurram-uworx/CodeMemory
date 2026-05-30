@@ -3,6 +3,9 @@ using Microsoft.Extensions.Logging;
 
 namespace CodeMemory.Mcp;
 
+/// <summary>
+/// Result of a <see cref="CodeMemoryInitService.Run"/> operation, indicating status and details about config/gitignore changes.
+/// </summary>
 public sealed record InitResult(
     string Status,
     string RepoRoot,
@@ -12,6 +15,10 @@ public sealed record InitResult(
     string Message
 );
 
+/// <summary>
+/// Service that initializes a repository for CodeMemory indexing by creating a default
+/// <c>.codememory.json</c> config file and adding it to <c>.gitignore</c>.
+/// </summary>
 public sealed class CodeMemoryInitService(ILogger<CodeMemoryInitService>? logger = null)
 {
     static readonly string DefaultConfigJson = $$"""
@@ -22,6 +29,12 @@ public sealed class CodeMemoryInitService(ILogger<CodeMemoryInitService>? logger
         }
         """;
 
+    /// <summary>
+    /// Creates or validates <c>.codememory.json</c> and ensures it is listed in <c>.gitignore</c>
+    /// for the specified repository root.
+    /// </summary>
+    /// <param name="repoRoot">Absolute path to the repository root directory.</param>
+    /// <returns>An <see cref="InitResult"/> describing the outcome.</returns>
     public InitResult Run(string repoRoot)
     {
         var configPath = Path.Combine(repoRoot, ".codememory.json");
