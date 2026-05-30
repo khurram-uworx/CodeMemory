@@ -80,7 +80,9 @@ public sealed class EditContextService : IEditContextService
         {
             try
             {
-                deps = await graphService.TraceAsync(symbolPath, "both", options.Depth, ct);
+                deps = await graphService.TraceAsync(symbolPath, "both", options.Depth, options.MaxResults, ct);
+                if (options.MaxResults.HasValue && deps.Count >= options.MaxResults.Value)
+                    warnings.Add($"Dependency trace truncated to {options.MaxResults} nodes");
             }
             catch (Exception ex)
             {
@@ -89,7 +91,9 @@ public sealed class EditContextService : IEditContextService
 
             try
             {
-                related = await graphService.FindRelatedAsync(symbolPath, "all", ct);
+                related = await graphService.FindRelatedAsync(symbolPath, "all", options.MaxResults, ct);
+                if (options.MaxResults.HasValue && related.Count >= options.MaxResults.Value)
+                    warnings.Add($"Related symbols truncated to {options.MaxResults} nodes");
             }
             catch (Exception ex)
             {

@@ -32,7 +32,8 @@ public sealed class ImpactAnalysisTool
     [McpServerTool, Description("Analyzes the potential impact of changing a symbol. Returns downstream dependencies, affected files, affected components, and test coverage.")]
     public async Task<ImpactAnalysisResult> ImpactAnalysisAsync(
         [Description("Qualified symbol name to analyze")] string symbolPath,
-        [Description("Maximum dependency chain depth (1-3, default 2)")] int depth = 2)
+        [Description("Maximum dependency chain depth (1-3, default 2)")] int depth = 2,
+        [Description("Maximum number of dependency nodes to return (default unlimited)")] int? maxResults = null)
     {
         if (graphService == null)
         {
@@ -42,7 +43,7 @@ public sealed class ImpactAnalysisTool
 
         var cappedDepth = Math.Clamp(depth, 1, 3);
 
-        var downstreamTask = graphService.TraceAsync(symbolPath, "downstream", cappedDepth);
+        var downstreamTask = graphService.TraceAsync(symbolPath, "downstream", cappedDepth, maxResults);
         var testsTask = graphService.FindTestCoverageAsync(symbolPath);
 
         await Task.WhenAll(downstreamTask, testsTask);
@@ -81,6 +82,10 @@ public sealed class ImpactAnalysisTool
             }
         }
 
+        string? warning = null;
+        if (maxResults.HasValue && downstream.Count >= maxResults.Value)
+            warning = $"Results truncated to {maxResults} nodes";
+
         logger.LogDebug("ImpactAnalysisAsync({Symbol}): {Downstream} downstream deps, {Files} affected files, {Tests} test files",
             symbolPath, downstream.Count, affectedFiles.Count, testFiles.Count);
 
@@ -89,6 +94,7 @@ public sealed class ImpactAnalysisTool
             downstream,
             affectedFiles,
             affectedComponents,
-            testFiles.Count > 0 ? testFiles : null);
+            testFiles.Count > 0 ? testFiles : null,
+            warning);
     }
 }

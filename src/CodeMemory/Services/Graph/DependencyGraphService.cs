@@ -17,7 +17,7 @@ public sealed class DependencyGraphService : IDependencyGraphService
 
     async Task bfsAsync(string symbolId, string direction, int maxDepth,
         HashSet<string> visited, List<DependencyNode> result, int currentDepth,
-        CancellationToken ct)
+        int? maxResults, CancellationToken ct)
     {
         if (currentDepth >= maxDepth || !visited.Add(symbolId))
             return;
@@ -27,6 +27,8 @@ public sealed class DependencyGraphService : IDependencyGraphService
             var rels = await storage.GetRelationshipsByTargetAsync(symbolId, ct);
             foreach (var rel in rels)
             {
+                if (maxResults.HasValue && result.Count >= maxResults.Value)
+                    return;
                 var srcSymbol = await storage.GetSymbolAsync(rel.SourceSymbolId, ct);
                 result.Add(new DependencyNode(
                     srcSymbol?.Name ?? rel.SourceSymbolId,
@@ -34,7 +36,7 @@ public sealed class DependencyGraphService : IDependencyGraphService
                     srcSymbol?.Kind ?? rel.RelationshipType,
                     srcSymbol != null ? $"{srcSymbol.LineStart}-{srcSymbol.LineEnd}" : "",
                     rel.RelationshipType));
-                await bfsAsync(rel.SourceSymbolId, direction, maxDepth, visited, result, currentDepth + 1, ct);
+                await bfsAsync(rel.SourceSymbolId, direction, maxDepth, visited, result, currentDepth + 1, maxResults, ct);
             }
         }
 
@@ -43,6 +45,8 @@ public sealed class DependencyGraphService : IDependencyGraphService
             var rels = await storage.GetRelationshipsBySourceAsync(symbolId, ct);
             foreach (var rel in rels)
             {
+                if (maxResults.HasValue && result.Count >= maxResults.Value)
+                    return;
                 var tgtSymbol = await storage.GetSymbolAsync(rel.TargetSymbolId, ct);
                 result.Add(new DependencyNode(
                     tgtSymbol?.Name ?? rel.TargetSymbolId,
@@ -50,13 +54,13 @@ public sealed class DependencyGraphService : IDependencyGraphService
                     tgtSymbol?.Kind ?? rel.RelationshipType,
                     tgtSymbol != null ? $"{tgtSymbol.LineStart}-{tgtSymbol.LineEnd}" : "",
                     rel.RelationshipType));
-                await bfsAsync(rel.TargetSymbolId, direction, maxDepth, visited, result, currentDepth + 1, ct);
+                await bfsAsync(rel.TargetSymbolId, direction, maxDepth, visited, result, currentDepth + 1, maxResults, ct);
             }
         }
     }
 
     public async Task<IReadOnlyList<DependencyNode>> TraceAsync(
-        string symbolPath, string direction, int depth, CancellationToken ct = default)
+        string symbolPath, string direction, int depth, int? maxResults = null, CancellationToken ct = default)
     {
         var symbol = await storage.GetSymbolByFullNameAsync(symbolPath, ct);
         if (symbol == null)
@@ -69,12 +73,19 @@ public sealed class DependencyGraphService : IDependencyGraphService
         var visited = new HashSet<string>();
         var result = new List<DependencyNode>();
 
-        await bfsAsync(symbol.Id, direction, cappedDepth, visited, result, 0, ct);
+        await bfsAsync(symbol.Id, direction, cappedDepth, visited, result, 0, maxResults, ct);
 
         // Include relationships from child symbols (methods, properties, fields, etc.)
-        var childSymbols = await storage.GetSymbolsByParentAsync(symbol.FullName, ct);
-        foreach (var child in childSymbols)
-            await bfsAsync(child.Id, direction, cappedDepth, visited, result, 0, ct);
+        if (!maxResults.HasValue || result.Count < maxResults.Value)
+        {
+            var childSymbols = await storage.GetSymbolsByParentAsync(symbol.FullName, ct);
+            foreach (var child in childSymbols)
+            {
+                if (maxResults.HasValue && result.Count >= maxResults.Value)
+                    break;
+                await bfsAsync(child.Id, direction, cappedDepth, visited, result, 0, maxResults, ct);
+            }
+        }
 
         logger.LogDebug("TraceAsync({Symbol}, {Direction}, {Depth}): {Count} nodes",
             symbolPath, direction, depth, result.Count);
@@ -83,7 +94,7 @@ public sealed class DependencyGraphService : IDependencyGraphService
     }
 
     public async Task<IReadOnlyList<DependencyNode>> FindRelatedAsync(
-        string symbolPath, string relationType, CancellationToken ct = default)
+        string symbolPath, string relationType, int? maxResults = null, CancellationToken ct = default)
     {
         var symbol = await storage.GetSymbolByFullNameAsync(symbolPath, ct);
         if (symbol == null)
@@ -99,6 +110,9 @@ public sealed class DependencyGraphService : IDependencyGraphService
         {
             foreach (var rel in rels)
             {
+                if (maxResults.HasValue && result.Count >= maxResults.Value)
+                    return;
+
                 if (!seenRelIds.Add(rel.Id))
                     continue;
 
@@ -126,9 +140,13 @@ public sealed class DependencyGraphService : IDependencyGraphService
         var childSymbols = await storage.GetSymbolsByParentAsync(symbol.FullName, ct);
         foreach (var child in childSymbols)
         {
+            if (maxResults.HasValue && result.Count >= maxResults.Value)
+                break;
             downstream = await storage.GetRelationshipsByTargetAsync(child.Id, ct);
             await addRelationships(downstream);
 
+            if (maxResults.HasValue && result.Count >= maxResults.Value)
+                break;
             upstream = await storage.GetRelationshipsBySourceAsync(child.Id, ct);
             await addRelationships(upstream);
         }

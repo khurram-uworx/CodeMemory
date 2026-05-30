@@ -24,7 +24,8 @@ public sealed class EditContextTool
         [Description("Qualified symbol name to get context for")] string symbolPath,
         [Description("Include dependency and test information")] bool includeDependencies = true,
         [Description("Maximum dependency chain depth (1-3)")] int depth = 1,
-        [Description("Include source code text")] bool includeSourceCode = true)
+        [Description("Include source code text")] bool includeSourceCode = true,
+        [Description("Maximum number of dependency nodes to return (default unlimited)")] int? maxResults = null)
     {
         if (editContextService == null)
         {
@@ -36,7 +37,7 @@ public sealed class EditContextTool
                 ["Edit context service not available"]);
         }
 
-        var options = new EditContextOptions(includeDependencies, Math.Clamp(depth, 1, 3), includeSourceCode);
+        var options = new EditContextOptions(includeDependencies, Math.Clamp(depth, 1, 3), includeSourceCode, maxResults);
         return await editContextService.GetEditContextAsync(symbolPath, options);
     }
 }

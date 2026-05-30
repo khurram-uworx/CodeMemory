@@ -41,7 +41,7 @@ static class MockServices
     public static IDependencyGraphService CreateDependencyGraphService()
     {
         var graph = Substitute.For<IDependencyGraphService>();
-        graph.TraceAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+        graph.TraceAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
              .Returns(args =>
              {
                  var symbolPath = args.ArgAt<string>(0);
@@ -54,7 +54,7 @@ static class MockServices
                      new("MyOtherClass", "/src/Other.cs", "Class", "1-50", direction == "upstream" ? "imports" : "references")
                  };
              });
-        graph.FindRelatedAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+        graph.FindRelatedAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
              .Returns(args =>
              {
                  if (args.ArgAt<string>(0) == "NonExistent")
@@ -74,9 +74,9 @@ static class MockServices
     public static IDependencyGraphService CreateGraphService()
     {
         var graph = Substitute.For<IDependencyGraphService>();
-        graph.TraceAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+        graph.TraceAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
              .Returns([new DependencyNode("MyOtherClass", "/src/Other.cs", "Class", "1-30", "references")]);
-        graph.FindRelatedAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+        graph.FindRelatedAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
              .Returns([]);
         graph.FindTestCoverageAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
              .Returns(["/tests/MyClassTest.cs"]);
