@@ -1,3 +1,4 @@
+using CodeMemory.Diagnostics;
 using CodeMemory.Indexing.Git;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
@@ -24,6 +25,8 @@ public sealed class GitHistoryTool
         [Description("Maximum number of commits to return (default 5)")] int maxCommits = 5,
         CancellationToken ct = default)
     {
+        CodeMemoryMetrics.ToolInvocations.Add(1, new("tool", "get_symbol_history"), new("host", "mcp"));
+
         if (gitHistoryService == null)
         {
             logger.LogWarning("GitHistoryService not registered — returning null");
@@ -39,6 +42,8 @@ public sealed class GitHistoryTool
         [Description("Maximum commits to scan (default 25)")] int maxCommits = 25,
         CancellationToken ct = default)
     {
+        CodeMemoryMetrics.ToolInvocations.Add(1, new("tool", "get_hotspots"), new("host", "mcp"));
+
         if (gitHistoryService == null)
         {
             logger.LogWarning("GitHistoryService not registered — returning empty");

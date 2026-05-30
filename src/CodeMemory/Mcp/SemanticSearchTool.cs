@@ -1,3 +1,4 @@
+using CodeMemory.Diagnostics;
 using CodeMemory.Indexing.Search;
 using CodeMemory.Mcp.Models;
 using CodeMemory.Storage;
@@ -28,6 +29,14 @@ public sealed class SemanticSearchTool
         [Description("Maximum number of results to return (default 10, max 50)")] int maxResults = 10,
         [Description("Minimum cosine similarity threshold (0-1, default 0). Higher values return only highly relevant results.")] double minimumSimilarity = 0)
     {
+        var repoName = storage?.RepoRoot is not null
+            ? Path.GetFileName(storage.RepoRoot.TrimEnd(Path.DirectorySeparatorChar))
+            : null;
+        KeyValuePair<string, object?>[] semSearchTags = repoName is not null
+            ? [new("tool", "semantic_search"), new("host", "mcp"), new("repo.name", repoName)]
+            : [new("tool", "semantic_search"), new("host", "mcp")];
+        CodeMemoryMetrics.ToolInvocations.Add(1, semSearchTags);
+
         if (searchService == null)
         {
             logger.LogWarning("Semantic search service not registered — returning empty results");

@@ -1,3 +1,4 @@
+using CodeMemory.Diagnostics;
 using CodeMemory.Indexing.Graph;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
@@ -23,6 +24,8 @@ public sealed class FindRelatedCodeTool
         [Description("Qualified symbol name to find related code for")] string symbolPath,
         [Description("Filter by relation type: 'all', 'calls', 'references', 'inherits', 'implements'")] string relationType = "all")
     {
+        CodeMemoryMetrics.ToolInvocations.Add(1, new("tool", "find_related_code"), new("host", "mcp"));
+
         if (graphService == null)
         {
             logger.LogWarning("Dependency graph service not registered — returning empty result");

@@ -28,7 +28,8 @@ public sealed class AdminTool
         [Description("Optional: skip files matching these patterns (e.g., '**/*.generated.cs,**/bin/**')")] string? excludePatterns = null,
         CancellationToken ct = default)
     {
-        CodeMemoryMetrics.ToolInvocations.Add(1, new("tool", "rescan"), new("host", "mcp"));
+        var rescanRepoName = Path.GetFileName(storage.RepoRoot.TrimEnd(Path.DirectorySeparatorChar));
+        CodeMemoryMetrics.ToolInvocations.Add(1, new("tool", "rescan"), new("host", "mcp"), new("repo.name", rescanRepoName));
 
         var repoRoot = storage.RepoRoot;
         logger.LogInformation("Rescan requested for repo {RepoRoot}", repoRoot);
@@ -50,7 +51,8 @@ public sealed class AdminTool
     [McpServerTool, Description("Returns the root path of the currently active repository being indexed and queried.")]
     public AdminRepositoryRootResult GetRepositoryRoot()
     {
-        CodeMemoryMetrics.ToolInvocations.Add(1, new("tool", "get_repository_root"), new("host", "mcp"));
+        var rootRepoName = Path.GetFileName(storage.RepoRoot.TrimEnd(Path.DirectorySeparatorChar));
+        CodeMemoryMetrics.ToolInvocations.Add(1, new("tool", "get_repository_root"), new("host", "mcp"), new("repo.name", rootRepoName));
 
         return new AdminRepositoryRootResult("ok", storage.RepoRoot);
     }

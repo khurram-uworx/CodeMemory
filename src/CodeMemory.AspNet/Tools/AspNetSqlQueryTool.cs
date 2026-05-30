@@ -1,5 +1,6 @@
 using CodeMemory.AspNet.Configuration;
 using CodeMemory.AspNet.Storage;
+using CodeMemory.Diagnostics;
 using CodeMemory.Storage;
 using Microsoft.EntityFrameworkCore;
 using ModelContextProtocol.Server;
@@ -396,6 +397,9 @@ RETURNS JSON: success, rowCount, executionTimeMs, columns, rows, error
         [Description("Maximum number of rows to return from the result stream (1-10000, default 100)")]
         int maxResults = 100)
     {
+        var aspRepoName = Path.GetFileName(storageService.RepoRoot.TrimEnd(Path.DirectorySeparatorChar));
+        CodeMemoryMetrics.ToolInvocations.Add(1, new("tool", "sql_query"), new("host", "aspnet"), new("repo.name", aspRepoName));
+
         var sw = Stopwatch.StartNew();
         var cappedMaxResults = Math.Clamp(maxResults, 1, 10000);
 

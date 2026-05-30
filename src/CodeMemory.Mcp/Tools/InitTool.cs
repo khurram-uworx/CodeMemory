@@ -33,8 +33,10 @@ public sealed class InitTool
         [Description("Repository root path (defaults to the currently indexed repo)")] string? repoRoot = null,
         CancellationToken ct = default)
     {
-        CodeMemoryMetrics.ToolInvocations.Add(1, new("tool", "init"), new("host", "mcp"));
+        var resolvedRoot = repoRoot ?? Environment.CurrentDirectory;
+        var initRepoName = Path.GetFileName(resolvedRoot.TrimEnd(Path.DirectorySeparatorChar));
+        CodeMemoryMetrics.ToolInvocations.Add(1, new("tool", "init"), new("host", "mcp"), new("repo.name", initRepoName));
 
-        return initService.Run(repoRoot ?? Environment.CurrentDirectory);
+        return initService.Run(resolvedRoot);
     }
 }

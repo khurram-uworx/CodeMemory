@@ -1,3 +1,4 @@
+using CodeMemory.Diagnostics;
 using CodeMemory.Mcp.Models;
 using CodeMemory.Mcp.Services;
 using Microsoft.Extensions.Logging;
@@ -29,6 +30,8 @@ public sealed class EditContextTool
         [Description("Maximum number of dependency nodes to return (default unlimited)")] int? maxResults = null,
         [Description("Continuation token from a previous truncated response to get the next page")] string? cursor = null)
     {
+        CodeMemoryMetrics.ToolInvocations.Add(1, new("tool", "get_edit_context"), new("host", "mcp"));
+
         if (editContextService == null)
         {
             logger.LogWarning("Edit context service not registered — returning minimal context");
