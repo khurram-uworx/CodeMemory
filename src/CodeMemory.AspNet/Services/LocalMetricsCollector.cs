@@ -52,7 +52,7 @@ sealed class LocalMetricsCollector : IDisposable
 
         var tagList = tags.Length > 0 ? tags.ToArray() : null;
 
-        if (instrument.GetType().GetGenericTypeDefinition() == typeof(Counter<>))
+        if (instrument is Counter<long>)
             store.RecordCounter(instrument.Name, measurement, tagList);
         else
             store.RecordHistogram(instrument.Name, measurement, tagList);

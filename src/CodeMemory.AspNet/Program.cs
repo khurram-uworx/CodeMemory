@@ -107,6 +107,7 @@ builder.Services.AddSingleton<RelationshipQueryService>();
 
 // Metrics service
 builder.Services.AddSingleton<MetricsService>();
+builder.Services.AddSingleton<RepoMetricsRecorder>();
 
 // Local metrics collector (zero-infra runtime metrics, disabled by default)
 builder.Services.Configure<LocalMetricsOptions>(

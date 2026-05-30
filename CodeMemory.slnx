@@ -5,6 +5,7 @@
     <File Path=".github/workflows/release.yml" />
   </Folder>
   <Folder Name="/docs/">
+    <File Path="docs/FOLLOWUP.md" />
     <File Path="docs/IDEA.md" />
     <File Path="docs/TASKS-TEMPLATE.md" />
   </Folder>

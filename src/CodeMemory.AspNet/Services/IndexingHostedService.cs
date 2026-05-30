@@ -18,12 +18,14 @@ public sealed class IndexingHostedService : BackgroundService
     readonly IndexingOptions indexingOptions;
     readonly StorageFactory storageFactory;
     readonly CloneIndexService cloneIndex;
+    readonly RepoMetricsRecorder metricsRecorder;
 
     public IndexingHostedService(IServiceProvider serviceProvider,
         IRepoContextAccessor repoContext, ILogger<IndexingHostedService> logger,
         IOptions<IndexingOptions> indexingOptions,
         StorageFactory storageFactory,
-        CloneIndexService cloneIndex)
+        CloneIndexService cloneIndex,
+        RepoMetricsRecorder metricsRecorder)
     {
         this.serviceProvider = serviceProvider;
         this.repoContext = repoContext;
@@ -31,6 +33,7 @@ public sealed class IndexingHostedService : BackgroundService
         this.indexingOptions = indexingOptions.Value;
         this.storageFactory = storageFactory;
         this.cloneIndex = cloneIndex;
+        this.metricsRecorder = metricsRecorder;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -132,6 +135,7 @@ public sealed class IndexingHostedService : BackgroundService
 
                 IndexingState.MarkCompleted(repo.Name);
                 IndexingState.StoreRelationshipCount(repo.Name, indexResult.RelationshipCount);
+                await metricsRecorder.RecordAsync(repo.Name);
                 await UpdateIndexStatusAsync(dbFactory, repo.Name, "Indexed", ct: repoCt);
             }
             catch (OperationCanceledException)
