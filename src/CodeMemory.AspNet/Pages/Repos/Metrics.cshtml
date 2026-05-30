@@ -35,21 +35,144 @@
 {
     <div class="alert alert-warning">@Model.NotFoundMessage</div>
 }
-else if (Model.ErrorMessage is not null)
+else if (Model.RepositoryMetricsError is not null && Model.RuntimeMetrics is null)
 {
     <div class="alert alert-warning">
         <h5 class="alert-heading"><i class="bi bi-exclamation-triangle"></i> Metrics Unavailable</h5>
-        <p class="mb-0">@Model.ErrorMessage</p>
+        <p class="mb-0">@Model.RepositoryMetricsError</p>
     </div>
 }
-else if (Model.Metrics is null)
+else if (Model.Metrics is null && Model.RuntimeMetrics is null)
 {
     <div class="alert alert-info">No metrics data available.</div>
 }
 else
 {
-    var m = Model.Metrics;
-    var hasSymbols = m.Overview.TotalSymbols > 0;
+    var runtime = Model.RuntimeMetrics;
+
+    @if (runtime is not null)
+    {
+        var counters = runtime.Series.Where(s => s.Kind == "counter").ToList();
+        var histograms = runtime.Series.Where(s => s.Kind == "histogram").ToList();
+        var toolInvocations = counters
+            .Where(s => s.Name == "codememory.tools.invocations")
+            .OrderByDescending(s => s.Sum)
+            .Take(8)
+            .ToList();
+
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h4 class="mb-0">Runtime Metrics</h4>
+                <span class="badge bg-success">Local collector enabled</span>
+            </div>
+            <div class="card-body">
+                <div class="row g-3 mb-3">
+                    <div class="col-6 col-md-3">
+                        <div class="card text-bg-dark h-100">
+                            <div class="card-body text-center">
+                                <div class="fs-2 fw-bold">@runtime.Series.Count.ToString("N0")</div>
+                                <div class="small text-secondary">Matching Series</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="card text-bg-dark h-100">
+                            <div class="card-body text-center">
+                                <div class="fs-2 fw-bold text-info">@runtime.SeriesCount.ToString("N0")</div>
+                                <div class="small text-secondary">Total Series</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="card text-bg-dark h-100">
+                            <div class="card-body text-center">
+                                <div class="fs-2 fw-bold text-warning">@histograms.Count.ToString("N0")</div>
+                                <div class="small text-secondary">Histograms</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="card text-bg-dark h-100">
+                            <div class="card-body text-center">
+                                <div class="fs-2 fw-bold text-success">@counters.Count.ToString("N0")</div>
+                                <div class="small text-secondary">Counters</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                @if (runtime.Series.Count == 0)
+                {
+                    <div class="text-muted">No runtime measurements for this repository yet.</div>
+                }
+                else
+                {
+                    <div class="row g-4">
+                        <div class="col-lg-6">
+                            <h5>Durations</h5>
+                            <div class="table-responsive">
+                                <table class="table table-hover align-middle table-sm">
+                                    <thead class="table-dark">
+                                        <tr><th>Metric</th><th class="text-end">Count</th><th class="text-end">Avg</th><th class="text-end">P95</th><th class="text-end">Max</th></tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var h in histograms.OrderByDescending(x => x.Count).Take(8))
+                                        {
+                                            <tr>
+                                                <td><code>@h.Name</code></td>
+                                                <td class="text-end">@h.Count.ToString("N0")</td>
+                                                <td class="text-end">@(h.Average?.ToString("F1") ?? "—") @h.Unit</td>
+                                                <td class="text-end">@(h.P95?.ToString("F1") ?? "—") @h.Unit</td>
+                                                <td class="text-end">@(h.Max?.ToString("F1") ?? "—") @h.Unit</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div class="col-lg-6">
+                            <h5>Tool Invocations</h5>
+                            <div class="table-responsive">
+                                <table class="table table-hover align-middle table-sm">
+                                    <thead class="table-dark">
+                                        <tr><th>Tool</th><th>Host</th><th class="text-end">Count</th></tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var t in toolInvocations)
+                                        {
+                                            var tool = t.Tags.TryGetValue("tool", out var toolName) ? toolName : "unknown";
+                                            var host = t.Tags.TryGetValue("host", out var hostName) ? hostName : "unknown";
+                                            <tr>
+                                                <td><code>@tool</code></td>
+                                                <td>@host</td>
+                                                <td class="text-end fw-semibold">@t.Sum.ToString("N0")</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+
+    @if (Model.RepositoryMetricsError is not null)
+    {
+        <div class="alert alert-warning">
+            <h5 class="alert-heading"><i class="bi bi-exclamation-triangle"></i> Repository Metrics Unavailable</h5>
+            <p class="mb-0">@Model.RepositoryMetricsError</p>
+        </div>
+    }
+    else if (Model.Metrics is null)
+    {
+        <div class="alert alert-info">No repository metrics data available.</div>
+    }
+    else
+    {
+        var m = Model.Metrics;
+        var hasSymbols = m.Overview.TotalSymbols > 0;
 
     @* ── 1. Overview Cards ───────────────────────────────────── *@
     <div class="row g-3 mb-4">
@@ -355,6 +478,7 @@ else
             <p class="mb-0">This repository has been indexed but no symbols were found. Check if the repository contains code files with supported languages (C#, TypeScript, JavaScript, Java, Python, Go, Rust, etc.).</p>
         </div>
     }
+}
 }
 
 @section Scripts

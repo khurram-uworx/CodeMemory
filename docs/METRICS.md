@@ -1,6 +1,6 @@
 # Metrics & Observability
 
-CodeMemory exposes structured metrics via OpenTelemetry, simultaneously shipped to an OTLP endpoint (Aspire Dashboard) and polled by Prometheus for Grafana visualization.
+CodeMemory exposes structured metrics through the `CodeMemory` `Meter`. OpenTelemetry can export those measurements to Prometheus, OTLP/Aspire, and Grafana; the ASP.NET host can also keep a bounded in-process snapshot for zero-infrastructure demos.
 
 ---
 
@@ -12,6 +12,7 @@ CodeMemory exposes structured metrics via OpenTelemetry, simultaneously shipped 
 | OTLP gRPC (port 18889) | — | Aspire Dashboard via `OTEL_EXPORTER_OTLP_ENDPOINT` |
 | Grafana UI | 3000 | Dashboard frontend |
 | Prometheus UI | 9090 | Ad-hoc query interface |
+| `/Repos/{name}/Metrics` | 4792 | Repository metrics page; includes local runtime metrics when enabled |
 
 ---
 
@@ -48,20 +49,23 @@ OpenTelemetry SDK auto-instruments these via `.AddAspNetCoreInstrumentation()`, 
 ```
 Application code
   │
-  ├─► CodeMemoryMetrics.Meter instruments
-  │    └─► OpenTelemetry MeterProvider
-  │         ├─► OTLP Exporter ──► Aspire Dashboard (port 18888)
-  │         └─► Prometheus Exporter ──► /metrics endpoint (port 8080)
-  │                                    │
-  │                              Prometheus (port 9090)
-  │                              polls every 10s
-  │                                    │
-  │                              Grafana (port 3000)
-  │                              refreshes every 15s
-  │
-  └─► Runtime/HTTP instruments
-       └─► (same path)
+├─► CodeMemoryMetrics.Meter instruments
+│    └─► OpenTelemetry MeterProvider
+│         ├─► OTLP Exporter ──► Aspire Dashboard (port 18888)
+│         └─► Prometheus Exporter ──► /metrics endpoint (port 8080)
+│                                    │
+│                              Prometheus (port 9090)
+│                              polls every 10s
+│                                    │
+│                              Grafana (port 3000)
+│                              refreshes every 15s
+│
+└─► LocalMetricsCollector (optional MeterListener)
+     ├─► /Repos/{name}/Metrics runtime section
+     └─► get_metrics_snapshot MCP tool
 ```
+
+Prometheus and the local collector can be enabled at the same time. They are independent listeners/exporters over the same measurements.
 
 ---
 
@@ -149,12 +153,35 @@ The Grafana dashboard is auto-provisioned from `monitoring/grafana/dashboards/co
 | `monitoring/grafana/dashboards/dashboards.yaml` | Dashboard provisioning config |
 | `monitoring/grafana/dashboards/codememory.json` | Dashboard panel definitions |
 
+### ASP.NET Observability Settings
+
+```json
+{
+  "Observability": {
+    "Prometheus": {
+      "Enabled": true
+    },
+    "LocalMetrics": {
+      "Enabled": false,
+      "MaxSeries": 500,
+      "HistogramWindowSize": 256
+    }
+  }
+}
+```
+
+- `Prometheus:Enabled` defaults to `true`; when disabled, the Prometheus exporter and `/metrics` endpoint are not registered.
+- `LocalMetrics:Enabled` defaults to `false`; when enabled, the ASP.NET dashboard shows runtime metrics and the `get_metrics_snapshot` MCP tool returns the same structured snapshot.
+- `MaxSeries` bounds in-memory cardinality. Keep tags low-cardinality (`repo.name`, `tool`, `host`, provider-like values).
+- `HistogramWindowSize` controls the rolling sample window used for local p95 calculations.
+
 ---
 
 ## Adding a New Metric
 
 1. Add the instrument to `CodeMemoryMetrics` — follow existing patterns (`.CreateHistogram<double>(...)` or `.CreateCounter<long>(...)`)
 2. The meter name `"CodeMemory"` is automatically picked up by OpenTelemetry's `MeterProvider` — no registration needed
-3. Add a corresponding PromQL panel in `codememory.json`
+3. If local metrics are enabled, the ASP.NET dashboard and `get_metrics_snapshot` pick it up automatically
+4. Add a corresponding PromQL panel in `codememory.json` for the Grafana dashboard
 
 Prometheus automatically exposes any new metric created via `CodeMemoryMetrics.Meter` without additional configuration.

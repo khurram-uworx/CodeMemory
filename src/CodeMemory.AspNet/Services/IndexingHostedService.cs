@@ -61,6 +61,7 @@ public sealed class IndexingHostedService : BackgroundService
         {
             if (stoppingToken.IsCancellationRequested) break;
 
+            using var metricsScope = CodeMemoryMetrics.BeginRepoScope(repo.Name);
             var repoTimeout = TimeSpan.FromMinutes(indexingOptions.RepoTimeoutMinutes);
             using var repoCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
             repoCts.CancelAfter(repoTimeout);

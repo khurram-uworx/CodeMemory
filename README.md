@@ -69,7 +69,7 @@ Features:
 - **Multi-provider storage** — `"inmemory"`, `"sqlite"`, `"pgvector"`, `"sqlserver"` in `appsettings.json:Storage:Provider`
 - **Embedding backends** — `"ngram"` (default, offline), `"onnx"` (bge-micro-v2 via ONNX Runtime), `"ollama"` (Ollama server) in `appsettings.json:Embedding:Provider`
 - **Scheduled re-indexing** — cron-based periodic rebuild via `RebuildIndex:Cron`
-- **Metrics & Observability** — OpenTelemetry metrics, Prometheus scraping, Grafana dashboards, Aspire Dashboard
+- **Metrics & Observability** — OpenTelemetry metrics, Prometheus scraping, Grafana dashboards, Aspire Dashboard, optional local runtime metrics for demos
 - **Docker deployment** — `docker-compose.yml` with PostgreSQL (pgvector), Prometheus, Grafana, Aspire Dashboard
 
 > The [`CodeMemory.AspNet.Extensions`](src/CodeMemory.AspNet.Extensions/) project contains BERT/ONNX and Ollama embedding generators — available for review although not yet wired into the host pipeline.

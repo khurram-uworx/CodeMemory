@@ -327,9 +327,9 @@ public sealed class IndexingEngine
         activity?.SetTag("chunks.count", chunkCount);
         activity?.SetTag("relationships.count", relationshipCount);
 
-        CodeMemoryMetrics.IndexingDuration.Record(indexingSw.Elapsed.TotalMilliseconds);
-        CodeMemoryMetrics.FilesIndexed.Add(fileCount);
-        CodeMemoryMetrics.SymbolsStored.Add(symbolCount);
+        CodeMemoryMetrics.RecordIndexingDuration(indexingSw.Elapsed.TotalMilliseconds);
+        CodeMemoryMetrics.AddFilesIndexed(fileCount);
+        CodeMemoryMetrics.AddSymbolsStored(symbolCount);
 
         logger.LogInformation(
             "Indexing complete — {Files} files, {ParsedInfo}, {Symbols} symbols, {Chunks} chunks, {Relationships} relationships",

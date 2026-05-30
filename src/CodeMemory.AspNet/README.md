@@ -6,7 +6,7 @@ The AspNet host includes a web UI for managing repositories and browsing reposit
 - **Add repos** — specify a local path or GitHub URL (auto-cloned to `CloneBasePath`)
 - **Status dashboard** — per-repo indexing status, clone progress, error messages, live SSE updates
 - **Component browser** — view discovered build-file components (MsBuild, Maven, Node, Cargo, Go, etc.), classify their kind and type, soft-delete unwanted entries
-- **Code metrics** — symbol-kind distribution, method complexity (lines per method, size histogram), coupling analysis (most-coupled symbols, most-important symbols, relationship-type distribution), top files by symbol count
+- **Metrics** — local runtime metrics when enabled, plus repository code metrics for relational storage providers
 - **Registry-backed** — `RepoRegistryDbContext` (SQLite/SQL Server/PostgreSQL) persists repo configurations across restarts
 
 ### Architecture
@@ -26,13 +26,18 @@ REST endpoints (`GET /api/repos`, `GET /api/repos/{name}/status`, `GET /api/repo
 
 ### Metrics Page (`/Repos/{name}/Metrics`)
 
-The metrics dashboard queries `IStorageService` through `MetricsService` to render:
+The metrics dashboard has two sections:
+
+- **Runtime Metrics** — shown when `Observability:LocalMetrics:Enabled` is `true`. These are collected from the same `CodeMemory` meter used by OpenTelemetry and Prometheus, with bounded in-memory series storage for demos.
+- **Repository Metrics** — shown when the repo uses a relational storage provider (`sqlite`, `pgvector`, or `sqlserver`). These query `IStorageService` through `MetricsService` to render:
 
 - **Overview cards** — total symbols, files, classes, methods, interfaces, properties, fields, relationships
 - **Symbol-kind distribution** — bar chart of counts per symbol kind
 - **Method complexity** — average lines per method, longest methods table, size histogram (bucketed by line count)
 - **Coupling analysis** — most-coupled symbols (highest outgoing relationship count), most-important symbols (highest incoming), relationship-type distribution
 - **Top files by symbol count** — ranked table of files with the most symbols
+
+Prometheus/Grafana and local runtime metrics can be enabled together; both consume the same emitted measurements.
 
 ### Component Management (`/Repos/{name}/Components`)
 

@@ -63,7 +63,7 @@ public sealed class SemanticSearchService : ISemanticSearchService
 
         sw.Stop();
         activity?.SetTag("results.count", results.Count);
-        CodeMemoryMetrics.QueryDuration.Record(sw.Elapsed.TotalMilliseconds);
+        CodeMemoryMetrics.RecordSearchQueryDuration(sw.Elapsed.TotalMilliseconds);
 
         return results;
     }

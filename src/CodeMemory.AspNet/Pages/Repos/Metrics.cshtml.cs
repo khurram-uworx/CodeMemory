@@ -9,16 +9,19 @@ public sealed class MetricsModel : PageModel
 {
     readonly RepoRegistryService registry;
     readonly MetricsService metricsService;
+    readonly ILocalMetricsCollector localMetrics;
 
     public Repositories? Repo { get; private set; }
     public string? NotFoundMessage { get; private set; }
-    public string? ErrorMessage { get; private set; }
+    public string? RepositoryMetricsError { get; private set; }
     public RepoMetrics? Metrics { get; private set; }
+    public LocalMetricsSnapshot? RuntimeMetrics { get; private set; }
 
-    public MetricsModel(RepoRegistryService registry, MetricsService metricsService)
+    public MetricsModel(RepoRegistryService registry, MetricsService metricsService, ILocalMetricsCollector localMetrics)
     {
         this.registry = registry;
         this.metricsService = metricsService;
+        this.localMetrics = localMetrics;
     }
 
     public async Task<IActionResult> OnGetAsync(string name)
@@ -30,13 +33,17 @@ public sealed class MetricsModel : PageModel
             return Page();
         }
 
+        RuntimeMetrics = localMetrics.Enabled
+            ? localMetrics.GetSnapshot(name)
+            : null;
+
         try
         {
             Metrics = await metricsService.GetMetricsAsync(name);
         }
         catch (InvalidOperationException ex)
         {
-            ErrorMessage = ex.Message;
+            RepositoryMetricsError = ex.Message;
         }
 
         return Page();

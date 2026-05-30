@@ -1,4 +1,5 @@
 using CodeMemory.AspNet.Configuration;
+using CodeMemory.AspNet.Services;
 using CodeMemory.Diagnostics;
 using CodeMemory.Indexing;
 using CodeMemory.Mcp.Models;
@@ -11,15 +12,18 @@ namespace CodeMemory.AspNet.Tools;
 public sealed class AspNetMcpTools
 {
     readonly IRepoContextAccessor repoContext;
+    readonly ILocalMetricsCollector localMetrics;
 
-    public AspNetMcpTools(IRepoContextAccessor repoContext)
-        => this.repoContext = repoContext;
+    public AspNetMcpTools(IRepoContextAccessor repoContext, ILocalMetricsCollector localMetrics)
+        => (this.repoContext, this.localMetrics) = (repoContext, localMetrics);
 
     [McpServerTool, Description("Ping the server. Returns indexing status — agents should back off and retry if still building the index.")]
     public PingResult Ping()
     {
-        CodeMemoryMetrics.ToolInvocations.Add(1, new("tool", "ping"), new("host", "aspnet"));
         var repoName = repoContext.CurrentRepoName;
+        using var metricsScope = CodeMemoryMetrics.BeginRepoScope(repoName);
+        CodeMemoryMetrics.AddToolInvocation("ping", "aspnet");
+
         if (repoName is null)
             return new PingResult("ok", false, null, null, "No repo context available.", IndexingState.Version);
 
@@ -36,5 +40,19 @@ public sealed class AspNetMcpTools
 
         return new PingResult("ok", true, null, repoName,
             null, IndexingState.Version, IndexingState.GetRelationshipCount(repoName));
+    }
+
+    [McpServerTool, Description("Return the local in-process runtime metrics snapshot for the current repository. Requires Observability:LocalMetrics:Enabled.")]
+    public LocalMetricsSnapshot GetMetricsSnapshot(
+        [Description("Optional metric name filter, such as codememory.tools.invocations.")]
+        string? metricName = null,
+        [Description("Whether to include individual metric series. Set false for summary-only responses.")]
+        bool includeSeries = true)
+    {
+        var repoName = repoContext.CurrentRepoName;
+        using var metricsScope = CodeMemoryMetrics.BeginRepoScope(repoName);
+        CodeMemoryMetrics.AddToolInvocation("get_metrics_snapshot", "aspnet");
+
+        return localMetrics.GetSnapshot(repoName, metricName, includeSeries);
     }
 }

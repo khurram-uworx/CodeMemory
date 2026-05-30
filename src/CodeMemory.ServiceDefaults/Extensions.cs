@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
@@ -57,8 +58,11 @@ public static class Extensions
                 metrics.AddAspNetCoreInstrumentation()
                     .AddHttpClientInstrumentation()
                     .AddRuntimeInstrumentation()
-                    .AddMeter("CodeMemory")
-                    .AddPrometheusExporter();
+                    .AddMeter("CodeMemory");
+
+                var prometheusEnabled = builder.Configuration.GetValue<bool?>("Observability:Prometheus:Enabled") ?? true;
+                if (prometheusEnabled)
+                    metrics.AddPrometheusExporter();
             })
             .WithTracing(tracing =>
             {

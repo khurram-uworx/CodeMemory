@@ -94,6 +94,11 @@ builder.Services.AddSingleton<IServiceRegistry>(storageRegistry);
 builder.Services.AddSingleton<IRepoContextAccessor, RepoContextAccessor>();
 builder.Services.AddSingleton<IStorageService, StorageServiceRouter>();
 builder.Services.AddMemoryCache();
+builder.Services.Configure<LocalMetricsOptions>(builder.Configuration.GetSection(LocalMetricsOptions.SectionName));
+builder.Services.Configure<PrometheusOptions>(builder.Configuration.GetSection(PrometheusOptions.SectionName));
+builder.Services.AddSingleton<LocalMetricsCollector>();
+builder.Services.AddSingleton<ILocalMetricsCollector>(sp => sp.GetRequiredService<LocalMetricsCollector>());
+builder.Services.AddHostedService(sp => sp.GetRequiredService<LocalMetricsCollector>());
 
 builder.Services.AddScoped<IndexingEngine>();
 builder.Services.AddHostedService<IndexingHostedService>();
@@ -261,7 +266,11 @@ builder.Services.AddSingleton<NotificationService>();
 var app = builder.Build();
 
 app.MapDefaultEndpoints();
-app.MapPrometheusScrapingEndpoint();
+var prometheusOptions = builder.Configuration
+    .GetSection(PrometheusOptions.SectionName)
+    .Get<PrometheusOptions>() ?? new();
+if (prometheusOptions.Enabled)
+    app.MapPrometheusScrapingEndpoint();
 app.UseCors();
 app.MapRazorPages();
 

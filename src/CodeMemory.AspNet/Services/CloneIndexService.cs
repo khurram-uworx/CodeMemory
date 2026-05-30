@@ -74,6 +74,8 @@ public sealed class CloneIndexService
 
         _ = Task.Run(async () =>
         {
+            using var metricsScope = CodeMemoryMetrics.BeginRepoScope(repoName);
+
             try
             {
                 if (isUrl)

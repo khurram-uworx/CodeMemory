@@ -11,17 +11,25 @@ public sealed class IndexModel : PageModel
     readonly RepoRegistryService registry;
     readonly CloneIndexService cloneIndex;
     readonly NotificationService notifications;
+    readonly IConfiguration configuration;
 
     public List<Repositories> Repos { get; private set; } = [];
     public Dictionary<string, double?> Progress { get; private set; } = [];
+    public bool ShowMetricsLink { get; private set; }
 
-    public IndexModel(RepoRegistryService registry, CloneIndexService cloneIndex, NotificationService notifications)
-        => (this.registry, this.cloneIndex, this.notifications) = (registry, cloneIndex, notifications);
+    public IndexModel(RepoRegistryService registry, CloneIndexService cloneIndex,
+        NotificationService notifications, IConfiguration configuration)
+        => (this.registry, this.cloneIndex, this.notifications, this.configuration) =
+            (registry, cloneIndex, notifications, configuration);
 
     public async Task OnGetAsync()
     {
         Repos = await registry.ListAsync();
         Progress = Repos.ToDictionary(r => r.Name, r => IndexingState.GetProgress(r.Name));
+        var provider = configuration.GetValue<string>("Storage:Provider") ?? "inmemory";
+        var localMetricsEnabled = configuration.GetValue<bool>("Observability:LocalMetrics:Enabled");
+        ShowMetricsLink = localMetricsEnabled
+            || !string.Equals(provider, "inmemory", StringComparison.OrdinalIgnoreCase);
 
         if (Repos.Count == 0)
             notifications.PublishInfo("No repositories registered. Click \"Add Repo\" to get started.");
