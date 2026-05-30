@@ -108,6 +108,14 @@ builder.Services.AddSingleton<RelationshipQueryService>();
 // Metrics service
 builder.Services.AddSingleton<MetricsService>();
 
+// Local metrics collector (zero-infra runtime metrics, disabled by default)
+builder.Services.Configure<LocalMetricsOptions>(
+    builder.Configuration.GetSection(LocalMetricsOptions.SectionName));
+builder.Services.AddSingleton<IMetricsStore, InMemoryMetricsStore>();
+var localMetricsEnabled = builder.Configuration.GetValue<bool>($"{LocalMetricsOptions.SectionName}:Enabled");
+if (localMetricsEnabled)
+    builder.Services.AddSingleton<LocalMetricsCollector>();
+
 // Component resolution (build-file-first, directory fallback)
 builder.Services.AddSingleton<ProjectFileDetector>();
 builder.Services.AddSingleton<IComponentResolver, ComponentResolver>();
@@ -260,7 +268,9 @@ builder.Services.AddSingleton<NotificationService>();
 var app = builder.Build();
 
 app.MapDefaultEndpoints();
-app.MapPrometheusScrapingEndpoint();
+// Prometheus scraping endpoint (toggleable independently of LocalMetrics)
+if (builder.Configuration.GetValue<bool>("Prometheus:Enabled"))
+    app.MapPrometheusScrapingEndpoint();
 app.UseCors();
 app.MapRazorPages();
 
