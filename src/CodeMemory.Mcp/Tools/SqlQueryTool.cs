@@ -1,3 +1,4 @@
+using CodeMemory.Diagnostics;
 using CodeMemory.Mcp.SqlQuery;
 using CodeMemory.Storage;
 using Microsoft.Extensions.Logging;
@@ -127,6 +128,13 @@ RETURNS JSON: success, rowCount, executionTimeMs, columns, rows, error
             lock (failedQueriesLock)
                 File.AppendAllText(path, toWrite);
         };
+
+        ArgumentNullException.ThrowIfNull(storageService);
+        var sqlRepoRoot = storageService.RepoRoot;
+        var sqlRepoName = !string.IsNullOrEmpty(sqlRepoRoot)
+            ? Path.GetFileName(sqlRepoRoot.TrimEnd(Path.DirectorySeparatorChar))
+            : "unknown";
+        CodeMemoryMetrics.ToolInvocations.Add(1, new("tool", "sql_query"), new("host", "mcp"), new("repo.name", sqlRepoName));
 
         try
         {

@@ -1,3 +1,4 @@
+using CodeMemory.Diagnostics;
 using CodeMemory.Indexing.Architecture;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
@@ -24,6 +25,8 @@ public sealed class ComponentClustersTool
         double? threshold = null,
         [Description("Directory depth for fallback component resolution when no project files are found (default 1)")] int depth = 1)
     {
+        CodeMemoryMetrics.ToolInvocations.Add(1, new("tool", "get_component_clusters"), new("host", "mcp"));
+
         if (clusteringService == null)
         {
             logger.LogWarning("ComponentClusteringService not registered — returning empty");

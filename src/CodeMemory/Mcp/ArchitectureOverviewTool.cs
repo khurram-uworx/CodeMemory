@@ -1,3 +1,4 @@
+using CodeMemory.Diagnostics;
 using CodeMemory.Indexing.Architecture;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
@@ -23,6 +24,8 @@ public sealed class ArchitectureOverviewTool
         [Description("Optional subdirectory to focus on")] string? path = null,
         [Description("Directory depth for fallback component resolution when no project files are found (default 1)")] int depth = 1)
     {
+        CodeMemoryMetrics.ToolInvocations.Add(1, new("tool", "get_architecture_overview"), new("host", "mcp"));
+
         if (architectureService == null)
         {
             logger.LogWarning("Architecture service not registered — returning default overview");

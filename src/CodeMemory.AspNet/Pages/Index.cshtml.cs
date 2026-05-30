@@ -14,6 +14,11 @@ public sealed class IndexModel : PageModel
     readonly RepoRegistryOptions registryOptions;
 
     public List<Repositories> Repos { get; private set; } = [];
+    public int TotalCount { get; private set; }
+    public int IndexedCount { get; private set; }
+    public int InProgressCount { get; private set; }
+    public int FailedCount { get; private set; }
+
     public Dictionary<string, double?> Progress { get; private set; } = [];
     public bool CanAddRepo => registryOptions.EnableManualRepoAdd;
 
@@ -23,6 +28,11 @@ public sealed class IndexModel : PageModel
     public async Task OnGetAsync()
     {
         Repos = await registry.ListAsync();
+
+        TotalCount = Repos.Count;
+        IndexedCount = Repos.Count(r => r.IndexStatus == "Indexed");
+        InProgressCount = Repos.Count(r => r.CloneStatus == "Cloning" || r.IndexStatus == "Indexing");
+        FailedCount = Repos.Count(r => r.CloneStatus == "Failed" || r.IndexStatus == "Failed");
         Progress = Repos.ToDictionary(r => r.Name, r => IndexingState.GetProgress(r.Name));
 
         if (Repos.Count == 0)

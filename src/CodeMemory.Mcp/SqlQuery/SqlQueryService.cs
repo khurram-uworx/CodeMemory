@@ -2322,7 +2322,7 @@ public sealed class SqlQueryService
 
             sw.Stop();
             activity?.SetTag("rowCount", result.Count);
-            CodeMemoryMetrics.SqlQueryDuration.Record(sw.ElapsedMilliseconds);
+            CodeMemoryMetrics.SqlQueryDuration.Record(sw.Elapsed.TotalMilliseconds);
 
             var warning = singleTableName is not null
                 && string.Equals(singleTableName, "RelationshipRecord", StringComparison.OrdinalIgnoreCase)
@@ -2330,12 +2330,12 @@ public sealed class SqlQueryService
                 ? "RelationshipRecord contains 0 rows — no relationships extracted or indexing is incomplete."
                 : null;
 
-            return new SqlQueryResult(true, result.Count, sw.ElapsedMilliseconds, columns, result, Warning: warning);
+            return new SqlQueryResult(true, result.Count, (long)sw.Elapsed.TotalMilliseconds, columns, result, Warning: warning);
         }
         catch (Exception ex)
         {
             sw.Stop();
-            CodeMemoryMetrics.SqlQueryDuration.Record(sw.ElapsedMilliseconds);
+            CodeMemoryMetrics.SqlQueryDuration.Record(sw.Elapsed.TotalMilliseconds);
 
             logger.LogError(ex, "SQL query execution failed: {Sql}", sql);
             return fail($"Execution error at stage '{sw.Elapsed}' for SQL '{sql}': {unwrapMessage(ex)}", sw);

@@ -16,105 +16,155 @@
 
 <div id="notification-area"></div>
 
-<div class="table-responsive">
-    <table class="table table-hover align-middle" id="repo-table">
-        <thead class="table-dark">
-            <tr>
-                <th>Name</th>
-                <th>Status</th>
-                <th>Source</th>
-                <th>Last Indexed</th>
-                <th>MCP Endpoint</th>
-                <th>Actions</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var repo in Model.Repos)
-            {
-                var progress = Model.Progress.GetValueOrDefault(repo.Name);
-                var status = repo.CloneStatus == "Failed" || repo.IndexStatus == "Failed" ? "Failed"
-                    : repo.CloneStatus == "Pending" ? "Pending"
-                    : repo.CloneStatus == "Cloning" ? "Cloning"
-                    : repo.CloneStatus == "Cloned" && repo.IndexStatus == "Pending" ? "Pending Clone"
-                    : repo.IndexStatus == "Indexing" ? "Indexing"
-                    : repo.IndexStatus == "Indexed" ? "Indexed"
-                    : repo.CloneStatus;
-                var isActive = status == "Indexing" || status == "Cloning";
-
-                <tr data-repo-name="@repo.Name">
-                    <td><strong>@repo.Name</strong></td>
-                    <td class="repo-status">
-                        @if (isActive && progress is not null)
-                        {
-                            var pct = (int)(progress.Value * 100);
-                            <div class="d-flex align-items-center gap-2">
-                                <div class="progress flex-grow-1" style="height: 20px; min-width: 120px;" role="progressbar" aria-valuenow="@pct" aria-valuemin="0" aria-valuemax="100">
-                                    <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: @pct%">
-                                        @pct%
-                                    </div>
-                                </div>
-                                <small class="text-muted">@status</small>
-                            </div>
-                        }
-                        else if (isActive)
-                        {
-                            <span class="badge bg-warning text-dark">@status</span>
-                        }
-                        else
-                        {
-                            var badgeClass = status switch
-                            {
-                                "Indexed" => "bg-success",
-                                "Failed" => "bg-danger",
-                                _ => "bg-secondary"
-                            };
-                            <span class="badge @badgeClass">@status</span>
-                        }
-                    </td>
-                    <td>
-                        @if (!string.IsNullOrEmpty(repo.GitUrl))
-                        {
-                            <a href="@repo.GitUrl" target="_blank" class="text-break">@repo.GitUrl</a>
-                        }
-                        else
-                        {
-                            <code class="text-break">@repo.LocalPath</code>
-                        }
-                    </td>
-                    <td class="repo-last-indexed">@(repo.LastIndexedAt?.ToString("g") ?? "—")</td>
-                    <td><code>/api/mcp/@repo.Name</code></td>
-                    <td>
-                        <a asp-page="/Repos/Components" asp-route-name="@repo.Name" class="btn btn-sm btn-outline-info" title="Components">
-                            <i class="bi bi-boxes"></i>
-                        </a>
-                        <a asp-page="/Repos/Metrics" asp-route-name="@repo.Name" class="btn btn-sm btn-outline-warning" title="Metrics">
-                            📊
-                        </a>
-                        <form method="post" asp-page-handler="Reindex" class="d-inline">
-                            <input type="hidden" name="name" value="@repo.Name" />
-                            <button type="submit" class="btn btn-sm btn-outline-primary" title="Re-index">
-                                <i class="bi bi-arrow-clockwise"></i>
-                            </button>
-                        </form>
-                        <form method="post" asp-page-handler="Delete" class="d-inline"
-                              onsubmit="return confirm('Delete repo @repo.Name? This will remove all indexed data.')">
-                            <input type="hidden" name="name" value="@repo.Name" />
-                            <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete">
-                                <i class="bi bi-trash"></i>
-                            </button>
-                        </form>
-                    </td>
-                </tr>
-                @if (!string.IsNullOrEmpty(repo.ErrorMessage))
-                {
-                    <tr class="repo-error table-danger" data-repo-name="@repo.Name">
-                        <td colspan="6"><small>@repo.ErrorMessage</small></td>
-                    </tr>
-                }
-            }
-        </tbody>
-    </table>
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="card text-bg-primary">
+            <div class="card-body">
+                <h5 class="card-title">Total Repos</h5>
+                <p class="display-6 mb-0">@Model.TotalCount</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-bg-success">
+            <div class="card-body">
+                <h5 class="card-title">Indexed</h5>
+                <p class="display-6 mb-0">@Model.IndexedCount</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-bg-warning">
+            <div class="card-body">
+                <h5 class="card-title">In Progress</h5>
+                <p class="display-6 mb-0">@Model.InProgressCount</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-bg-danger">
+            <div class="card-body">
+                <h5 class="card-title">Failed</h5>
+                <p class="display-6 mb-0">@Model.FailedCount</p>
+            </div>
+        </div>
+    </div>
 </div>
+
+
+@if (Model.Repos.Count == 0)
+{
+    <div class="alert alert-info">
+        <i class="bi bi-info-circle"></i>
+        No repositories registered.
+        @if (Model.CanAddRepo)
+        {
+            <a asp-page="/Repos/Add">Add one now</a>
+        }
+    </div>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-hover align-middle" id="repo-table">
+            <thead class="table-dark">
+                <tr>
+                    <th>Name</th>
+                    <th>Status</th>
+                    <th>Source</th>
+                    <th>Last Indexed</th>
+                    <th>MCP Endpoint</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var repo in Model.Repos)
+                {
+                    var progress = Model.Progress.GetValueOrDefault(repo.Name);
+                    var status = repo.CloneStatus == "Failed" || repo.IndexStatus == "Failed" ? "Failed"
+                        : repo.CloneStatus == "Pending" ? "Pending"
+                        : repo.CloneStatus == "Cloning" ? "Cloning"
+                        : repo.CloneStatus == "Cloned" && repo.IndexStatus == "Pending" ? "Pending Clone"
+                        : repo.IndexStatus == "Indexing" ? "Indexing"
+                        : repo.IndexStatus == "Indexed" ? "Indexed"
+                        : repo.CloneStatus;
+                    var isActive = status == "Indexing" || status == "Cloning";
+
+                    <tr data-repo-name="@repo.Name">
+                        <td><strong>@repo.Name</strong></td>
+                        <td class="repo-status">
+                            @if (isActive && progress is not null)
+                            {
+                                var pct = (int)(progress.Value * 100);
+                                <div class="d-flex align-items-center gap-2">
+                                    <div class="progress flex-grow-1" style="height: 20px; min-width: 120px;" role="progressbar" aria-valuenow="@pct" aria-valuemin="0" aria-valuemax="100">
+                                        <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: @pct%">
+                                            @pct%
+                                        </div>
+                                    </div>
+                                    <small class="text-muted">@status</small>
+                                </div>
+                            }
+                            else if (isActive)
+                            {
+                                <span class="badge bg-warning text-dark">@status</span>
+                            }
+                            else
+                            {
+                                var badgeClass = status switch
+                                {
+                                    "Indexed" => "bg-success",
+                                    "Failed" => "bg-danger",
+                                    _ => "bg-secondary"
+                                };
+                                <span class="badge @badgeClass">@status</span>
+                            }
+                        </td>
+                        <td>
+                            @if (!string.IsNullOrEmpty(repo.GitUrl))
+                            {
+                                <a href="@repo.GitUrl" target="_blank" class="text-break">@repo.GitUrl</a>
+                            }
+                            else
+                            {
+                                <code class="text-break">@repo.LocalPath</code>
+                            }
+                        </td>
+                        <td class="repo-last-indexed">@(repo.LastIndexedAt?.ToString("g") ?? "—")</td>
+                        <td><code>/api/mcp/@repo.Name</code></td>
+                        <td>
+                            <a asp-page="/Repos/Components" asp-route-name="@repo.Name" class="btn btn-sm btn-outline-info" title="Components">
+                                <i class="bi bi-boxes"></i>
+                            </a>
+                            <a asp-page="/Repos/Metrics" asp-route-name="@repo.Name" class="btn btn-sm btn-outline-warning" title="Metrics">
+                                📊
+                            </a>
+                            <form method="post" asp-page-handler="Reindex" class="d-inline">
+                                <input type="hidden" name="name" value="@repo.Name" />
+                                <button type="submit" class="btn btn-sm btn-outline-primary" title="Re-index">
+                                    <i class="bi bi-arrow-clockwise"></i>
+                                </button>
+                            </form>
+                            <form method="post" asp-page-handler="Delete" class="d-inline"
+                                  onsubmit="return confirm('Delete repo @repo.Name? This will remove all indexed data.')">
+                                <input type="hidden" name="name" value="@repo.Name" />
+                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    @if (!string.IsNullOrEmpty(repo.ErrorMessage))
+                    {
+                        <tr class="repo-error table-danger" data-repo-name="@repo.Name">
+                            <td colspan="6"><small>@repo.ErrorMessage</small></td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+}
 
 @section Scripts {
     <script>

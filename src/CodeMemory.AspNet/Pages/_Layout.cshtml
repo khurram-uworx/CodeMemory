@@ -17,13 +17,15 @@
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav me-auto">
                     <li class="nav-item">
-                        <a class="nav-link" asp-page="/RepositoryDashboard">Dashboard</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" asp-page="/Index">Repos</a>
+                        <a class="nav-link" asp-page="/Index">Dashboard</a>
                     </li>
                 </ul>
-                <span class="navbar-text text-light">Repository Intelligence</span>
+                <span class="navbar-text text-light">v@(
+                    typeof(Program).Assembly
+                        .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>()
+                        ?.InformationalVersion
+                    ?? "0.0.0"
+                )</span>
             </div>
         </div>
     </nav>

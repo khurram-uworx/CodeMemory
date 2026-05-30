@@ -327,9 +327,10 @@ public sealed class IndexingEngine
         activity?.SetTag("chunks.count", chunkCount);
         activity?.SetTag("relationships.count", relationshipCount);
 
-        CodeMemoryMetrics.IndexingDuration.Record(indexingSw.Elapsed.TotalMilliseconds);
-        CodeMemoryMetrics.FilesIndexed.Add(fileCount);
-        CodeMemoryMetrics.SymbolsStored.Add(symbolCount);
+        var repoTag = new KeyValuePair<string, object?>("repo.name", Path.GetFileName(repoRoot.TrimEnd(Path.DirectorySeparatorChar)));
+        CodeMemoryMetrics.IndexingDuration.Record(indexingSw.Elapsed.TotalMilliseconds, repoTag);
+        CodeMemoryMetrics.FilesIndexed.Record(fileCount, repoTag);
+        CodeMemoryMetrics.SymbolsStored.Record(symbolCount, repoTag);
 
         logger.LogInformation(
             "Indexing complete — {Files} files, {ParsedInfo}, {Symbols} symbols, {Chunks} chunks, {Relationships} relationships",

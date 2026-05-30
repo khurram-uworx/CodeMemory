@@ -1,3 +1,4 @@
+using CodeMemory.Diagnostics;
 using CodeMemory.Indexing.Architecture;
 using CodeMemory.Indexing.Graph;
 using Microsoft.Extensions.Logging;
@@ -38,6 +39,8 @@ public sealed class ImpactAnalysisTool
         [Description("Maximum number of dependency nodes to return (default unlimited)")] int? maxResults = null,
         [Description("Continuation token from a previous truncated response to get the next page")] string? cursor = null)
     {
+        CodeMemoryMetrics.ToolInvocations.Add(1, new("tool", "impact_analysis"), new("host", "mcp"));
+
         if (graphService == null)
         {
             logger.LogWarning("Dependency graph service not registered — returning empty impact analysis");
