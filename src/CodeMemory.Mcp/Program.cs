@@ -25,27 +25,30 @@ var version = Assembly.GetExecutingAssembly()
 
 IndexingState.SetVersion(version);
 
-var (repoRootArg, debug, help, versionFlag) = CliParser.Parse(args);
+var (repoRootArg, debug, help, versionFlag, init) = CliParser.Parse(args);
 
 if (help)
 {
     Console.WriteLine($$"""
-        Code Memory MCP Server v{{version}}
+            Code Memory MCP Server v{{version}}
 
-        Usage:
-          --repo, -r <path>    Repository root path (default: current directory)
-          --debug              Index synchronously with verbose logging (no MCP server)
-          --version            Show version
-          --help, -h           Show this help
+            Usage:
+              --repo, -r <path>    Repository root path (default: current directory)
+              --init, -i           Create .codememory.json with default settings and add to .gitignore
+              --debug              Index synchronously with verbose logging (no MCP server)
+              --version            Show version
+              --help, -h           Show this help
 
-        Examples:
-          code-memory
-          code-memory --repo C:\Projects\MyApp
-          code-memory --repo ./my-project --debug
+            Examples:
+              code-memory
+              code-memory --init
+              code-memory --repo C:\Projects\MyApp
+              code-memory --repo ./my-project --init
+              code-memory --repo ./my-project --debug
 
-        Configure your agent with:
-          npx -y @uworx/code-memory
-        """);
+            Configure your agent with:
+              npx -y @uworx/code-memory
+            """);
     return 0;
 }
 
@@ -56,6 +59,15 @@ if (versionFlag)
 }
 
 var repoRoot = repoRootArg is not null ? Path.GetFullPath(repoRootArg) : Environment.CurrentDirectory;
+
+if (init)
+{
+    var initService = new CodeMemoryInitService();
+    var result = initService.Run(repoRoot);
+    Console.Out.WriteLine(System.Text.Json.JsonSerializer.Serialize(result, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+    return result.Status == "ok" ? 0 : 1;
+}
+
 var mode = debug ? "debug" : "stdio";
 Console.Error.WriteLine($"Code Memory MCP Server v{version} ({mode}) — repo: {repoRoot}");
 
@@ -88,6 +100,9 @@ builder.Services.AddSingleton<RoslynRelationshipExtractor>();
 builder.Services.AddSingleton<TreeSitterSymbolExtractor>();
 builder.Services.AddSingleton<TreeSitterRelationshipExtractor>();
 builder.Services.AddSingleton<SemanticChunker>();
+
+// Init service (config template generation)
+builder.Services.AddSingleton<CodeMemoryInitService>();
 
 // SQL query services (InMemoryVectorStore backend)
 builder.Services.AddSingleton<CodeMemory.Mcp.SqlQuery.CollectionRegistry>();

@@ -1,6 +1,7 @@
 using CodeMemory.Diagnostics;
 using CodeMemory.Indexing;
 using CodeMemory.Indexing.Chunking;
+using CodeMemory.Indexing.Configuration;
 using CodeMemory.Indexing.Extraction;
 using CodeMemory.Indexing.Parsing;
 using CodeMemory.Services.Architecture;
@@ -93,6 +94,7 @@ public sealed class IndexingEngine
     readonly IStorageService storage;
     readonly IEmbeddingGenerator<string, Embedding<float>>? embeddingGenerator;
     readonly ProjectFileDetector projectFileDetector;
+    IReadOnlyDictionary<string, Language>? langOverrides;
 
     public IndexingEngine(ILogger<IndexingEngine> logger, FileCrawler crawler,
         RoslynCSharpParser roslynParser, TreeSitterParser tsParser,
@@ -146,6 +148,9 @@ public sealed class IndexingEngine
         logger.LogInformation("Indexing engine starting — eager indexing of {RepoRoot}",
             repoRoot);
 
+        var config = CodeMemoryConfig.Load(repoRoot, logger);
+        langOverrides = config.ResolvedLanguageOverrides(logger);
+
         progress?.Report(0.0);
         await storage.InitializeAsync(ct);
 
@@ -165,7 +170,9 @@ public sealed class IndexingEngine
 
         progress?.Report(0.01);
         await foreach (var entry in crawler.WalkAsync(repoRoot,
-            onProgress: p => progress?.Report(0.01 + p * 0.94), cancellationToken: ct))
+            onProgress: p => progress?.Report(0.01 + p * 0.94),
+            additionalExclusions: config.Exclude.Count > 0 ? config.Exclude.ToHashSet(StringComparer.OrdinalIgnoreCase) : null,
+            cancellationToken: ct))
         {
             logger.LogDebug("Found file: {Path} ({Ext})", entry.RelativePath, entry.Extension);
             fileCount++;
@@ -173,7 +180,7 @@ public sealed class IndexingEngine
             if (ProjectFileDetector.IsKnownBuildFile(Path.GetFileName(entry.Path)) != null)
                 collectedBuildFiles.Add(entry.Path);
 
-            var lang = LanguageDetector.Detect(entry.Path);
+            var lang = LanguageDetector.Detect(entry.Path, overrides: langOverrides);
             if (lang != Language.Unknown && parsers.TryGetValue(lang, out var languageParser))
             {
                 var result = await languageParser.ParseAsync(entry.Path, ct);
@@ -334,7 +341,7 @@ public sealed class IndexingEngine
     public async Task<FileIndexResult> ProcessFileAsync(string filePath, CancellationToken ct)
     {
         var extension = Path.GetExtension(filePath);
-        var lang = LanguageDetector.Detect(filePath);
+        var lang = LanguageDetector.Detect(filePath, overrides: langOverrides);
 
         if (lang == Language.Text)
         {

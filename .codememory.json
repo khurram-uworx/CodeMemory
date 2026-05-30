@@ -1,0 +1,4 @@
+{
+    "exclude": ["packages/code-memory/bin/"],
+    "clusteringThreshold": 0.2
+}

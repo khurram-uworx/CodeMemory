@@ -43,9 +43,13 @@ public static class LanguageDetector
         [".md"] = Language.Text,
     };
 
-    public static Language Detect(string filePath)
+    public static Language Detect(string filePath, IReadOnlyDictionary<string, Language>? overrides = null)
     {
         var ext = Path.GetExtension(filePath);
+
+        if (overrides?.TryGetValue(ext, out var overrideLang) == true)
+            return overrideLang;
+
         if (!extensionMap.TryGetValue(ext, out var language))
             return Language.Unknown;
 
@@ -55,9 +59,13 @@ public static class LanguageDetector
         return language;
     }
 
-    public static Language Detect(string filePath, string fileContent)
+    public static Language Detect(string filePath, string fileContent, IReadOnlyDictionary<string, Language>? overrides = null)
     {
         var ext = Path.GetExtension(filePath);
+
+        if (overrides?.TryGetValue(ext, out var overrideLang) == true)
+            return overrideLang;
+
         if (!extensionMap.TryGetValue(ext, out var language))
             return Language.Unknown;
 

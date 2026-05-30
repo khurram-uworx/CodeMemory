@@ -20,8 +20,8 @@ public sealed class ComponentClustersTool
 
     [McpServerTool, Description("Groups top-level components into logical clusters based on inter-component dependency density. Uses threshold-based coupling analysis from stored symbol relationships.")]
     public async Task<IReadOnlyList<ComponentCluster>> GetComponentClustersAsync(
-        [Description("Minimum coupling ratio (0.01-1.0, default 0.3) to consider two components related. Lower values produce larger clusters.")]
-        double threshold = 0.3,
+        [Description("Minimum coupling ratio (0.01-1.0, default 0.3, or as configured in .codememory.json) to consider two components related. Lower values produce larger clusters.")]
+        double? threshold = null,
         [Description("Directory depth for fallback component resolution when no project files are found (default 1)")] int depth = 1)
     {
         if (clusteringService == null)

@@ -2,12 +2,13 @@ namespace CodeMemory.Mcp;
 
 static class CliParser
 {
-    public static (string? RepoRoot, bool Debug, bool Help, bool Version) Parse(string[] args)
+    public static (string? RepoRoot, bool Debug, bool Help, bool Version, bool Init) Parse(string[] args)
     {
         var repoRoot = (string?)null;
         var debug = false;
         var help = false;
         var version = false;
+        var init = false;
 
         for (var i = 0; i < args.Length; i++)
         {
@@ -25,9 +26,12 @@ static class CliParser
                 case "--version" or "-v":
                     version = true;
                     break;
+                case "--init" or "-i":
+                    init = true;
+                    break;
             }
         }
 
-        return (repoRoot, debug, help, version);
+        return (repoRoot, debug, help, version, init);
     }
 }

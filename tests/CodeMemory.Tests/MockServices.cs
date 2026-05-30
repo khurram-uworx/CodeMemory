@@ -121,7 +121,7 @@ static class MockServices
     public static IComponentClusteringService CreateClusteringService()
     {
         var cluster = Substitute.For<IComponentClusteringService>();
-        cluster.GetClustersAsync(Arg.Any<double>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+        cluster.GetClustersAsync(Arg.Any<double?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
                .Returns([
                    new ComponentCluster("src+tests", ["src", "tests"], 0.75),
                    new ComponentCluster("lib", ["lib"], 1.0)

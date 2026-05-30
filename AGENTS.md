@@ -77,13 +77,8 @@ or when still indexing:
 
 - SSE transport (`EnableLegacySse = true`) throws at startup when combined with `Stateless = true` — modern agents use Streamable HTTP, no SSE needed.
 - Stateful mode (`Stateless = false`) breaks WebApplicationFactory tests — they don't send the MCP `initialize` handshake.
-- Hardcoded `/api/mcp/default` in tests causes 404 after removing the fallback default repo — always route to a specific configured repo.
-- Repo-relative paths resolve from `Environment.CurrentDirectory`, which differs between dev (AspNet project dir) and test (test bin dir) — use `Path.GetFullPath` with assembly-relative roots in test infrastructure.
 - MCP SDK documentation lives in the NuGet cache, not on NuGet.org — NuGet.org search returns Azure Functions MCP docs for the legacy SDK, not the ASP.NET Core `ModelContextProtocol.AspNetCore` package.
-- **In-memory storage (`Storage:Provider: "inmemory"`)** loses all data on restart — do not use for production persistence. SQLite (`"sqlite"`) persists vectors in `.codememory/sqlvec.db`. For production persistence, use `"pgvector"` or `"sqlserver"` providers with `HybridStorageService`.
 - **Ping before use** — indexing is non-blocking in both hosts; agents MUST poll `ping` until `indexingCompleted: true` (see [Non-Blocking Indexing](#non-blocking-indexing--ping-contract) above).
-- The `IndexingState` static class uses `ConcurrentDictionary` — it is process-scoped. In multi-repo ASP.NET, `IndexingState.IsCompleted()` without a repo name checks all repos are done.
-- **`sql_query` MCP tool** requires `InMemoryVectorStore` — `"sqlite"`/`"pgvector"`/`"sqlserver"` returns an error. Full syntax reference in the tool's `[Description]`, discoverable via `tools/list`.
 
 ## Embedding Limitations & Agent Expectations
 
