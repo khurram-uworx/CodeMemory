@@ -50,10 +50,30 @@ public sealed class CloneIndexService
         this.storageFactory = storageFactory;
     }
 
+    public static bool IsGitUrl(string source)
+    {
+        if (source.Contains("://"))
+            return true;
+
+        // SSH SCP-style: [user@]host:path (e.g., git@github.com:user/repo.git)
+        if (source.Contains('@') && source.Contains(':'))
+        {
+            var atIndex = source.IndexOf('@');
+            var colonIndex = source.IndexOf(':');
+            if (atIndex > 0 && colonIndex > atIndex)
+            {
+                var hostPart = source[(atIndex + 1)..colonIndex];
+                if (!hostPart.Contains('/') && !hostPart.Contains('\\'))
+                    return true;
+            }
+        }
+
+        return false;
+    }
+
     public static string ResolveRepoPath(string source, string repoName, RepoRegistryOptions options)
     {
-        var isUrl = source.Contains("://");
-        if (isUrl)
+        if (IsGitUrl(source))
             return Path.GetFullPath(Path.Combine(Path.GetFullPath(options.CloneBasePath), repoName));
         return Path.GetFullPath(source);
     }
@@ -69,7 +89,7 @@ public sealed class CloneIndexService
             return Task.CompletedTask;
         }
 
-        var isUrl = source.Contains("://");
+        var isUrl = IsGitUrl(source);
         var clonePath = isUrl ? Path.GetFullPath(Path.Combine(Path.GetFullPath(registryOptions.CloneBasePath), repoName)) : source;
 
         _ = Task.Run(async () =>
@@ -85,7 +105,7 @@ public sealed class CloneIndexService
 
                     await UpdateCloneStatusAsync(repoName, "Cloning");
 
-                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(registryOptions.CloneTimeoutSeconds));
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(registryOptions.GitCommandTimeoutSeconds));
 
                     // Stale directory from prior deletion may exist; remove it so clone succeeds
                     DirectoryHelper.ForceDelete(clonePath);
@@ -123,7 +143,7 @@ public sealed class CloneIndexService
             }
             catch (OperationCanceledException)
             {
-                var msg = $"git clone timed out after {registryOptions.CloneTimeoutSeconds} seconds";
+                var msg = $"git clone timed out after {registryOptions.GitCommandTimeoutSeconds} seconds";
                 logger.LogError("Repo '{RepoName}': {Msg}", repoName, msg);
                 await UpdateCloneStatusAsync(repoName, "Failed", errorMessage: msg);
             }

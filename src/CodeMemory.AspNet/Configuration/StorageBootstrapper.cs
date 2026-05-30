@@ -64,7 +64,7 @@ public sealed class StorageBootstrapper
 
         foreach (var (name, source) in configRepos ?? [])
         {
-            var isUrl = source.Contains("://");
+            var isUrl = CloneIndexService.IsGitUrl(source);
 
             var repo = new Repositories
             {
