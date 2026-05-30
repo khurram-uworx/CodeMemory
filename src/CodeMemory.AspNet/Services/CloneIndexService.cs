@@ -30,6 +30,7 @@ public sealed class CloneIndexService
     readonly ILogger<CloneIndexService> logger;
     readonly RepoRegistryOptions registryOptions;
     readonly StorageFactory storageFactory;
+    readonly RepoMetricsRecorder metricsRecorder;
     readonly ConcurrentDictionary<string, bool> inProgress = new(StringComparer.OrdinalIgnoreCase);
 
     public CloneIndexService(
@@ -39,7 +40,8 @@ public sealed class CloneIndexService
         IServiceScopeFactory scopeFactory,
         ILogger<CloneIndexService> logger,
         RepoRegistryOptions registryOptions,
-        StorageFactory storageFactory)
+        StorageFactory storageFactory,
+        RepoMetricsRecorder metricsRecorder)
     {
         this.contextFactory = contextFactory;
         this.storageRegistry = storageRegistry;
@@ -48,6 +50,7 @@ public sealed class CloneIndexService
         this.logger = logger;
         this.registryOptions = registryOptions;
         this.storageFactory = storageFactory;
+        this.metricsRecorder = metricsRecorder;
     }
 
     public static bool IsGitUrl(string source)
@@ -186,6 +189,7 @@ public sealed class CloneIndexService
 
             IndexingState.MarkCompleted(repoName);
             IndexingState.StoreRelationshipCount(repoName, result.RelationshipCount);
+            await metricsRecorder.RecordAsync(repoName);
             await UpdateIndexStatusAsync(repoName, "Indexed");
         }
         finally
@@ -201,6 +205,7 @@ public sealed class CloneIndexService
         if (repo is null) return;
 
         storageRegistry.Unregister(repoName);
+        metricsRecorder.RemoveRepo(repoName);
 
         if (!string.IsNullOrEmpty(repo.GitUrl))
         {
