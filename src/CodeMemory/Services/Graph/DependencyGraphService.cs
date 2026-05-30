@@ -4,6 +4,11 @@ using Microsoft.Extensions.Logging;
 
 namespace CodeMemory.Services.Graph;
 
+sealed class BfsCount
+{
+    public int Value;
+}
+
 public sealed class DependencyGraphService : IDependencyGraphService
 {
     readonly IStorageService storage;
@@ -17,7 +22,7 @@ public sealed class DependencyGraphService : IDependencyGraphService
 
     async Task bfsAsync(string symbolId, string direction, int maxDepth,
         HashSet<string> visited, List<DependencyNode> result, int currentDepth,
-        int? maxResults, CancellationToken ct)
+        int? maxResults, int skipCount, BfsCount count, CancellationToken ct)
     {
         if (currentDepth >= maxDepth || !visited.Add(symbolId))
             return;
@@ -30,13 +35,17 @@ public sealed class DependencyGraphService : IDependencyGraphService
                 if (maxResults.HasValue && result.Count >= maxResults.Value)
                     return;
                 var srcSymbol = await storage.GetSymbolAsync(rel.SourceSymbolId, ct);
-                result.Add(new DependencyNode(
-                    srcSymbol?.Name ?? rel.SourceSymbolId,
-                    srcSymbol?.FilePath ?? "",
-                    srcSymbol?.Kind ?? rel.RelationshipType,
-                    srcSymbol != null ? $"{srcSymbol.LineStart}-{srcSymbol.LineEnd}" : "",
-                    rel.RelationshipType));
-                await bfsAsync(rel.SourceSymbolId, direction, maxDepth, visited, result, currentDepth + 1, maxResults, ct);
+                count.Value++;
+                if (count.Value > skipCount)
+                {
+                    result.Add(new DependencyNode(
+                        srcSymbol?.Name ?? rel.SourceSymbolId,
+                        srcSymbol?.FilePath ?? "",
+                        srcSymbol?.Kind ?? rel.RelationshipType,
+                        srcSymbol != null ? $"{srcSymbol.LineStart}-{srcSymbol.LineEnd}" : "",
+                        rel.RelationshipType));
+                }
+                await bfsAsync(rel.SourceSymbolId, direction, maxDepth, visited, result, currentDepth + 1, maxResults, skipCount, count, ct);
             }
         }
 
@@ -48,19 +57,23 @@ public sealed class DependencyGraphService : IDependencyGraphService
                 if (maxResults.HasValue && result.Count >= maxResults.Value)
                     return;
                 var tgtSymbol = await storage.GetSymbolAsync(rel.TargetSymbolId, ct);
-                result.Add(new DependencyNode(
-                    tgtSymbol?.Name ?? rel.TargetSymbolId,
-                    tgtSymbol?.FilePath ?? "",
-                    tgtSymbol?.Kind ?? rel.RelationshipType,
-                    tgtSymbol != null ? $"{tgtSymbol.LineStart}-{tgtSymbol.LineEnd}" : "",
-                    rel.RelationshipType));
-                await bfsAsync(rel.TargetSymbolId, direction, maxDepth, visited, result, currentDepth + 1, maxResults, ct);
+                count.Value++;
+                if (count.Value > skipCount)
+                {
+                    result.Add(new DependencyNode(
+                        tgtSymbol?.Name ?? rel.TargetSymbolId,
+                        tgtSymbol?.FilePath ?? "",
+                        tgtSymbol?.Kind ?? rel.RelationshipType,
+                        tgtSymbol != null ? $"{tgtSymbol.LineStart}-{tgtSymbol.LineEnd}" : "",
+                        rel.RelationshipType));
+                }
+                await bfsAsync(rel.TargetSymbolId, direction, maxDepth, visited, result, currentDepth + 1, maxResults, skipCount, count, ct);
             }
         }
     }
 
     public async Task<IReadOnlyList<DependencyNode>> TraceAsync(
-        string symbolPath, string direction, int depth, int? maxResults = null, CancellationToken ct = default)
+        string symbolPath, string direction, int depth, int? maxResults = null, int offset = 0, CancellationToken ct = default)
     {
         var symbol = await storage.GetSymbolByFullNameAsync(symbolPath, ct);
         if (symbol == null)
@@ -72,8 +85,9 @@ public sealed class DependencyGraphService : IDependencyGraphService
         var cappedDepth = Math.Clamp(depth, 1, 3);
         var visited = new HashSet<string>();
         var result = new List<DependencyNode>();
+        var count = new BfsCount();
 
-        await bfsAsync(symbol.Id, direction, cappedDepth, visited, result, 0, maxResults, ct);
+        await bfsAsync(symbol.Id, direction, cappedDepth, visited, result, 0, maxResults, offset, count, ct);
 
         // Include relationships from child symbols (methods, properties, fields, etc.)
         if (!maxResults.HasValue || result.Count < maxResults.Value)
@@ -83,18 +97,18 @@ public sealed class DependencyGraphService : IDependencyGraphService
             {
                 if (maxResults.HasValue && result.Count >= maxResults.Value)
                     break;
-                await bfsAsync(child.Id, direction, cappedDepth, visited, result, 0, maxResults, ct);
+                await bfsAsync(child.Id, direction, cappedDepth, visited, result, 0, maxResults, offset, count, ct);
             }
         }
 
-        logger.LogDebug("TraceAsync({Symbol}, {Direction}, {Depth}): {Count} nodes",
-            symbolPath, direction, depth, result.Count);
+        logger.LogDebug("TraceAsync({Symbol}, {Direction}, {Depth}): {Count} nodes (offset {Offset})",
+            symbolPath, direction, depth, result.Count, offset);
 
         return result;
     }
 
     public async Task<IReadOnlyList<DependencyNode>> FindRelatedAsync(
-        string symbolPath, string relationType, int? maxResults = null, CancellationToken ct = default)
+        string symbolPath, string relationType, int? maxResults = null, int offset = 0, CancellationToken ct = default)
     {
         var symbol = await storage.GetSymbolByFullNameAsync(symbolPath, ct);
         if (symbol == null)
@@ -105,6 +119,7 @@ public sealed class DependencyGraphService : IDependencyGraphService
 
         var result = new List<DependencyNode>();
         var seenRelIds = new HashSet<string>();
+        var skipped = 0;
 
         async Task addRelationships(IReadOnlyList<RelationshipRecord> rels)
         {
@@ -118,6 +133,11 @@ public sealed class DependencyGraphService : IDependencyGraphService
 
                 if (relationType is "all" || rel.RelationshipType.Equals(relationType, StringComparison.OrdinalIgnoreCase))
                 {
+                    if (skipped < offset)
+                    {
+                        skipped++;
+                        continue;
+                    }
                     var tgtSymbol = await storage.GetSymbolAsync(rel.TargetSymbolId, ct);
                     result.Add(new DependencyNode(
                         tgtSymbol?.Name ?? rel.TargetSymbolId,
