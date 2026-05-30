@@ -63,7 +63,8 @@ public sealed class SemanticSearchService : ISemanticSearchService
 
         sw.Stop();
         activity?.SetTag("results.count", results.Count);
-        CodeMemoryMetrics.QueryDuration.Record(sw.Elapsed.TotalMilliseconds);
+        var repoTag2 = new KeyValuePair<string, object?>("repo.name", Path.GetFileName(storage.RepoRoot.TrimEnd(Path.DirectorySeparatorChar)));
+        CodeMemoryMetrics.QueryDuration.Record(sw.Elapsed.TotalMilliseconds, repoTag2);
 
         return results;
     }

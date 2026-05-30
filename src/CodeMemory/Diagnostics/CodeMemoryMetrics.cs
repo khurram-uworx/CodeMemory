@@ -12,13 +12,13 @@ public static class CodeMemoryMetrics
         unit: "ms",
         description: "Duration of full indexing pass per repo");
 
-    public static readonly Counter<long> FilesIndexed = Meter.CreateCounter<long>(
+    public static readonly Histogram<long> FilesIndexed = Meter.CreateHistogram<long>(
         "codememory.indexing.files_count",
-        description: "Number of files indexed per repo");
+        description: "Number of files indexed per repo (per-pass)");
 
-    public static readonly Counter<long> SymbolsStored = Meter.CreateCounter<long>(
+    public static readonly Histogram<long> SymbolsStored = Meter.CreateHistogram<long>(
         "codememory.indexing.symbols_count",
-        description: "Number of symbol records stored per repo");
+        description: "Number of symbol records stored per repo (per-pass)");
 
     // Git
     public static readonly Histogram<double> CloneDuration = Meter.CreateHistogram<double>(
