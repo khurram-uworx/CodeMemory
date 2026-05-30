@@ -137,6 +137,86 @@ public sealed class ComponentClusteringServiceTests : BaseServicesTests
     }
 
     [Test]
+    public async Task GetClustersAsync_WithNullThreshold_UsesConfigDefault()
+    {
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
+        await storage.InitializeAsync();
+
+        File.WriteAllText(Path.Combine(repoRoot, ".codememory.json"),
+            """{"clusteringThreshold":0.99}""");
+
+        await storage.StoreSymbolsAsync([
+            new() { Id = "s1", Name = "Service", Kind = "Class", FilePath = "src/Service.cs", FullName = "App.Service", LineStart = 1, LineEnd = 10 },
+            new() { Id = "s2", Name = "Other", Kind = "Class", FilePath = "src/Other.cs", FullName = "App.Other", LineStart = 1, LineEnd = 10 },
+            new() { Id = "s3", Name = "Lib", Kind = "Class", FilePath = "lib/Lib.cs", FullName = "Lib.Lib", LineStart = 1, LineEnd = 10 },
+        ]);
+
+        await storage.StoreRelationshipsAsync([
+            new() { Id = "r1", SourceSymbolId = "s1", TargetSymbolId = "s3", RelationshipType = "References" },
+            new() { Id = "r2", SourceSymbolId = "s2", TargetSymbolId = "s1", RelationshipType = "References" },
+        ]);
+
+        var service = createService(storage);
+        // With no threshold passed, should use .codememory.json's value (0.99)
+        var clusters = await service.GetClustersAsync();
+
+        // src→lib has coupling 1/3 ≈ 0.33 < 0.99, so they should be separate
+        Assert.That(clusters, Has.Count.EqualTo(2));
+    }
+
+    [Test]
+    public async Task GetClustersAsync_WithoutConfigFile_FallsBackToDefault()
+    {
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
+        await storage.InitializeAsync();
+
+        await storage.StoreSymbolsAsync([
+            new() { Id = "s1", Name = "Service", Kind = "Class", FilePath = "src/Service.cs", FullName = "App.Service", LineStart = 1, LineEnd = 10 },
+            new() { Id = "s2", Name = "Lib", Kind = "Class", FilePath = "lib/Lib.cs", FullName = "Lib.Lib", LineStart = 1, LineEnd = 10 },
+        ]);
+
+        await storage.StoreRelationshipsAsync([
+            new() { Id = "r1", SourceSymbolId = "s1", TargetSymbolId = "s2", RelationshipType = "References" },
+        ]);
+
+        var service = createService(storage);
+        // No .codememory.json exists — should use 0.3 default, clustering them
+        var clusters = await service.GetClustersAsync();
+
+        Assert.That(clusters, Has.Count.EqualTo(1));
+        Assert.That(clusters[0].Members, Does.Contain("src"));
+        Assert.That(clusters[0].Members, Does.Contain("lib"));
+    }
+
+    [Test]
+    public async Task GetClustersAsync_ExplicitThreshold_OverridesConfig()
+    {
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
+        await storage.InitializeAsync();
+
+        File.WriteAllText(Path.Combine(repoRoot, ".codememory.json"),
+            """{"clusteringThreshold":0.99}""");
+
+        await storage.StoreSymbolsAsync([
+            new() { Id = "s1", Name = "Service", Kind = "Class", FilePath = "src/Service.cs", FullName = "App.Service", LineStart = 1, LineEnd = 10 },
+            new() { Id = "s2", Name = "Lib", Kind = "Class", FilePath = "lib/Lib.cs", FullName = "Lib.Lib", LineStart = 1, LineEnd = 10 },
+        ]);
+
+        await storage.StoreRelationshipsAsync([
+            new() { Id = "r1", SourceSymbolId = "s1", TargetSymbolId = "s2", RelationshipType = "References" },
+        ]);
+
+        var service = createService(storage);
+        // Explicit threshold should override .codememory.json
+        var clusters = await service.GetClustersAsync(0.01);
+
+        Assert.That(clusters, Has.Count.EqualTo(1));
+    }
+
+    [Test]
     public async Task GetClustersAsync_NoRelationships_IslandsForm()
     {
         (var repoRoot, var dbPath) = GetTempDbPath();

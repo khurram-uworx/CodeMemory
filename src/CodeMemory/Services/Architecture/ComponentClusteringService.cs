@@ -1,6 +1,8 @@
 using CodeMemory.Indexing.Architecture;
+using CodeMemory.Indexing.Configuration;
 using CodeMemory.Storage;
 using Microsoft.Extensions.Logging;
+using System.Collections.Concurrent;
 
 namespace CodeMemory.Services.Architecture;
 
@@ -92,6 +94,7 @@ public sealed class ComponentClusteringService : IComponentClusteringService
     readonly IComponentResolver componentResolver;
     readonly IStorageService storage;
     readonly ILogger<ComponentClusteringService> logger;
+    readonly ConcurrentDictionary<string, double?> thresholdCache = new(StringComparer.OrdinalIgnoreCase);
 
     public ComponentClusteringService(
         IComponentResolver componentResolver,
@@ -103,10 +106,27 @@ public sealed class ComponentClusteringService : IComponentClusteringService
         this.logger = logger;
     }
 
-    public async Task<IReadOnlyList<ComponentCluster>> GetClustersAsync(
-        double threshold = 0.3, int depth = 1, CancellationToken ct = default)
+    double resolveThreshold(double? threshold)
     {
-        threshold = Math.Clamp(threshold, 0.01, 1.0);
+        if (threshold.HasValue)
+            return Math.Clamp(threshold.Value, 0.01, 1.0);
+
+        var repoRoot = storage.RepoRoot;
+        var configThreshold = thresholdCache.GetOrAdd(repoRoot, _ =>
+        {
+            var config = CodeMemoryConfig.Load(repoRoot, logger);
+            return config.ClusteringThreshold;
+        });
+
+        return configThreshold is not null
+            ? Math.Clamp(configThreshold.Value, 0.01, 1.0)
+            : 0.3;
+    }
+
+    public async Task<IReadOnlyList<ComponentCluster>> GetClustersAsync(
+        double? threshold = null, int depth = 1, CancellationToken ct = default)
+    {
+        var effectiveThreshold = resolveThreshold(threshold);
         var symbolsPerKind = new List<SymbolRecord>();
 
         foreach (var kind in knownKinds)
@@ -154,9 +174,9 @@ public sealed class ComponentClusteringService : IComponentClusteringService
             }
         }
 
-        var clusters = clusterComponents(componentNames, matrix, threshold);
+        var clusters = clusterComponents(componentNames, matrix, effectiveThreshold);
         logger.LogDebug("GetClustersAsync(threshold={Threshold}, depth={Depth}): {Count} clusters from {Components} components",
-            threshold, depth, clusters.Count, componentNames.Length);
+            effectiveThreshold, depth, clusters.Count, componentNames.Length);
         return clusters;
     }
 }

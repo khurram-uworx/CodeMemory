@@ -337,3 +337,5 @@ FodyWeavers.xsd
 
 /src/CodeMemory.AspNet/appsettings.Development.json
 /src/CodeMemory.AspNet/App_Data
+
+.codememory.json
