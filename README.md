@@ -31,6 +31,11 @@ Instead of searching code, CodeMemory enables **understanding codebases**.
 
 All tools return structured JSON. No freeform prompts, no chat.
 
+## Packages
+
+- [![Npm](https://badgen.net/npm/v/@uworx/code-memory)](https://npmjs.com/package/@uworx/code-memory)
+- [![NuGet](https://img.shields.io/nuget/v/CodeMemory)](https://www.nuget.org/packages/CodeMemory)
+
 ## Quick Start
 
 ### STDIO MCP

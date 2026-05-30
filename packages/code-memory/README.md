@@ -13,9 +13,9 @@ From your terminal run:
 npx -y @uworx/code-memory --help
 ```
 
-It should print usage info and exit. You can then proceed to configure your MCP client (VS Code, Cursor, Claude Desktop, etc.) to use the `code-memory` MCP server as described below.
+It should download latest binaries when needed and print usage info and exit. You can then proceed to configure your MCP client (VS Code, Cursor, Claude Desktop, etc.) to use the `code-memory` MCP server as described below.
 
-## Configuration
+## MCP Server Setup
 
 Configure the MCP server in your client (VS Code, Cursor, Claude Desktop, etc.) by adding the following to your MCP settings:
 
@@ -43,21 +43,15 @@ This indexes the current working directory. To index a different folder, pass `-
 }
 ```
 
-### Global dotnet tool (alternative)
+## Repository Configuration
+
+Each repository can be initialized with a `.codememory.json` configuration file at its root by running:
 
 ```bash
-dotnet tool install -g CodeMemory.Mcp --prerelease
-code-memory
+npx -y @uworx/code-memory --init
 ```
 
-### Flags
-
-| Flag | Description |
-|------|-------------|
-| `--repo, -r <path>` | Repository root path (default: current directory) |
-| `--debug` | Index synchronously with verbose logging (no MCP server) |
-| `--help, -h` | Show usage |
-| `--version` | Show version |
+This creates a `.codememory.json` file (and adds it to `.gitignore` if needed) with all default settings. The file contains per-repo configuration such as file exclusion patterns, language overrides, and clustering thresholds. You can edit it at any time — optional fields that are removed fall back to sensible defaults.
 
 ## How It Works
 
