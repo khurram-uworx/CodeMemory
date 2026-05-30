@@ -33,11 +33,18 @@ public sealed class AddModel : PageModel
     [BindProperty]
     public InputModel Input { get; set; } = new();
 
-    public void OnGet()
-    { }
+    public IActionResult OnGet()
+    {
+        if (!registryOptions.EnableManualRepoAdd)
+            return RedirectToPage("/RepositoryDashboard");
+        return Page();
+    }
 
     public async Task<IActionResult> OnPostAsync()
     {
+        if (!registryOptions.EnableManualRepoAdd)
+            return RedirectToPage("/RepositoryDashboard");
+
         if (!ModelState.IsValid)
             return Page();
 
@@ -48,7 +55,7 @@ public sealed class AddModel : PageModel
             return Page();
         }
 
-        var isUrl = Input.Source.Contains("://");
+        var isUrl = CloneIndexService.IsGitUrl(Input.Source);
 
         var repo = new Repositories
         {

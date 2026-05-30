@@ -97,7 +97,6 @@ builder.Services.AddMemoryCache();
 
 builder.Services.AddScoped<IndexingEngine>();
 builder.Services.AddHostedService<IndexingHostedService>();
-builder.Services.Configure<RebuildOptions>(builder.Configuration.GetSection("RebuildIndex"));
 builder.Services.Configure<IndexingOptions>(builder.Configuration.GetSection(IndexingOptions.SectionName));
 builder.Services.AddHostedService<RebuildIndexHostedService>();
 

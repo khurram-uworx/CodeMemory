@@ -11,12 +11,14 @@ public sealed class IndexModel : PageModel
     readonly RepoRegistryService registry;
     readonly CloneIndexService cloneIndex;
     readonly NotificationService notifications;
+    readonly RepoRegistryOptions registryOptions;
 
     public List<Repositories> Repos { get; private set; } = [];
     public Dictionary<string, double?> Progress { get; private set; } = [];
+    public bool CanAddRepo => registryOptions.EnableManualRepoAdd;
 
-    public IndexModel(RepoRegistryService registry, CloneIndexService cloneIndex, NotificationService notifications)
-        => (this.registry, this.cloneIndex, this.notifications) = (registry, cloneIndex, notifications);
+    public IndexModel(RepoRegistryService registry, CloneIndexService cloneIndex, NotificationService notifications, RepoRegistryOptions registryOptions)
+        => (this.registry, this.cloneIndex, this.notifications, this.registryOptions) = (registry, cloneIndex, notifications, registryOptions);
 
     public async Task OnGetAsync()
     {

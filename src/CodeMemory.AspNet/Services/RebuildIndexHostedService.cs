@@ -15,7 +15,7 @@ public sealed class RebuildIndexHostedService : BackgroundService
     readonly IServiceRegistry serviceRegistry;
     readonly IServiceScopeFactory scopeFactory;
     readonly IRepoContextAccessor repoContext;
-    readonly IOptions<RebuildOptions> options;
+    readonly RepoRegistryOptions registryOptions;
     readonly IndexingOptions indexingOptions;
     readonly SemaphoreSlim gate = new(1, 1);
 
@@ -25,7 +25,7 @@ public sealed class RebuildIndexHostedService : BackgroundService
         IServiceRegistry serviceRegistry,
         IServiceScopeFactory scopeFactory,
         IRepoContextAccessor repoContext,
-        IOptions<RebuildOptions> options,
+        RepoRegistryOptions registryOptions,
         IOptions<IndexingOptions> indexingOptions)
     {
         this.logger = logger;
@@ -33,7 +33,7 @@ public sealed class RebuildIndexHostedService : BackgroundService
         this.serviceRegistry = serviceRegistry;
         this.scopeFactory = scopeFactory;
         this.repoContext = repoContext;
-        this.options = options;
+        this.registryOptions = registryOptions;
         this.indexingOptions = indexingOptions.Value;
     }
 
@@ -151,7 +151,7 @@ public sealed class RebuildIndexHostedService : BackgroundService
         logger.LogInformation("Pulling latest for '{Repo}'", repo.Name);
 
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        cts.CancelAfter(TimeSpan.FromSeconds(options.Value?.GitPullTimeoutSeconds ?? 120));
+        cts.CancelAfter(TimeSpan.FromSeconds(registryOptions.GitCommandTimeoutSeconds));
 
         var psi = new ProcessStartInfo("git")
         {
@@ -177,7 +177,7 @@ public sealed class RebuildIndexHostedService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var cron = options.Value?.Cron;
+        var cron = registryOptions.RebuildCron;
         if (string.IsNullOrWhiteSpace(cron))
         {
             logger.LogDebug("RebuildIndex cron not configured — skipping.");
