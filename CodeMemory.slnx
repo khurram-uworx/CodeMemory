@@ -2,6 +2,7 @@
   <Folder Name="/.github/" />
   <Folder Name="/.github/workflows/">
     <File Path=".github/workflows/ci.yml" />
+    <File Path=".github/workflows/docker.yml" />
     <File Path=".github/workflows/release.yml" />
   </Folder>
   <Folder Name="/docs/">
@@ -24,8 +25,12 @@
     <File Path=".mcp.json" />
     <File Path="AGENTS.md" />
     <File Path="ARCHITECTURE.md" />
+    <File Path="docker-compose.yml" />
+    <File Path="download-models.ps1" />
+    <File Path="GETTING-STARTED.md" />
     <File Path="opencode.json" />
     <File Path="README.md" />
+    <File Path="RELEASING.md" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/CodeMemory.AppHost/CodeMemory.AppHost.csproj" Id="d2399944-5866-4829-8ec2-e85b806cfed5" />
