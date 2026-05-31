@@ -26,6 +26,7 @@ npx -y @uworx/code-memory --repo ./my-project --debug
 
 # All flags:
 #   --repo, -r <path>    Repository root path (default: current directory)
+#   --init, -i           Create .codememory.json with defaults and add to .gitignore
 #   --debug              Index synchronously with verbose logging
 #   --version            Show version
 #   --help, -h           Show this help
@@ -55,22 +56,6 @@ code-memory
 | `find_related_code` | Find related symbols by relation type |
 | `get_repository_root` | Active repository root path |
 | `rescan_repository` | Trigger full re-index of the repository |
-
-## MCP Resources
-
-| Resource | Description |
-|----------|-------------|
-| `codememory://architecture/overview` | High-level repo structure as JSON |
-| `codememory://hotspots` | Most frequently changed files as JSON |
-
-## MCP Prompts
-
-| Prompt | Description |
-|--------|-------------|
-| `architecture-overview` | Walk through exploring the codebase architecture |
-| `analyze-symbol` | Deep-dive analysis of a specific symbol |
-| `impact-review` | Review what would break before making a change |
-| `find-related-code` | Guide to tracing dependencies and related code |
 
 ## MCP Client Registration
 
