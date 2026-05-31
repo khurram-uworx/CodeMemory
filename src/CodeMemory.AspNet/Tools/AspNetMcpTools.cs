@@ -18,7 +18,7 @@ public sealed class AspNetMcpTools
     [McpServerTool, Description("Ping the server. Returns indexing status — agents should back off and retry if still building the index.")]
     public PingResult Ping()
     {
-        CodeMemoryMetrics.ToolInvocations.Add(1, new("tool", "ping"), new("host", "aspnet"), new("repo.name", repoContext.CurrentRepoName ?? "unknown"));
+        CodeMemoryMetrics.ToolInvocations.Add(1, new("tool", "ping"), new("host", "aspnet"), new(CodeMemoryMetrics.Tags.Repo, repoContext.CurrentRepoName ?? "unknown"));
         var repoName = repoContext.CurrentRepoName;
         if (repoName is null)
             return new PingResult("ok", false, null, null, "No repo context available.", IndexingState.Version);

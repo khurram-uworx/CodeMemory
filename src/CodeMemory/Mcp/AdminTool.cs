@@ -29,7 +29,7 @@ public sealed class AdminTool
         CancellationToken ct = default)
     {
         var rescanRepoName = Path.GetFileName(storage.RepoRoot.TrimEnd(Path.DirectorySeparatorChar));
-        CodeMemoryMetrics.ToolInvocations.Add(1, new("tool", "rescan"), new("host", "mcp"), new("repo.name", rescanRepoName));
+        CodeMemoryMetrics.ToolInvocations.Add(1, new("tool", "rescan"), new("host", "mcp"), new(CodeMemoryMetrics.Tags.Repo, rescanRepoName));
 
         var repoRoot = storage.RepoRoot;
         logger.LogInformation("Rescan requested for repo {RepoRoot}", repoRoot);
@@ -52,7 +52,7 @@ public sealed class AdminTool
     public AdminRepositoryRootResult GetRepositoryRoot()
     {
         var rootRepoName = Path.GetFileName(storage.RepoRoot.TrimEnd(Path.DirectorySeparatorChar));
-        CodeMemoryMetrics.ToolInvocations.Add(1, new("tool", "get_repository_root"), new("host", "mcp"), new("repo.name", rootRepoName));
+        CodeMemoryMetrics.ToolInvocations.Add(1, new("tool", "get_repository_root"), new("host", "mcp"), new(CodeMemoryMetrics.Tags.Repo, rootRepoName));
 
         return new AdminRepositoryRootResult("ok", storage.RepoRoot);
     }

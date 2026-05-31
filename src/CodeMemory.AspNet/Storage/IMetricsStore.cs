@@ -14,5 +14,12 @@ public interface IMetricsStore
         double value,
         IReadOnlyList<KeyValuePair<string, object?>>? tags);
 
+    void RecordGauge(
+        string instrumentName,
+        double value,
+        IReadOnlyList<KeyValuePair<string, object?>>? tags);
+
     RuntimeMetricsSnapshot GetSnapshot(bool reset = false);
+
+    void RemoveInstrumentTags(string instrumentName, IReadOnlyList<KeyValuePair<string, object?>>? tags);
 }

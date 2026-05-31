@@ -134,11 +134,11 @@ RETURNS JSON: success, rowCount, executionTimeMs, columns, rows, error
         var sqlRepoName = !string.IsNullOrEmpty(sqlRepoRoot)
             ? Path.GetFileName(sqlRepoRoot.TrimEnd(Path.DirectorySeparatorChar))
             : "unknown";
-        CodeMemoryMetrics.ToolInvocations.Add(1, new("tool", "sql_query"), new("host", "mcp"), new("repo.name", sqlRepoName));
+        CodeMemoryMetrics.ToolInvocations.Add(1, new("tool", "sql_query"), new("host", "mcp"), new(CodeMemoryMetrics.Tags.Repo, sqlRepoName));
 
         try
         {
-            var result = await sqlQueryService.ExecuteAsync(vectorStore, query, maxResults);
+            var result = await sqlQueryService.ExecuteAsync(vectorStore, query, maxResults, repoName: sqlRepoName);
 
             if (!result.Success)
                 logFailure(null, result.Error);

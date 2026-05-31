@@ -6,6 +6,15 @@ public static class CodeMemoryMetrics
 {
     public static readonly Meter Meter = new("CodeMemory", "1.0");
 
+    // Standardized tag key constants
+    public static class Tags
+    {
+        public const string Repo = "repo";
+        public const string RepoUrl = "repo.url";
+        public const string Tool = "tool";
+        public const string Host = "host";
+    }
+
     // Indexing
     public static readonly Histogram<double> IndexingDuration = Meter.CreateHistogram<double>(
         "codememory.indexing.duration",

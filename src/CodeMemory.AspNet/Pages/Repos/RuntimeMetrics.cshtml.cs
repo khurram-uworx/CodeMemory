@@ -2,6 +2,7 @@ using CodeMemory.AspNet.Configuration;
 using CodeMemory.AspNet.Models;
 using CodeMemory.AspNet.Registry;
 using CodeMemory.AspNet.Storage;
+using CodeMemory.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.Extensions.Options;
@@ -74,8 +75,7 @@ public sealed class RuntimeMetricsModel : PageModel
             return false;
 
         return value.Tags.Any(t =>
-            (string.Equals(t.Key, "repo", StringComparison.OrdinalIgnoreCase) ||
-             string.Equals(t.Key, "repo.name", StringComparison.OrdinalIgnoreCase)) &&
+            string.Equals(t.Key, CodeMemoryMetrics.Tags.Repo, StringComparison.OrdinalIgnoreCase) &&
             string.Equals(t.Value, repoName, StringComparison.OrdinalIgnoreCase));
     }
 }

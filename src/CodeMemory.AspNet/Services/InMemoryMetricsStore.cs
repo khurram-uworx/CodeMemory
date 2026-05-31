@@ -30,6 +30,18 @@ sealed class InMemoryMetricsStore : IMetricsStore
         state.RecordHistogram(value, SerializeTags(tags));
     }
 
+    public void RecordGauge(string instrumentName, double value, IReadOnlyList<KeyValuePair<string, object?>>? tags)
+    {
+        var state = instruments.GetOrAdd(instrumentName, _ => new InstrumentState(isCounter: false, isGauge: true, options, logger));
+        state.RecordGauge(value, SerializeTags(tags));
+    }
+
+    public void RemoveInstrumentTags(string instrumentName, IReadOnlyList<KeyValuePair<string, object?>>? tags)
+    {
+        if (instruments.TryGetValue(instrumentName, out var state))
+            state.RemoveTagSet(SerializeTags(tags));
+    }
+
     public RuntimeMetricsSnapshot GetSnapshot(bool reset = false)
     {
         var snapshotTime = DateTime.UtcNow;
@@ -40,7 +52,7 @@ sealed class InMemoryMetricsStore : IMetricsStore
             var values = state.ReadAndReset(reset);
             instrumentMetrics.Add(new InstrumentMetric(
                 name,
-                state.IsCounter ? "counter" : "histogram",
+                state.IsCounter ? "counter" : state.IsGauge ? "gauge" : "histogram",
                 values));
         }
 
@@ -62,14 +74,19 @@ sealed class InMemoryMetricsStore : IMetricsStore
     sealed class InstrumentState
     {
         public bool IsCounter { get; }
+        public bool IsGauge { get; }
         readonly ConcurrentDictionary<string, TagSetState> tagSets = new(StringComparer.Ordinal);
         readonly LocalMetricsOptions options;
         readonly ILogger? logger;
         long tagComboCount;
 
         public InstrumentState(bool isCounter, LocalMetricsOptions options, ILogger? logger)
+            : this(isCounter, false, options, logger) { }
+
+        public InstrumentState(bool isCounter, bool isGauge, LocalMetricsOptions options, ILogger? logger)
         {
             IsCounter = isCounter;
+            IsGauge = isGauge;
             this.options = options;
             this.logger = logger;
         }
@@ -98,6 +115,17 @@ sealed class InMemoryMetricsStore : IMetricsStore
             }
         }
 
+        public void RecordGauge(double value, string tagKey)
+        {
+            var state = getOrAddTagSet(tagKey);
+            if (state is null) return;
+
+            lock (state.Lock)
+            {
+                state.Last = value;
+            }
+        }
+
         public void RecordHistogram(double value, string tagKey)
         {
             var state = getOrAddTagSet(tagKey);
@@ -121,6 +149,12 @@ sealed class InMemoryMetricsStore : IMetricsStore
             }
         }
 
+        public void RemoveTagSet(string tagKey)
+        {
+            if (tagSets.TryRemove(tagKey, out _))
+                Interlocked.Decrement(ref tagComboCount);
+        }
+
         public List<MetricValue> ReadAndReset(bool reset)
         {
             var result = new List<MetricValue>(tagSets.Count);
@@ -130,7 +164,18 @@ sealed class InMemoryMetricsStore : IMetricsStore
             {
                 lock (state.Lock)
                 {
-                    if (IsCounter)
+                    if (IsGauge)
+                    {
+                        result.Add(new MetricValue(
+                            Count: null, Sum: null, Min: null, Max: null,
+                            Last: state.Last,
+                            Measurements: null,
+                            Tags: DeserializeTags(tagKey)));
+
+                        if (reset)
+                            state.Last = 0;
+                    }
+                    else if (IsCounter)
                     {
                         var count = state.CounterValue;
                         result.Add(new MetricValue(

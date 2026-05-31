@@ -33,7 +33,7 @@ public sealed class SemanticSearchTool
             ? Path.GetFileName(storage.RepoRoot.TrimEnd(Path.DirectorySeparatorChar))
             : null;
         KeyValuePair<string, object?>[] semSearchTags = repoName is not null
-            ? [new("tool", "semantic_search"), new("host", "mcp"), new("repo.name", repoName)]
+            ? [new("tool", "semantic_search"), new("host", "mcp"), new(CodeMemoryMetrics.Tags.Repo, repoName)]
             : [new("tool", "semantic_search"), new("host", "mcp")];
         CodeMemoryMetrics.ToolInvocations.Add(1, semSearchTags);
 

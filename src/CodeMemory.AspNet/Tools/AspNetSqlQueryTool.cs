@@ -398,7 +398,7 @@ RETURNS JSON: success, rowCount, executionTimeMs, columns, rows, error
         int maxResults = 100)
     {
         var aspRepoName = Path.GetFileName(storageService.RepoRoot.TrimEnd(Path.DirectorySeparatorChar));
-        CodeMemoryMetrics.ToolInvocations.Add(1, new("tool", "sql_query"), new("host", "aspnet"), new("repo.name", aspRepoName));
+        CodeMemoryMetrics.ToolInvocations.Add(1, new("tool", "sql_query"), new("host", "aspnet"), new(CodeMemoryMetrics.Tags.Repo, aspRepoName));
 
         var sw = Stopwatch.StartNew();
         var cappedMaxResults = Math.Clamp(maxResults, 1, 10000);

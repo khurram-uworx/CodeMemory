@@ -59,7 +59,7 @@ sealed class LocalMetricsCollector : IDisposable
 
         if (instrument is Counter<long>)
             store.RecordCounter(instrument.Name, measurement, tagList);
-        else
+        else if (instrument is not ObservableGauge<long>)
             store.RecordHistogram(instrument.Name, measurement, tagList);
     }
 
