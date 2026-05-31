@@ -52,4 +52,6 @@ public static class IndexingState
 
     public static void StoreRelationshipCount(string repoName, int count)
         => repoRelationships[repoName] = count;
+
+    public static SemaphoreSlim RebuildGate { get; } = new(1, 1);
 }

@@ -5,6 +5,7 @@ using CodeMemory.Indexing;
 using CodeMemory.Services;
 using Microsoft.Extensions.Options;
 using System.Diagnostics;
+using System.Text.Json;
 
 namespace CodeMemory.AspNet.Services;
 
@@ -18,6 +19,12 @@ public sealed class RebuildIndexHostedService : BackgroundService
     readonly RepoRegistryOptions registryOptions;
     readonly IndexingOptions indexingOptions;
     readonly SemaphoreSlim gate = new(1, 1);
+    readonly TimeSpan pollInterval;
+
+    static readonly string SchedulePath = Path.Combine("App_Data", "rebuild-schedule.json");
+    CronExpression? expression;
+
+    record ScheduleData(DateTimeOffset NextRun);
 
     public RebuildIndexHostedService(
         ILogger<RebuildIndexHostedService> logger,
@@ -35,6 +42,7 @@ public sealed class RebuildIndexHostedService : BackgroundService
         this.repoContext = repoContext;
         this.registryOptions = registryOptions;
         this.indexingOptions = indexingOptions.Value;
+        this.pollInterval = TimeSpan.FromSeconds(registryOptions.RebuildPollIntervalSeconds);
     }
 
     async Task rebuildAsync(CancellationToken ct)
@@ -175,6 +183,53 @@ public sealed class RebuildIndexHostedService : BackgroundService
         }
     }
 
+    async Task<bool> IsScheduleDueAsync(CancellationToken ct)
+    {
+        if (!File.Exists(SchedulePath))
+            return false;
+
+        var json = await File.ReadAllTextAsync(SchedulePath, ct);
+        var data = JsonSerializer.Deserialize<ScheduleData>(json);
+        return data is not null && DateTimeOffset.UtcNow >= data.NextRun;
+    }
+
+    async Task PersistNextRunAsync(CancellationToken ct)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var next = expression!.GetNextOccurrence(now);
+        if (next is null)
+        {
+            logger.LogWarning("No future occurrence found for cron '{Cron}'", registryOptions.RebuildCron);
+            return;
+        }
+
+        var dir = Path.GetDirectoryName(Path.GetFullPath(SchedulePath));
+        if (!string.IsNullOrEmpty(dir))
+            Directory.CreateDirectory(dir);
+
+        var data = new ScheduleData(next.Value);
+        var json = JsonSerializer.Serialize(data);
+        await File.WriteAllTextAsync(SchedulePath, json, ct);
+    }
+
+    async Task EnsureFirstScheduleAsync(CancellationToken ct)
+    {
+        var dir = Path.GetDirectoryName(Path.GetFullPath(SchedulePath));
+        if (!string.IsNullOrEmpty(dir))
+            Directory.CreateDirectory(dir);
+
+        await PersistNextRunAsync(ct);
+
+        // Read back to log the scheduled time
+        if (File.Exists(SchedulePath))
+        {
+            var json = await File.ReadAllTextAsync(SchedulePath, ct);
+            var data = JsonSerializer.Deserialize<ScheduleData>(json);
+            if (data is not null)
+                logger.LogInformation("Next rebuild at {Next:O}", data.NextRun);
+        }
+    }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var cron = registryOptions.RebuildCron;
@@ -184,27 +239,40 @@ public sealed class RebuildIndexHostedService : BackgroundService
             return;
         }
 
-        var expression = CronExpression.Parse(cron);
-        logger.LogInformation("Rebuild index scheduled with cron '{Cron}'", cron);
+        expression = CronExpression.Parse(cron);
+        logger.LogInformation("Rebuild index scheduled with cron '{Cron}', polling every {Poll}s",
+            cron, pollInterval.TotalSeconds);
+
+        // Let IndexingHostedService finish first-time indexing before we start polling
+        await Task.Delay(TimeSpan.FromSeconds(60), stoppingToken);
+
+        if (!File.Exists(SchedulePath))
+            await EnsureFirstScheduleAsync(stoppingToken);
 
         while (!stoppingToken.IsCancellationRequested)
         {
-            var now = DateTimeOffset.UtcNow;
-            var next = expression.GetNextOccurrence(now);
-
-            if (next is null)
+            if (await IsScheduleDueAsync(stoppingToken))
             {
-                logger.LogWarning("No future occurrence found for cron '{Cron}'", cron);
-                return;
+                if (await IndexingState.RebuildGate.WaitAsync(TimeSpan.Zero, stoppingToken))
+                {
+                    try
+                    {
+                        await rebuildAsync(stoppingToken);
+                    }
+                    finally
+                    {
+                        IndexingState.RebuildGate.Release();
+                    }
+                }
+                else
+                {
+                    logger.LogWarning("Indexing service active — skipping this rebuild tick");
+                }
+
+                await PersistNextRunAsync(stoppingToken);
             }
 
-            var delay = next.Value - now;
-            logger.LogInformation("Next rebuild at {Next:O} (in {Delay})", next.Value, delay);
-
-            await Task.Delay(delay, stoppingToken);
-            if (stoppingToken.IsCancellationRequested) break;
-
-            await rebuildAsync(stoppingToken);
+            await Task.Delay(pollInterval, stoppingToken);
         }
     }
 }

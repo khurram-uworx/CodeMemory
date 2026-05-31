@@ -5,7 +5,7 @@
 
 CodeMemory transforms repositories into queryable intelligence — extracting symbols, relationships, and semantic understanding — and exposing it through MCP tools designed for AI coding agents.
 
-What's new in 0.5 and what's coming next:
+What's new in 0.6 and what's coming next:
 - [Roadmap & Upcoming Releases](https://github.com/khurram-uworx/CodeMemory/issues/21)
 
 ## When to Use

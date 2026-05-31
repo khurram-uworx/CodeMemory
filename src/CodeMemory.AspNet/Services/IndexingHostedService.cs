@@ -49,7 +49,11 @@ public sealed class IndexingHostedService : BackgroundService
         await using var db = await dbFactory.CreateDbContextAsync(stoppingToken);
 
         var pendingRepos = await db.RegisteredRepos
-            .Where(r => r.CloneStatus == "Pending" || r.IndexStatus == "Pending")
+            .Where(r => r.CloneStatus == "Pending" ||
+                        r.CloneStatus == "Cloning" ||
+                        r.IndexStatus == "Pending" ||
+                        r.IndexStatus == "Indexing" ||
+                        r.IndexStatus == "Failed")
             .ToListAsync(stoppingToken);
 
         pendingRepos = pendingRepos.Where(r => !cloneIndex.IsProcessing(r.Name)).ToList();
@@ -60,8 +64,11 @@ public sealed class IndexingHostedService : BackgroundService
             return;
         }
 
-        foreach (var repo in pendingRepos)
+        await IndexingState.RebuildGate.WaitAsync(stoppingToken);
+        try
         {
+            foreach (var repo in pendingRepos)
+            {
             if (stoppingToken.IsCancellationRequested) break;
 
             var repoTimeout = TimeSpan.FromMinutes(indexingOptions.RepoTimeoutMinutes);
@@ -71,7 +78,7 @@ public sealed class IndexingHostedService : BackgroundService
 
             try
             {
-                if (repo.CloneStatus == "Pending" && !string.IsNullOrEmpty(repo.GitUrl))
+                if ((repo.CloneStatus == "Pending" || repo.CloneStatus == "Cloning") && !string.IsNullOrEmpty(repo.GitUrl))
                 {
                     using var cloneActivity = CodeMemoryActivitySources.Git.StartActivity("Clone");
                     cloneActivity?.SetTag(CodeMemoryMetrics.Tags.Repo, repo.Name);
@@ -126,6 +133,15 @@ public sealed class IndexingHostedService : BackgroundService
                     registry.Register(repo.Name, storage);
                 }
 
+                // If recovering from a stuck or failed index, clear stale data first
+                if (repo.IndexStatus is "Indexing" or "Failed")
+                {
+                    logger.LogInformation("Recovering '{Repo}' — clearing stale index data", repo.Name);
+                    var existingStorage = registry.GetStorage(repo.Name);
+                    await existingStorage.ClearAllAsync(repoCt);
+                    IndexingState.MarkIncomplete(repo.Name);
+                }
+
                 await UpdateIndexStatusAsync(dbFactory, repo.Name, "Indexing", ct: repoCt);
 
                 repoContext.CurrentRepoName = repo.Name;
@@ -162,6 +178,11 @@ public sealed class IndexingHostedService : BackgroundService
         }
 
         logger.LogInformation("Indexing hosted service completed");
+        }
+        finally
+        {
+            IndexingState.RebuildGate.Release();
+        }
     }
 
     async Task<IndexingResult> indexWithRetryAsync(string repoName, string repoPath, CancellationToken ct)
