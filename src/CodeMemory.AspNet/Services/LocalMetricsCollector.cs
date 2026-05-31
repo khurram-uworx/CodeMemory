@@ -12,6 +12,7 @@ sealed class LocalMetricsCollector : IDisposable
     readonly MeterListener listener = new();
     readonly IMetricsStore store;
     readonly LocalMetricsOptions options;
+    Timer? observableTimer;
     bool disposed;
 
     public LocalMetricsCollector(IMetricsStore store, IOptions<LocalMetricsOptions> options)
@@ -39,6 +40,10 @@ sealed class LocalMetricsCollector : IDisposable
         listener.SetMeasurementEventCallback<long>(OnLongMeasurement);
         listener.SetMeasurementEventCallback<double>(OnDoubleMeasurement);
         listener.Start();
+
+        observableTimer = new Timer(
+            _ => listener.RecordObservableInstruments(),
+            null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
     }
 
     void OnLongMeasurement(
@@ -54,7 +59,7 @@ sealed class LocalMetricsCollector : IDisposable
 
         if (instrument is Counter<long>)
             store.RecordCounter(instrument.Name, measurement, tagList);
-        else
+        else if (instrument is not ObservableGauge<long>)
             store.RecordHistogram(instrument.Name, measurement, tagList);
     }
 
@@ -75,6 +80,7 @@ sealed class LocalMetricsCollector : IDisposable
     {
         if (disposed) return;
         disposed = true;
+        observableTimer?.Dispose();
         listener.Dispose();
     }
 }

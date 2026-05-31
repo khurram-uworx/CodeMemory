@@ -1962,8 +1962,10 @@ public sealed class SqlQueryService
         VectorStore store, SetExpression.SetOperation setOp,
         With? withClause, OrderBy? orderBy, AstExpr? limitExpr,
         int maxResults, CancellationToken ct, Stopwatch sw,
-        System.Diagnostics.Activity? activity = null)
+        System.Diagnostics.Activity? activity = null,
+        string repoName = "unknown")
     {
+        KeyValuePair<string, object?> repoTag = new(CodeMemoryMetrics.Tags.Repo, repoName);
         try
         {
             // Materialize CTEs
@@ -2051,14 +2053,14 @@ public sealed class SqlQueryService
 
             sw.Stop();
             activity?.SetTag("rowCount", result.Count);
-            CodeMemoryMetrics.SqlQueryDuration.Record(sw.Elapsed.TotalMilliseconds);
+            CodeMemoryMetrics.SqlQueryDuration.Record(sw.Elapsed.TotalMilliseconds, repoTag);
 
             return new SqlQueryResult(true, result.Count, sw.ElapsedMilliseconds, columns, result);
         }
         catch (Exception ex)
         {
             sw.Stop();
-            CodeMemoryMetrics.SqlQueryDuration.Record(sw.Elapsed.TotalMilliseconds);
+            CodeMemoryMetrics.SqlQueryDuration.Record(sw.Elapsed.TotalMilliseconds, repoTag);
 
             logger.LogError(ex, "SQL UNION query execution failed");
             return fail($"UNION execution error: {unwrapMessage(ex)}", sw);
@@ -2066,12 +2068,13 @@ public sealed class SqlQueryService
     }
 
     /// <summary>Parses and executes a SELECT-only SQL query, returning the result.</summary>
-    public async Task<SqlQueryResult> ExecuteAsync(VectorStore store, string sql, int maxResults = 100, CancellationToken ct = default)
+    public async Task<SqlQueryResult> ExecuteAsync(VectorStore store, string sql, int maxResults = 100, CancellationToken ct = default, string repoName = "unknown")
     {
         using var activity = CodeMemoryActivitySources.Sql.StartActivity("Execute");
         activity?.SetTag("sql", sql);
         activity?.SetTag("maxResults", maxResults);
         var sw = Stopwatch.StartNew();
+        KeyValuePair<string, object?> repoTag = new(CodeMemoryMetrics.Tags.Repo, repoName);
 
         try
         {
@@ -2108,7 +2111,7 @@ public sealed class SqlQueryService
             // Handle UNION / INTERSECT / EXCEPT
             if (setExpr is SetExpression.SetOperation setOp)
             {
-                return await executeSetOperationAsync(store, setOp, query.With, query.OrderBy, query.Limit, maxResults, ct, sw, activity);
+                return await executeSetOperationAsync(store, setOp, query.With, query.OrderBy, query.Limit, maxResults, ct, sw, activity, repoName);
             }
 
             if (setExpr is not SetExpression.SelectExpression selectExpr)
@@ -2322,7 +2325,7 @@ public sealed class SqlQueryService
 
             sw.Stop();
             activity?.SetTag("rowCount", result.Count);
-            CodeMemoryMetrics.SqlQueryDuration.Record(sw.Elapsed.TotalMilliseconds);
+            CodeMemoryMetrics.SqlQueryDuration.Record(sw.Elapsed.TotalMilliseconds, repoTag);
 
             var warning = singleTableName is not null
                 && string.Equals(singleTableName, "RelationshipRecord", StringComparison.OrdinalIgnoreCase)
@@ -2335,7 +2338,7 @@ public sealed class SqlQueryService
         catch (Exception ex)
         {
             sw.Stop();
-            CodeMemoryMetrics.SqlQueryDuration.Record(sw.Elapsed.TotalMilliseconds);
+            CodeMemoryMetrics.SqlQueryDuration.Record(sw.Elapsed.TotalMilliseconds, repoTag);
 
             logger.LogError(ex, "SQL query execution failed: {Sql}", sql);
             return fail($"Execution error at stage '{sw.Elapsed}' for SQL '{sql}': {unwrapMessage(ex)}", sw);

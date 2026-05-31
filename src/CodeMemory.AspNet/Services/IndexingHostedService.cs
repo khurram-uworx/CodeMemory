@@ -74,8 +74,8 @@ public sealed class IndexingHostedService : BackgroundService
                 if (repo.CloneStatus == "Pending" && !string.IsNullOrEmpty(repo.GitUrl))
                 {
                     using var cloneActivity = CodeMemoryActivitySources.Git.StartActivity("Clone");
-                    cloneActivity?.SetTag("repo.name", repo.Name);
-                    cloneActivity?.SetTag("repo.url", repo.GitUrl);
+                    cloneActivity?.SetTag(CodeMemoryMetrics.Tags.Repo, repo.Name);
+                    cloneActivity?.SetTag(CodeMemoryMetrics.Tags.RepoUrl, repo.GitUrl);
                     var cloneSw = Stopwatch.StartNew();
 
                     logger.LogInformation("Cloning repository '{Name}' from {Url}", repo.Name, repo.GitUrl);
@@ -107,7 +107,7 @@ public sealed class IndexingHostedService : BackgroundService
 
                     cloneSw.Stop();
                     CodeMemoryMetrics.CloneDuration.Record(cloneSw.Elapsed.TotalMilliseconds,
-                        new("repo.name", repo.Name), new("repo.url", repo.GitUrl));
+                        new(CodeMemoryMetrics.Tags.Repo, repo.Name), new(CodeMemoryMetrics.Tags.RepoUrl, repo.GitUrl));
                 }
 
                 if (repo.CloneStatus != "Cloned")

@@ -1,8 +1,10 @@
+using CodeMemory.AspNet.Configuration;
 using CodeMemory.AspNet.Registry;
 using CodeMemory.AspNet.Services;
 using CodeMemory.Indexing;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.Extensions.Options;
 
 namespace CodeMemory.AspNet.Pages;
 
@@ -21,9 +23,10 @@ public sealed class IndexModel : PageModel
 
     public Dictionary<string, double?> Progress { get; private set; } = [];
     public bool CanAddRepo => registryOptions.EnableManualRepoAdd;
+    public bool LocalMetricsEnabled { get; }
 
-    public IndexModel(RepoRegistryService registry, CloneIndexService cloneIndex, NotificationService notifications, RepoRegistryOptions registryOptions)
-        => (this.registry, this.cloneIndex, this.notifications, this.registryOptions) = (registry, cloneIndex, notifications, registryOptions);
+    public IndexModel(RepoRegistryService registry, CloneIndexService cloneIndex, NotificationService notifications, RepoRegistryOptions registryOptions, IOptions<LocalMetricsOptions> localMetrics)
+        => (this.registry, this.cloneIndex, this.notifications, this.registryOptions, LocalMetricsEnabled) = (registry, cloneIndex, notifications, registryOptions, localMetrics.Value.Enabled);
 
     public async Task OnGetAsync()
     {

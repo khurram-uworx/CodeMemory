@@ -102,8 +102,8 @@ public sealed class CloneIndexService
                 if (isUrl)
                 {
                     using var cloneActivity = CodeMemoryActivitySources.Git.StartActivity("Clone");
-                    cloneActivity?.SetTag("repo.name", repoName);
-                    cloneActivity?.SetTag("repo.url", source);
+                    cloneActivity?.SetTag(CodeMemoryMetrics.Tags.Repo, repoName);
+                    cloneActivity?.SetTag(CodeMemoryMetrics.Tags.RepoUrl, source);
                     var cloneSw = Stopwatch.StartNew();
 
                     await UpdateCloneStatusAsync(repoName, "Cloning");
@@ -135,7 +135,7 @@ public sealed class CloneIndexService
 
                     cloneSw.Stop();
                     CodeMemoryMetrics.CloneDuration.Record(cloneSw.Elapsed.TotalMilliseconds,
-                        new("repo.name", repoName), new("repo.url", source));
+                        new(CodeMemoryMetrics.Tags.Repo, repoName), new(CodeMemoryMetrics.Tags.RepoUrl, source));
 
                     await UpdateCloneStatusAsync(repoName, "Cloned", localPath: clonePath);
                 }
@@ -167,7 +167,7 @@ public sealed class CloneIndexService
     async Task InitializeAndIndexAsync(string repoName, string repoPath)
     {
         using var activity = CodeMemoryActivitySources.Indexing.StartActivity("InitializeAndIndex");
-        activity?.SetTag("repo.name", repoName);
+        activity?.SetTag(CodeMemoryMetrics.Tags.Repo, repoName);
         activity?.SetTag("repo.path", repoPath);
 
         var repoEntity = await GetRepoAsync(repoName);

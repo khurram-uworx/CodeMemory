@@ -35,7 +35,7 @@ public sealed class InitTool
     {
         var resolvedRoot = repoRoot ?? Environment.CurrentDirectory;
         var initRepoName = Path.GetFileName(resolvedRoot.TrimEnd(Path.DirectorySeparatorChar));
-        CodeMemoryMetrics.ToolInvocations.Add(1, new("tool", "init"), new("host", "mcp"), new("repo.name", initRepoName));
+        CodeMemoryMetrics.ToolInvocations.Add(1, new("tool", "init"), new("host", "mcp"), new(CodeMemoryMetrics.Tags.Repo, initRepoName));
 
         return initService.Run(resolvedRoot);
     }

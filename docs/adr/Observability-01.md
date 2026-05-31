@@ -7,14 +7,16 @@
 CodeMemory needs structured runtime observability — indexing duration, tool invocation counts, query latencies, repository state — surfaced to operators via dashboards and alerting. The requirements span two hosts (`CodeMemory.Mcp` STDIO and `CodeMemory.AspNet` HTTP) and must work in three deployment modes:
 
 | Mode | Toil level | Metrics consumer |
-|---|---|---|
-| Local `dotnet run` | Zero-infrastructure | Aspire Dashboard (OTLP) |
+|---|---|---|---|
+| Local `dotnet run` (AspNet host) | Zero-infrastructure | Aspire Dashboard (OTLP) |
 | Docker Compose (`docker compose up`) | One command | Prometheus + Grafana |
 | Production / Azure Container Apps | Managed | OTLP endpoint |
 
 The instrumentation must be built-in, not bolted on — every deployed instance emits metrics without config.
 
-Additionally, the AspNet host needs a zero-infrastructure local metrics path for the Razor Pages dashboard to show runtime metrics (tool invocations, query duration) without requiring a Prometheus scraper.
+**Exception — MCP STDIO host:** The `CodeMemory.Mcp` host (STDIO transport, single-repo CLI) is intentionally excluded from the OTel pipeline. It has no HTTP endpoint to serve `/metrics`, no Prometheus scraper to poll it, and no dashboard to refresh. Adding OTel infrastructure would add ~200ms startup cost for zero benefit. `CodeMemoryMetrics` instruments are still called from MCP tools for correctness — they produce no output when no `MeterProvider` is registered. See `docs/FOLLOWUP.md` (Gap D) for the rationale.
+
+Additionally, the AspNet host needs a zero-infrastructure local metrics path for the Razor Pages dashboard (`RuntimeMetrics.cshtml`) to show both **runtime metrics** (tool invocations, query duration) and **code-analysis metrics** (symbol counts, file counts per repo) without requiring a Prometheus scraper.
 
 ---
 
@@ -32,12 +34,12 @@ Application code
   │         ├─► OTLP Exporter ──► Aspire Dashboard (port 18888)
   │         └─► Prometheus Exporter ──► /metrics (port 8080)
   │                                    │
-  │                              Prometheus (port 9090)
-  │                              polls every 10s
-  │                                    │
-  │                              Grafana (port 3000)
-  │                              refreshes every 15s
-  │
+   │                              Prometheus (port 9090)
+   │                              (scrapes /metrics)
+   │                                    │
+   │                              Grafana (port 3000)
+   │                              (dashboards refresh on interval)
+   │
   └─► Auto-instrumentation (AspNetCore, HttpClient, Runtime)
        └─► (same MeterProvider, same exporters)
 ```
@@ -61,8 +63,8 @@ Defined in `src/CodeMemory/Diagnostics/CodeMemoryMetrics.cs`.
 | Instrument Name | Type | Unit | Description | Recording Location |
 |---|---|---|---|---|
 | `codememory.indexing.duration` | Histogram | ms | Full indexing pass per repo | `IndexingEngine.RunIndexingAsync()` |
-| `codememory.indexing.files_count` | Counter | — | Files indexed per repo | `IndexingEngine.RunIndexingAsync()` |
-| `codememory.indexing.symbols_count` | Counter | — | Symbols stored per repo | `IndexingEngine.RunIndexingAsync()` |
+| `codememory.indexing.files_count` | Histogram | — | Files indexed per repo | `IndexingEngine.RunIndexingAsync()` |
+| `codememory.indexing.symbols_count` | Histogram | — | Symbols stored per repo | `IndexingEngine.RunIndexingAsync()` |
 | `codememory.git.clone.duration` | Histogram | ms | Git clone operations | `CloneIndexService`, `IndexingHostedService` |
 | `codememory.search.query_duration` | Histogram | ms | Semantic search queries | `SemanticSearchService` |
 | `codememory.sql.query_duration` | Histogram | ms | Custom SQL queries | `SqlQueryService` |
@@ -117,12 +119,16 @@ OTLP is available as a side path when `OTEL_EXPORTER_OTLP_ENDPOINT` is set, so m
 
 ### 4. ObservableGauge for state vs Counter/Histogram for events
 
-Repo overview stats (symbol counts, file counts) are **state** — point-in-time snapshots that change only on re-index. `ObservableGauge` with a cached-value callback is the correct instrument:
+Repo overview stats (symbol counts, file counts) are **state** — point-in-time snapshots that change only on re-index. `ObservableGauge` with a cached-value callback is the correct instrument for the OTel/Prometheus path:
 - The value is read on each scrape via a callback that returns the latest cached `RepoMetrics`
 - No accumulation artifacts — on re-index the value is atomically replaced
 - Tagged by `repo` name, supporting multi-repo deployments
 
-Indexing/query/tool metrics are **events** — each occurrence is a discrete observation. `Histogram` captures the distribution (count, sum, min, max). `Counter` captures cumulative totals.
+These same values are also pushed into the local `IMetricsStore` by `RepoMetricsRecorder.RecordAsync()` after each re-index, using `RecordHistogram` — one measurement per re-index, captured with ring-buffer support for the Razor Pages dashboard (see ADR `Web-LocalMetrics-01`).
+
+The `LocalMetricsCollector` (MeterListener) explicitly skips `ObservableGauge<long>` instruments to prevent the 5-second `RecordObservableInstruments()` timer from duplicating these measurements into the local store — the dashboard gets them only from the explicit `RecordAsync` write.
+
+Indexing/query/tool metrics are **events** — each occurrence is a discrete observation. `Histogram` captures the distribution (count, sum, min, max). `Counter` captures cumulative totals. These flow through the `LocalMetricsCollector` MeterListener to `IMetricsStore` automatically.
 
 ### 5. The `CodeMemoryMetrics` static class is the single registration point
 
@@ -184,7 +190,7 @@ No registration needed — `AddMeter("CodeMemory")` picks it up automatically.
 | `src/CodeMemory/Diagnostics/CodeMemoryMetrics.cs` | Instrument declarations on the `CodeMemory` meter |
 | `src/CodeMemory.ServiceDefaults/Extensions.cs` | `ConfigureOpenTelemetry()` — MeterProvider, exporters |
 | `src/CodeMemory.AspNet/Program.cs` | `AddServiceDefaults()`, `MapPrometheusScrapingEndpoint()` toggle |
-| `monitoring/prometheus.yml` | Scrape config — targets `codememory:8080/metrics` every 10s |
+| `monitoring/prometheus.yml` | Scrape config — targets `codememory:8080/metrics` |
 | `monitoring/grafana/datasources/prometheus.yaml` | Auto-provisions Prometheus datasource |
 | `monitoring/grafana/dashboards/dashboards.yaml` | Dashboard provisioning config |
 | `monitoring/grafana/dashboards/codememory.json` | Dashboard panel definitions |
@@ -197,6 +203,7 @@ No registration needed — `AddMeter("CodeMemory")` picks it up automatically.
 - Instrument names MUST follow the `codememory.<domain>.<name>` convention (dot-separated, lowercase).
 - Tag keys MUST use lowercase dot-separated names (`tool`, `host`, `repo`).
 - New host projects MUST call `builder.AddServiceDefaults()` in `Program.cs`.
+  **Exception:** The MCP STDIO host (`CodeMemory.Mcp`) is exempt — see Context §Exception above.
 - The `Prometheus:Enabled` config toggle in `appsettings.json` controls the HTTP scrape endpoint; the Prometheus exporter registration in `ConfigureOpenTelemetry()` is always enabled.
 
 ---
