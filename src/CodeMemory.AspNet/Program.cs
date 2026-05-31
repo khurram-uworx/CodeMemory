@@ -1,6 +1,5 @@
 using CodeMemory.AspNet.Configuration;
 using CodeMemory.AspNet.Registry;
-using CodeMemory.AspNet.Scheduling;
 using CodeMemory.AspNet.Services;
 using CodeMemory.AspNet.Storage;
 using CodeMemory.Indexing;

@@ -1,7 +1,5 @@
 using CodeMemory.AspNet.Configuration;
-using CodeMemory.AspNet.Models;
 using CodeMemory.AspNet.Services;
-using CodeMemory.AspNet.Storage;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using System.Diagnostics.Metrics;

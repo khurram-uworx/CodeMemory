@@ -12,6 +12,8 @@
   <Folder Name="/docs/adr/">
     <File Path="docs/adr/Library-Embeddings-01.md" />
     <File Path="docs/adr/Library-Storage-PgVector-01.md" />
+    <File Path="docs/adr/Observability-01.md" />
+    <File Path="docs/adr/Web-LocalMetrics-01.md" />
     <File Path="docs/adr/Web-Storage-EF-01.md" />
   </Folder>
   <Folder Name="/scripts/">

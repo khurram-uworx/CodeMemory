@@ -1,7 +1,6 @@
 using CodeMemory.AspNet.Configuration;
 using CodeMemory.AspNet.Models;
 using CodeMemory.AspNet.Storage;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.Collections.Concurrent;
 

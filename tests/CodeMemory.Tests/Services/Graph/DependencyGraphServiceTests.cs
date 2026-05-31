@@ -569,9 +569,13 @@ public sealed class DependencyGraphServiceTests : BaseServicesTests
         var testGuid = makeGuid("MyClassTests");
         var testSymbol = new SymbolRecord
         {
-            Id = testGuid, Name = "MyClassTests", Kind = "Class",
-            FilePath = "/tests/MyClassTests.cs", FullName = "MyClassTests",
-            LineStart = 1, LineEnd = 10
+            Id = testGuid,
+            Name = "MyClassTests",
+            Kind = "Class",
+            FilePath = "/tests/MyClassTests.cs",
+            FullName = "MyClassTests",
+            LineStart = 1,
+            LineEnd = 10
         };
         await storage.StoreSymbolsAsync([testSymbol]);
 
@@ -608,9 +612,13 @@ public sealed class DependencyGraphServiceTests : BaseServicesTests
         var loggerGuid = makeGuid("Logger");
         var loggerSymbol = new SymbolRecord
         {
-            Id = loggerGuid, Name = "Logger", Kind = "Class",
-            FilePath = "/src/Logger.cs", FullName = "Logger",
-            LineStart = 1, LineEnd = 10
+            Id = loggerGuid,
+            Name = "Logger",
+            Kind = "Class",
+            FilePath = "/src/Logger.cs",
+            FullName = "Logger",
+            LineStart = 1,
+            LineEnd = 10
         };
         await storage.StoreSymbolsAsync([loggerSymbol]);
 
@@ -646,9 +654,13 @@ public sealed class DependencyGraphServiceTests : BaseServicesTests
         var testGuid = makeGuid("TestClass");
         var testSymbol = new SymbolRecord
         {
-            Id = testGuid, Name = "TestClass", Kind = "Class",
-            FilePath = "/tests/TestClass.cs", FullName = "TestClass",
-            LineStart = 1, LineEnd = 10
+            Id = testGuid,
+            Name = "TestClass",
+            Kind = "Class",
+            FilePath = "/tests/TestClass.cs",
+            FullName = "TestClass",
+            LineStart = 1,
+            LineEnd = 10
         };
         await storage.StoreSymbolsAsync([testSymbol]);
 
@@ -683,18 +695,26 @@ public sealed class DependencyGraphServiceTests : BaseServicesTests
         var execMethodGuid = makeGuid("Service.Execute");
         var execSymbol = new SymbolRecord
         {
-            Id = execMethodGuid, Name = "Service.Execute", Kind = "Method",
-            FilePath = "/src/Service.cs", FullName = "Service.Execute",
-            LineStart = 5, LineEnd = 8
+            Id = execMethodGuid,
+            Name = "Service.Execute",
+            Kind = "Method",
+            FilePath = "/src/Service.cs",
+            FullName = "Service.Execute",
+            LineStart = 5,
+            LineEnd = 8
         };
         await storage.StoreSymbolsAsync([execSymbol]);
 
         var testGuid = makeGuid("ServiceTests");
         var testSymbol = new SymbolRecord
         {
-            Id = testGuid, Name = "ServiceTests", Kind = "Class",
-            FilePath = "/tests/ServiceTests.cs", FullName = "ServiceTests",
-            LineStart = 1, LineEnd = 10
+            Id = testGuid,
+            Name = "ServiceTests",
+            Kind = "Class",
+            FilePath = "/tests/ServiceTests.cs",
+            FullName = "ServiceTests",
+            LineStart = 1,
+            LineEnd = 10
         };
         await storage.StoreSymbolsAsync([testSymbol]);
 
