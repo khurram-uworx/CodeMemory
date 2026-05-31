@@ -111,7 +111,11 @@ builder.Services.AddSingleton<RepoMetricsRecorder>();
 // Local metrics collector (zero-infra runtime metrics, disabled by default)
 builder.Services.Configure<LocalMetricsOptions>(
     builder.Configuration.GetSection(LocalMetricsOptions.SectionName));
-builder.Services.AddSingleton<IMetricsStore, InMemoryMetricsStore>();
+var metricsProvider = builder.Configuration.GetValue<string>("Storage:Provider") ?? "inmemory";
+if (string.Equals(metricsProvider, "sqlite", StringComparison.OrdinalIgnoreCase))
+    builder.Services.AddSingleton<IMetricsStore, SqliteMetricsStore>();
+else
+    builder.Services.AddSingleton<IMetricsStore, InMemoryMetricsStore>();
 var localMetricsEnabled = builder.Configuration.GetValue<bool>($"{LocalMetricsOptions.SectionName}:Enabled");
 if (localMetricsEnabled)
     builder.Services.AddSingleton<LocalMetricsCollector>();

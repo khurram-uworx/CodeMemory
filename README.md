@@ -5,8 +5,17 @@
 
 CodeMemory transforms repositories into queryable intelligence — extracting symbols, relationships, and semantic understanding — and exposing it through MCP tools designed for AI coding agents.
 
-What's new in 0.5 and what's coming next:
-- [Roadmap & Upcoming Releases](https://github.com/khurram-uworx/CodeMemory/issues/21)
+What's new in 0.6:
+- **OpenTelemetry metrics & monitoring** — Prometheus scraping, Grafana dashboards, Aspire Dashboard, Docker Compose monitoring stack
+- **Repository Dashboard** — `RepoMetrics.cshtml` page with runtime metrics, code-analysis metrics (symbol counts, complexity, coupling)
+- **Zero-infrastructure local metrics** — runtime metrics on the dashboard without Prometheus (via `LocalMetricsCollector` + `InMemoryMetricsStore`)
+- **MCP init tool** — `--init` flag creates `.codememory.json` with defaults and adds to `.gitignore`
+- **MCP Prompts & Resources** — guided workflows and structured data endpoints for agents
+- **Container deployment** — Docker Compose with pgvector, Prometheus, Grafana; GitHub Container Registry publishing
+- **SQL engine enhancements** — UNION/INTERSECT/EXCEPT, better JOIN support, composite key handling
+- **Error handling & pagination** — proper MCP tool error patterns, truncation support across tools
+
+What's coming next: [Roadmap](https://github.com/khurram-uworx/CodeMemory/issues/21)
 
 ## When to Use
 

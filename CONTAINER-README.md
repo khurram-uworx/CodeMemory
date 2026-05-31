@@ -67,7 +67,7 @@ docker run -p 4792:8080 \
 
 ## docker-compose
 
-See [docker-compose.yml](https://github.com/khurram-uworx/CodeMemory/blob/main/docker-compose.yml) in the repo for a full stack with PostgreSQL/pgvector, Prometheus, and Grafana.
+See [docker-compose.yml](https://github.com/khurram-uworx/CodeMemory/blob/main/docker-compose.yml) for a full stack with PostgreSQL (pgvector), Prometheus (port 9090), Grafana (port 3000, admin/codememory) with auto-provisioned dashboards, and an Aspire Dashboard (port 18888) for OTLP telemetry.
 
 ## GitHub Package
 
