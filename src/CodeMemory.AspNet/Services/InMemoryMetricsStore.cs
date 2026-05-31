@@ -123,6 +123,14 @@ sealed class InMemoryMetricsStore : IMetricsStore
             lock (state.Lock)
             {
                 state.Last = value;
+
+                if (options.MaxMeasurementsPerTagSet > 0)
+                {
+                    state.Measurements ??= [];
+                    state.Measurements.Enqueue(new MetricMeasurement(value, DateTime.UtcNow));
+                    while (state.Measurements.Count > options.MaxMeasurementsPerTagSet)
+                        state.Measurements.TryDequeue(out _);
+                }
             }
         }
 
@@ -169,11 +177,14 @@ sealed class InMemoryMetricsStore : IMetricsStore
                         result.Add(new MetricValue(
                             Count: null, Sum: null, Min: null, Max: null,
                             Last: state.Last,
-                            Measurements: null,
+                            Measurements: useRing ? state.Measurements?.ToList() : null,
                             Tags: DeserializeTags(tagKey)));
 
                         if (reset)
+                        {
                             state.Last = 0;
+                            if (useRing) state.Measurements = null;
+                        }
                     }
                     else if (IsCounter)
                     {

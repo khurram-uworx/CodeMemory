@@ -18,7 +18,7 @@ The existing OTel pipeline (see ADR `Observability-01`) exports to Prometheus an
 
 ## Decision
 
-**Introduce an `InMemoryMetricsStore` (via `IMetricsStore`) that collects runtime and code-analysis metrics from two sources: (1) a `MeterListener`-based `LocalMetricsCollector` capturing push-based Counter/Histogram instruments, and (2) direct `RecordHistogram` calls from `RepoMetricsRecorder` when repo metrics are computed after indexing. Exposed via `IMetricsStore` for the Razor Pages dashboard. Disabled by default; toggled via `LocalMetrics:Enabled` in `appsettings.json`.**
+**Introduce an `InMemoryMetricsStore` (via `IMetricsStore`) that collects runtime and code-analysis metrics from two sources: (1) a `MeterListener`-based `LocalMetricsCollector` capturing push-based instruments (Counter/Histogram), and (2) direct `IMetricsStore` writes from `RepoMetricsRecorder` when repo metrics are computed after indexing. Exposed via `IMetricsStore` for the Razor Pages dashboard. Disabled by default; toggled via `LocalMetrics:Enabled` in `appsettings.json`.**
 
 ### Architecture
 
@@ -45,8 +45,8 @@ Application code
   │         ├─► OTLP Exporter
   │         └─► Prometheus Exporter
   │
-  └─► RepoMetricsRecorder.RecordAsync()              ← direct push on reindex
-       └─► InMemoryMetricsStore (IMetricsStore)      ← via RecordHistogram
+   └─► RepoMetricsRecorder.RecordAsync()              ← direct push on reindex
+        └─► InMemoryMetricsStore (IMetricsStore)
             └─► (same store as MeterListener above)
 ```
 
@@ -56,23 +56,16 @@ Application code
 
 | Component | Responsibility | Location |
 |---|---|---|
-| `LocalMetricsCollector` | Registers a `MeterListener` for the `CodeMemory` meter; routes `Counter<long>` to `RecordCounter()`, non-gauge instruments to `RecordHistogram()`; skips `ObservableGauge<long>` | `CodeMemory.AspNet.Services` |
-| `RepoMetricsRecorder` | On indexing completion, fetches code-analysis metrics from DB, caches them for ObservableGauge callbacks, and writes them into `IMetricsStore` via `RecordHistogram` | `CodeMemory.AspNet.Services` |
+| `LocalMetricsCollector` | Registers a `MeterListener` for the `CodeMemory` meter; routes push-based instrument measurements to the appropriate `IMetricsStore` methods; skips `ObservableGauge<long>` (handled by `RepoMetricsRecorder`) | `CodeMemory.AspNet.Services` |
+| `RepoMetricsRecorder` | On indexing completion, fetches code-analysis metrics from DB, caches them for ObservableGauge callbacks, and writes them into `IMetricsStore` | `CodeMemory.AspNet.Services` |
 | `InMemoryMetricsStore` | `IMetricsStore` implementation — `ConcurrentDictionary` of instrument states, each with per-tag-set accumulators | `CodeMemory.AspNet.Services` |
-| `IMetricsStore` | Interface — `RecordCounter()`, `RecordHistogram()`, `GetSnapshot()` | `CodeMemory.AspNet.Storage` |
+| `IMetricsStore` | Interface for recording instrument measurements (counter, gauge, histogram) and producing snapshots | `CodeMemory.AspNet.Storage` |
 | `LocalMetricsOptions` | Config — `Enabled` (default `false`), `MaxUniqueTagCombinations`, `MaxMeasurementsPerTagSet` | `CodeMemory.AspNet.Configuration` |
 | `RepoMetricsSnapshot` | Snapshot model — `CollectedAt`, `Instruments`, each with `MetricValue[]` | `CodeMemory.AspNet.Models` |
 
-### Instrument Type Detection
+### Instrument Type Routing
 
-`LocalMetricsCollector.OnLongMeasurement` differentiates between instrument types using pattern matching:
-- `Counter<long>` → `store.RecordCounter()`
-- `ObservableGauge<long>` → **skipped** (repo metrics reach the store via the explicit `RepoMetricsRecorder.RecordAsync()` write instead)
-- All other `long` instruments (e.g., `Histogram<long>`) → `store.RecordHistogram()`
-
-The `is Counter<long>` pattern was initially implemented via `GetGenericTypeDefinition()` but was replaced with the `is` operator to avoid a reflection call on the measurement hot path (see `docs/FOLLOWUP.md` §LocalMetricsCollector per-fix notes).
-
-`OnDoubleMeasurement` routes all double measurements (from `Histogram<double>` instruments) to `store.RecordHistogram()` — no type differentiation needed since the `CodeMemory` meter has no `ObservableGauge<double>` instruments.
+`LocalMetricsCollector` inspects the instrument type at runtime and routes measurements to the appropriate `IMetricsStore` method. `ObservableGauge<long>` instruments are explicitly skipped because repo metrics reach the store through a separate explicit write path (`RepoMetricsRecorder.RecordAsync()`) rather than through the push-based MeterListener — this prevents a double-feed from the periodic `RecordObservableInstruments()` timer.
 
 ### Configuration
 
@@ -152,7 +145,7 @@ The `MeterListener` callback runs on an arbitrary thread-pool thread. Delivery i
 ### Compliance
 
 - New push-based instrument types (Counter/Histogram) added to `CodeMemoryMetrics` are automatically picked up by `LocalMetricsCollector` — no registration needed. New ObservableGauge instruments must be explicitly written to `IMetricsStore` if they should appear on the dashboard
-- `IMetricsStore` implementations MUST handle both `RecordCounter` and `RecordHistogram` even if the current store only has counter instruments
+- `IMetricsStore` implementations MUST handle all instrument types the store supports (counter, gauge, histogram)
 - The `LocalMetrics:Enabled` check MUST happen at startup, not per-measurement — the `MeterListener` is either started or not
 
 ---
