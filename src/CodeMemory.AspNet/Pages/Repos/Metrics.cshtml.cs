@@ -1,7 +1,9 @@
+using CodeMemory.AspNet.Configuration;
 using CodeMemory.AspNet.Registry;
 using CodeMemory.AspNet.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.Extensions.Options;
 
 namespace CodeMemory.AspNet.Pages.Repos;
 
@@ -14,11 +16,13 @@ public sealed class MetricsModel : PageModel
     public string? NotFoundMessage { get; private set; }
     public string? ErrorMessage { get; private set; }
     public RepoMetrics? Metrics { get; private set; }
+    public bool LocalMetricsEnabled { get; }
 
-    public MetricsModel(RepoRegistryService registry, MetricsService metricsService)
+    public MetricsModel(RepoRegistryService registry, MetricsService metricsService, IOptions<LocalMetricsOptions> localMetrics)
     {
         this.registry = registry;
         this.metricsService = metricsService;
+        LocalMetricsEnabled = localMetrics.Value.Enabled;
     }
 
     public async Task<IActionResult> OnGetAsync(string name)

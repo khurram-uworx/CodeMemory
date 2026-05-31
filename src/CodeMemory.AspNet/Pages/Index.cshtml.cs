@@ -22,7 +22,8 @@ public sealed class IndexModel : PageModel
     public int FailedCount { get; private set; }
 
     public Dictionary<string, double?> Progress { get; private set; } = [];
-    public bool CanAddRepo => registryOptions.EnableManualRepoAdd;
+    public bool CanAddRepo => !registryOptions.EnableDemoMode;
+    public bool CanDeleteRepo => !registryOptions.EnableDemoMode;
     public bool LocalMetricsEnabled { get; }
 
     public IndexModel(RepoRegistryService registry, CloneIndexService cloneIndex, NotificationService notifications, RepoRegistryOptions registryOptions, IOptions<LocalMetricsOptions> localMetrics)
@@ -44,6 +45,9 @@ public sealed class IndexModel : PageModel
 
     public async Task<IActionResult> OnPostDeleteAsync(string name)
     {
+        if (registryOptions.EnableDemoMode)
+            return RedirectToPage();
+
         var repo = await registry.GetAsync(name);
         if (repo is null) return NotFound();
 
