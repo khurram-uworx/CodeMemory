@@ -8,77 +8,50 @@ namespace CodeMemory.AspNet.Services;
 
 sealed class InMemoryMetricsStore : IMetricsStore
 {
-    readonly ConcurrentDictionary<string, InstrumentState> instruments = new(StringComparer.Ordinal);
-    readonly LocalMetricsOptions options;
-    readonly ILogger<InMemoryMetricsStore>? logger;
-
-    public InMemoryMetricsStore(IOptions<LocalMetricsOptions> options, ILogger<InMemoryMetricsStore>? logger = null)
+    sealed class TagSetState
     {
-        this.options = options.Value;
-        this.logger = logger;
-    }
+        public long CounterValue;
+        public long Count;
+        public double Sum;
+        public double Min = double.MaxValue;
+        public double Max = double.MinValue;
+        public double Last;
+        public Queue<MetricMeasurement>? Measurements;
+        public readonly object Lock = new();
 
-    public void RecordCounter(string instrumentName, long value, IReadOnlyList<KeyValuePair<string, object?>>? tags)
-    {
-        var state = instruments.GetOrAdd(instrumentName, _ => new InstrumentState(true, options, logger));
-        state.RecordCounter(value, SerializeTags(tags));
-    }
-
-    public void RecordHistogram(string instrumentName, double value, IReadOnlyList<KeyValuePair<string, object?>>? tags)
-    {
-        var state = instruments.GetOrAdd(instrumentName, _ => new InstrumentState(false, options, logger));
-        state.RecordHistogram(value, SerializeTags(tags));
-    }
-
-    public void RecordGauge(string instrumentName, double value, IReadOnlyList<KeyValuePair<string, object?>>? tags)
-    {
-        var state = instruments.GetOrAdd(instrumentName, _ => new InstrumentState(isCounter: false, isGauge: true, options, logger));
-        state.RecordGauge(value, SerializeTags(tags));
-    }
-
-    public void RemoveInstrumentTags(string instrumentName, IReadOnlyList<KeyValuePair<string, object?>>? tags)
-    {
-        if (instruments.TryGetValue(instrumentName, out var state))
-            state.RemoveTagSet(SerializeTags(tags));
-    }
-
-    public RepoMetricsSnapshot GetSnapshot(bool reset = false)
-    {
-        var snapshotTime = DateTime.UtcNow;
-        var instrumentMetrics = new List<InstrumentMetric>(instruments.Count);
-
-        foreach (var (name, state) in instruments)
+        public TagSetState(bool isCounter)
         {
-            var values = state.ReadAndReset(reset);
-            instrumentMetrics.Add(new InstrumentMetric(
-                name,
-                state.IsCounter ? "counter" : state.IsGauge ? "gauge" : "histogram",
-                values));
+            if (isCounter)
+                CounterValue = 0;
         }
-
-        return new RepoMetricsSnapshot(snapshotTime, instrumentMetrics);
-    }
-
-    static string SerializeTags(IReadOnlyList<KeyValuePair<string, object?>>? tags)
-    {
-        if (tags is null || tags.Count == 0)
-            return "";
-
-        var sorted = tags
-            .Select(kvp => $"{kvp.Key}={kvp.Value?.ToString() ?? ""}")
-            .OrderBy(x => x, StringComparer.Ordinal);
-
-        return string.Join("|", sorted);
     }
 
     sealed class InstrumentState
     {
-        public bool IsCounter { get; }
-        public bool IsGauge { get; }
+        static IReadOnlyList<KeyValuePair<string, string>>? deserializeTags(string tagKey)
+        {
+            if (string.IsNullOrEmpty(tagKey))
+                return null;
+
+            return tagKey
+                .Split('|')
+                .Select(p =>
+                {
+                    var eq = p.IndexOf('=');
+                    return eq >= 0
+                        ? new KeyValuePair<string, string>(p[..eq], p[(eq + 1)..])
+                        : new KeyValuePair<string, string>(p, "");
+                })
+                .ToList();
+        }
+
         readonly ConcurrentDictionary<string, TagSetState> tagSets = new(StringComparer.Ordinal);
         readonly LocalMetricsOptions options;
         readonly ILogger? logger;
         long tagComboCount;
+
+        public bool IsCounter { get; }
+        public bool IsGauge { get; }
 
         public InstrumentState(bool isCounter, LocalMetricsOptions options, ILogger? logger)
             : this(isCounter, false, options, logger) { }
@@ -89,6 +62,29 @@ sealed class InMemoryMetricsStore : IMetricsStore
             IsGauge = isGauge;
             this.options = options;
             this.logger = logger;
+        }
+
+        TagSetState? getOrAddTagSet(string tagKey)
+        {
+            if (tagSets.TryGetValue(tagKey, out var existing))
+                return existing;
+
+            if (Interlocked.Read(ref tagComboCount) >= options.MaxUniqueTagCombinations)
+            {
+                logger?.LogWarning(
+                    "MaxUniqueTagCombinations ({Limit}) reached for instrument. Dropping tag set: {TagKey}",
+                    options.MaxUniqueTagCombinations, tagKey);
+                return null;
+            }
+
+            var newState = new TagSetState(IsCounter);
+            if (tagSets.TryAdd(tagKey, newState))
+            {
+                Interlocked.Increment(ref tagComboCount);
+                return newState;
+            }
+
+            return tagSets.TryGetValue(tagKey, out existing) ? existing : null;
         }
 
         public void RecordCounter(long value, string tagKey)
@@ -178,7 +174,7 @@ sealed class InMemoryMetricsStore : IMetricsStore
                             Count: null, Sum: null, Min: null, Max: null,
                             Last: state.Last,
                             Measurements: useRing ? state.Measurements?.ToList() : null,
-                            Tags: DeserializeTags(tagKey)));
+                            Tags: deserializeTags(tagKey)));
 
                         if (reset)
                         {
@@ -193,7 +189,7 @@ sealed class InMemoryMetricsStore : IMetricsStore
                             Count: count,
                             Sum: null, Min: null, Max: null, Last: null,
                             Measurements: useRing ? state.Measurements?.ToList() : null,
-                            Tags: DeserializeTags(tagKey)));
+                            Tags: deserializeTags(tagKey)));
 
                         if (reset)
                         {
@@ -210,7 +206,7 @@ sealed class InMemoryMetricsStore : IMetricsStore
                             Max: state.Count > 0 ? state.Max : null,
                             Last: state.Count > 0 ? state.Last : null,
                             Measurements: useRing ? state.Measurements?.ToList() : null,
-                            Tags: DeserializeTags(tagKey)));
+                            Tags: deserializeTags(tagKey)));
 
                         if (reset)
                         {
@@ -227,63 +223,68 @@ sealed class InMemoryMetricsStore : IMetricsStore
 
             return result;
         }
-
-        TagSetState? getOrAddTagSet(string tagKey)
-        {
-            if (tagSets.TryGetValue(tagKey, out var existing))
-                return existing;
-
-            if (Interlocked.Read(ref tagComboCount) >= options.MaxUniqueTagCombinations)
-            {
-                logger?.LogWarning(
-                    "MaxUniqueTagCombinations ({Limit}) reached for instrument. Dropping tag set: {TagKey}",
-                    options.MaxUniqueTagCombinations, tagKey);
-                return null;
-            }
-
-            var newState = new TagSetState(IsCounter);
-            if (tagSets.TryAdd(tagKey, newState))
-            {
-                Interlocked.Increment(ref tagComboCount);
-                return newState;
-            }
-
-            return tagSets.TryGetValue(tagKey, out existing) ? existing : null;
-        }
-
-        static IReadOnlyList<KeyValuePair<string, string>>? DeserializeTags(string tagKey)
-        {
-            if (string.IsNullOrEmpty(tagKey))
-                return null;
-
-            return tagKey
-                .Split('|')
-                .Select(p =>
-                {
-                    var eq = p.IndexOf('=');
-                    return eq >= 0
-                        ? new KeyValuePair<string, string>(p[..eq], p[(eq + 1)..])
-                        : new KeyValuePair<string, string>(p, "");
-                })
-                .ToList();
-        }
     }
 
-    sealed class TagSetState
+    static string serializeTags(IReadOnlyList<KeyValuePair<string, object?>>? tags)
     {
-        public long CounterValue;
-        public long Count;
-        public double Sum;
-        public double Min = double.MaxValue;
-        public double Max = double.MinValue;
-        public double Last;
-        public Queue<MetricMeasurement>? Measurements;
-        public readonly object Lock = new();
+        if (tags is null || tags.Count == 0)
+            return "";
 
-        public TagSetState(bool isCounter)
+        var sorted = tags
+            .Select(kvp => $"{kvp.Key}={kvp.Value?.ToString() ?? ""}")
+            .OrderBy(x => x, StringComparer.Ordinal);
+
+        return string.Join("|", sorted);
+    }
+
+    readonly ConcurrentDictionary<string, InstrumentState> instruments = new(StringComparer.Ordinal);
+    readonly LocalMetricsOptions options;
+    readonly ILogger<InMemoryMetricsStore>? logger;
+
+    public InMemoryMetricsStore(IOptions<LocalMetricsOptions> options, ILogger<InMemoryMetricsStore>? logger = null)
+    {
+        this.options = options.Value;
+        this.logger = logger;
+    }
+
+    public void RecordCounter(string instrumentName, long value, IReadOnlyList<KeyValuePair<string, object?>>? tags)
+    {
+        var state = instruments.GetOrAdd(instrumentName, _ => new InstrumentState(true, options, logger));
+        state.RecordCounter(value, serializeTags(tags));
+    }
+
+    public void RecordHistogram(string instrumentName, double value, IReadOnlyList<KeyValuePair<string, object?>>? tags)
+    {
+        var state = instruments.GetOrAdd(instrumentName, _ => new InstrumentState(false, options, logger));
+        state.RecordHistogram(value, serializeTags(tags));
+    }
+
+    public void RecordGauge(string instrumentName, double value, IReadOnlyList<KeyValuePair<string, object?>>? tags)
+    {
+        var state = instruments.GetOrAdd(instrumentName, _ => new InstrumentState(isCounter: false, isGauge: true, options, logger));
+        state.RecordGauge(value, serializeTags(tags));
+    }
+
+    public void RemoveInstrumentTags(string instrumentName, IReadOnlyList<KeyValuePair<string, object?>>? tags)
+    {
+        if (instruments.TryGetValue(instrumentName, out var state))
+            state.RemoveTagSet(serializeTags(tags));
+    }
+
+    public RepoMetricsSnapshot GetSnapshot(bool reset = false)
+    {
+        var snapshotTime = DateTime.UtcNow;
+        var instrumentMetrics = new List<InstrumentMetric>(instruments.Count);
+
+        foreach (var (name, state) in instruments)
         {
-            if (isCounter)
-                CounterValue = 0;
+            var values = state.ReadAndReset(reset);
+            instrumentMetrics.Add(new InstrumentMetric(
+                name,
+                state.IsCounter ? "counter" : state.IsGauge ? "gauge" : "histogram",
+                values));
         }
+
+        return new RepoMetricsSnapshot(snapshotTime, instrumentMetrics);
     }
 }
