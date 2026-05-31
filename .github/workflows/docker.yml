@@ -33,3 +33,20 @@ jobs:
           file: src/CodeMemory.AspNet/Dockerfile
           push: true
           tags: ghcr.io/khurram-uworx/codememory:${{ inputs.image_tag }}
+
+      - name: Update GHCR package README
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $content = [Convert]::ToBase64String([IO.File]::ReadAllBytes("${{ github.workspace }}\CONTAINER-README.md"))
+          $body = @{ readme = $content } | ConvertTo-Json -Compress
+          $uri = if ("${{ github.repository_owner }}" -match "/") {
+            "https://api.github.com/orgs/${{ github.repository_owner }}/packages/container/codememory"
+          } else {
+            "https://api.github.com/user/packages/container/codememory"
+          }
+          Invoke-RestMethod -Method Put -Uri $uri -Body $body -ContentType "application/json" -Headers @{
+            Authorization = "Bearer $env:GH_TOKEN"
+            Accept        = "application/vnd.github.v3+json"
+          }
