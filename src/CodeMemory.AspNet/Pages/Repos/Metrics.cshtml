@@ -25,6 +25,12 @@
         <a asp-page="/Repos/Components" asp-route-name="@Model.Repo?.Name" class="btn btn-outline-info me-2">
             <i class="bi bi-boxes"></i> Components
         </a>
+        @if (Model.LocalMetricsEnabled)
+        {
+            <a asp-page="/Repos/RepoMetrics" asp-route-name="@Model.Repo?.Name" class="btn btn-outline-warning me-2">
+                ⏱ Repo Metrics
+            </a>
+        }
         <a asp-page="/Index" class="btn btn-secondary">
             <i class="bi bi-arrow-left"></i> Back
         </a>

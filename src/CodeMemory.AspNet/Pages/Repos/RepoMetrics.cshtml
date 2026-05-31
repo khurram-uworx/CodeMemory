@@ -1,32 +1,48 @@
-@page "/Repos/{name}/RuntimeMetrics"
-@model CodeMemory.AspNet.Pages.Repos.RuntimeMetricsModel
+@page "/Repos/{name}/RepoMetrics"
+@model CodeMemory.AspNet.Pages.Repos.RepoMetricsModel
 @using System.Text.Json
 @using System.Text.Json.Serialization
 @{
-    ViewData["Title"] = Model.Repo?.Name ?? "Runtime Metrics";
+    ViewData["Title"] = Model.Repo?.Name ?? "Repo Metrics";
     var json = new JsonSerializerOptions
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
+
+    var repoGauges = Model.RepoSnapshot?.Instruments
+        .Where(i => i.Name.StartsWith("codememory.repo.")).ToList() ?? [];
+    string? repoChartJson = null;
+    if (repoGauges.Count > 0)
+    {
+        var chartSeries = repoGauges.OrderBy(i => i.Name).Select(instr =>
+        {
+            var key = instr.Name.Replace("codememory.repo.", "");
+            var mv = instr.Values.FirstOrDefault();
+            var meas = mv?.Measurements?.OrderBy(m => m.Timestamp)
+                .Select(m => new { value = m.Value, timestamp = m.Timestamp.ToString("o") }).ToList() ?? [];
+            return new { key, last = mv?.Last ?? meas.LastOrDefault()?.value ?? 0, measurements = meas };
+        }).Where(d => d.measurements.Count > 0).ToList();
+        repoChartJson = JsonSerializer.Serialize(chartSeries, json);
+    }
 }
 
 <nav aria-label="breadcrumb">
     <ol class="breadcrumb">
         <li class="breadcrumb-item"><a asp-page="/Index">Repos</a></li>
         <li class="breadcrumb-item"><a asp-page="/Repos/Components" asp-route-name="@Model.Repo?.Name">@Model.Repo?.Name</a></li>
-        <li class="breadcrumb-item active">Runtime Metrics</li>
+        <li class="breadcrumb-item active">Repo Metrics</li>
     </ol>
 </nav>
 
 <div class="d-flex justify-content-between align-items-center mb-3">
-    <h1>@Model.Repo?.Name<span class="text-muted fs-4 ms-2">Runtime Metrics</span></h1>
+    <h1>@Model.Repo?.Name<span class="text-muted fs-4 ms-2">Repo Metrics</span></h1>
     <div>
         <a asp-page="/Repos/Components" asp-route-name="@Model.Repo?.Name" class="btn btn-outline-info me-2">
             <i class="bi bi-boxes"></i> Components
         </a>
         <a asp-page="/Repos/Metrics" asp-route-name="@Model.Repo?.Name" class="btn btn-outline-warning me-2">
-            Metrics
+            📊 Metrics
         </a>
         <a asp-page="/Index" class="btn btn-secondary">
             <i class="bi bi-arrow-left"></i> Back
@@ -41,7 +57,7 @@
 else if (!Model.IsEnabled)
 {
     <div class="alert alert-info">
-        <h5 class="alert-heading"><i class="bi bi-info-circle"></i> Runtime Metrics Not Available</h5>
+        <h5 class="alert-heading"><i class="bi bi-info-circle"></i> Repo Metrics Not Available</h5>
         <p class="mb-0">
             Local (zero-infrastructure) metrics are not enabled.
             Set <code>LocalMetrics:Enabled: true</code> in <code>appsettings.json</code> to collect and display runtime metrics.
@@ -52,7 +68,7 @@ else if (Model.RepoSnapshot is null)
 {
     <div class="alert alert-info">
         <h5 class="alert-heading"><i class="bi bi-graph-up"></i> No Metrics Yet</h5>
-        <p class="mb-0">No runtime metrics have been recorded for this repository. Metrics appear after indexing completes and tools are invoked.</p>
+        <p class="mb-0">No repo metrics have been recorded for this repository. Metrics appear after indexing completes and tools are invoked.</p>
     </div>
 }
 else
@@ -70,7 +86,6 @@ else
     var searchInstr = snapshot.Instruments.FirstOrDefault(i => i.Name == "codememory.search.query_duration");
     var sqlInstr = snapshot.Instruments.FirstOrDefault(i => i.Name == "codememory.sql.query_duration");
     var cloneInstr = snapshot.Instruments.FirstOrDefault(i => i.Name == "codememory.git.clone.duration");
-    var repoGauges = snapshot.Instruments.Where(i => i.Name.StartsWith("codememory.repo.")).ToList();
 
     @* ── 1. Tool Invocations ──────────────────────────────── *@
     if (toolInstr is not null && toolInstr.Values.Count > 0)
@@ -267,17 +282,20 @@ else
     @* ── 5. Repo Overview Gauges ──────────────────────────── *@
     if (repoGauges.Count > 0)
     {
+        var hasTrend = repoGauges.Any(i => (i.Values.FirstOrDefault()?.Measurements?.Count ?? 0) > 1);
+
         <div class="card mb-4">
             <div class="card-header">
                 <h4 class="mb-0">Repository Overview</h4>
             </div>
             <div class="card-body">
-                <div class="row g-3">
+                <div class="row g-2 mb-3" id="metricCards">
                     @foreach (var instr in repoGauges.OrderBy(i => i.Name))
                     {
-                        var v = instr.Values.FirstOrDefault();
-                        var displayName = instr.Name.Replace("codememory.repo.", "");
-                        var color = displayName switch
+                        var key = instr.Name.Replace("codememory.repo.", "");
+                        var mv = instr.Values.FirstOrDefault();
+                        var lastVal = mv?.Last ?? mv?.Measurements?.LastOrDefault()?.Value ?? 0;
+                        var color = key switch
                         {
                             "classes" => "text-info",
                             "methods" => "text-success",
@@ -289,16 +307,27 @@ else
                             "total_relationships" => "text-danger",
                             _ => ""
                         };
-                        <div class="col-6 col-md-3 col-xl mb-3">
+                        <div class="col-6 col-md-3 col-xl metric-card" data-metric="@key" role="button" style="cursor:pointer;" title="Click to toggle chart series">
                             <div class="card text-bg-dark h-100">
-                                <div class="card-body text-center">
-                                    <div class="fs-1 fw-bold @color">@(v?.Last?.ToString("N0") ?? "0")</div>
-                                    <div class="small text-secondary">@displayName</div>
+                                <div class="card-body text-center py-2">
+                                    <div class="fs-3 fw-bold @color">@lastVal.ToString("N0")</div>
+                                    <div class="small text-secondary">@key</div>
                                 </div>
                             </div>
                         </div>
                     }
                 </div>
+
+                @if (hasTrend)
+                {
+                    <div style="position:relative; height:350px;">
+                        <canvas id="repoTrendChart"></canvas>
+                    </div>
+                }
+                else if (repoGauges.Any(i => i.Values.FirstOrDefault()?.Measurements?.Count > 0))
+                {
+                    <p class="text-muted small mb-0">Collect more data points to see the trend chart. Metrics are recorded after each indexing pass.</p>
+                }
             </div>
         </div>
     }
@@ -376,4 +405,118 @@ else
             </div>
         </div>
     }
+}
+
+@section Scripts
+{
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <script>
+        (function () {
+            var rawData = @Html.Raw(repoChartJson ?? "[]");
+            if (!rawData || rawData.length === 0) return;
+
+            var metricColors = {
+                total_symbols: '#0d6efd',
+                total_files: '#198754',
+                classes: '#0dcaf0',
+                methods: '#ffc107',
+                interfaces: '#fd7e14',
+                properties: '#6f42c1',
+                fields: '#6c757d',
+                total_relationships: '#dc3545'
+            };
+
+            var leftAxis = new Set(['total_symbols', 'total_files', 'total_relationships']);
+
+            var toSec = function (ts) {
+                return new Date(Math.round(new Date(ts).getTime() / 1000) * 1000).toISOString();
+            };
+
+            var allTimestamps = new Set();
+            rawData.forEach(function (s) {
+                s.measurements.forEach(function (m) {
+                    allTimestamps.add(toSec(m.timestamp));
+                });
+            });
+            var labels = Array.from(allTimestamps).sort();
+
+            var datasets = rawData.map(function (s) {
+                return {
+                    label: s.key,
+                    data: labels.map(function (ts) {
+                        var m = s.measurements.find(function (a) { return toSec(a.timestamp) === ts; });
+                        return m ? m.value : null;
+                    }),
+                    borderColor: metricColors[s.key] || '#adb5bd',
+                    backgroundColor: metricColors[s.key] || '#adb5bd',
+                    borderWidth: 2,
+                    pointRadius: 3,
+                    pointHoverRadius: 5,
+                    tension: 0.1,
+                    spanGaps: false,
+                    yAxisID: leftAxis.has(s.key) ? 'y' : 'y1'
+                };
+            });
+
+            var ctx = document.getElementById('repoTrendChart');
+            if (!ctx) return;
+
+            var chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels.map(function (ts) {
+                        var d = new Date(ts);
+                        return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+                    }),
+                    datasets: datasets
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: {
+                        legend: { position: 'bottom' },
+                        tooltip: {
+                            callbacks: {
+                                title: function (items) { return new Date(labels[items[0].dataIndex]).toLocaleString(); }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: { display: false },
+                            ticks: { maxRotation: 45, maxTicksLimit: 15 }
+                        },
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            title: { display: true, text: 'Symbols / Files / Relationships' },
+                            beginAtZero: true
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            title: { display: true, text: 'Classes / Methods / etc.' },
+                            beginAtZero: true,
+                            grid: { drawOnChartArea: false }
+                        }
+                    }
+                }
+            });
+
+            document.querySelectorAll('.metric-card').forEach(function (card) {
+                card.addEventListener('click', function () {
+                    var metric = this.dataset.metric;
+                    var ds = chart.data.datasets.find(function (d) { return d.label === metric; });
+                    if (ds) {
+                        ds.hidden = !ds.hidden;
+                        chart.update();
+                        this.classList.toggle('opacity-50');
+                    }
+                });
+            });
+        })();
+    </script>
 }

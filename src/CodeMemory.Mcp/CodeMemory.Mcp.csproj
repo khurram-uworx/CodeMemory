@@ -5,9 +5,9 @@
     <OutputType>Exe</OutputType>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Version>0.5.7</Version>
-    <FileVersion>0.5.7.0</FileVersion>
-    <InformationalVersion>0.5.7</InformationalVersion>
+    <Version>0.5.8</Version>
+    <FileVersion>0.5.8.0</FileVersion>
+    <InformationalVersion>0.5.8</InformationalVersion>
 
     <Description>CodeMemory MCP server — exposes repository intelligence as MCP tools over STDIO transport for AI coding agents.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>

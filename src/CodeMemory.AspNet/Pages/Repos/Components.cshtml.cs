@@ -1,8 +1,10 @@
+using CodeMemory.AspNet.Configuration;
 using CodeMemory.AspNet.Registry;
 using CodeMemory.Storage;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace CodeMemory.AspNet.Pages.Repos;
 
@@ -22,9 +24,10 @@ public sealed class ComponentsModel : PageModel
     public Repositories? Repo { get; private set; }
     public string? NotFoundMessage { get; private set; }
     public List<ComponentRow> Components { get; private set; } = [];
+    public bool LocalMetricsEnabled { get; }
 
-    public ComponentsModel(RepoRegistryService registry, IDbContextFactory<RepoRegistryDbContext> dbFactory)
-        => (this.registry, this.dbFactory) = (registry, dbFactory);
+    public ComponentsModel(RepoRegistryService registry, IDbContextFactory<RepoRegistryDbContext> dbFactory, IOptions<LocalMetricsOptions> localMetrics)
+        => (this.registry, this.dbFactory, LocalMetricsEnabled) = (registry, dbFactory, localMetrics.Value.Enabled);
 
     async Task loadComponentsAsync(int repoId)
     {

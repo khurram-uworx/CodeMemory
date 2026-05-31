@@ -9,7 +9,7 @@ using Microsoft.Extensions.Options;
 
 namespace CodeMemory.AspNet.Pages.Repos;
 
-public sealed class RuntimeMetricsModel : PageModel
+public sealed class RepoMetricsModel : PageModel
 {
     readonly RepoRegistryService registry;
     readonly IMetricsStore metricsStore;
@@ -18,10 +18,10 @@ public sealed class RuntimeMetricsModel : PageModel
     public Repositories? Repo { get; private set; }
     public string? NotFoundMessage { get; private set; }
     public bool IsEnabled { get; private set; }
-    public RuntimeMetricsSnapshot? AllSnapshot { get; private set; }
-    public RuntimeMetricsSnapshot? RepoSnapshot { get; private set; }
+    public RepoMetricsSnapshot? AllSnapshot { get; private set; }
+    public RepoMetricsSnapshot? RepoSnapshot { get; private set; }
 
-    public RuntimeMetricsModel(
+    public RepoMetricsModel(
         RepoRegistryService registry,
         IMetricsStore metricsStore,
         IOptions<LocalMetricsOptions> options)
@@ -50,7 +50,7 @@ public sealed class RuntimeMetricsModel : PageModel
         return Page();
     }
 
-    static RuntimeMetricsSnapshot? FilterByRepo(RuntimeMetricsSnapshot snapshot, string repoName)
+    static RepoMetricsSnapshot? FilterByRepo(RepoMetricsSnapshot snapshot, string repoName)
     {
         var filtered = new List<InstrumentMetric>(snapshot.Instruments.Count);
 
@@ -65,7 +65,7 @@ public sealed class RuntimeMetricsModel : PageModel
         }
 
         return filtered.Count > 0
-            ? new RuntimeMetricsSnapshot(snapshot.CollectedAt, filtered)
+            ? new RepoMetricsSnapshot(snapshot.CollectedAt, filtered)
             : null;
     }
 

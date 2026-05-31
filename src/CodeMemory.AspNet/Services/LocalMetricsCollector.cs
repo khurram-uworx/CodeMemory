@@ -26,7 +26,7 @@ sealed class LocalMetricsCollector : IDisposable
 
     public bool IsEnabled => options.Enabled;
 
-    public RuntimeMetricsSnapshot? GetSnapshot(bool reset = false)
+    public RepoMetricsSnapshot? GetSnapshot(bool reset = false)
         => IsEnabled ? store.GetSnapshot(reset) : null;
 
     void Start()

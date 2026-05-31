@@ -320,6 +320,128 @@ public sealed class InMemoryMetricsStoreTests
         var histValue = snapshot.Instruments.First(i => i.Name == "concurrent.histogram");
         Assert.That(histValue.Values[0].Count, Is.EqualTo(400));
     }
+
+    [Test]
+    public void RecordGauge_SingleUpdate_ReflectedInSnapshot()
+    {
+        var store = CreateStore();
+        store.RecordGauge("test.gauge", 42, null);
+
+        var snapshot = store.GetSnapshot();
+        Assert.That(snapshot.Instruments, Has.Count.EqualTo(1));
+        Assert.That(snapshot.Instruments[0].Name, Is.EqualTo("test.gauge"));
+        Assert.That(snapshot.Instruments[0].InstrumentType, Is.EqualTo("gauge"));
+        Assert.That(snapshot.Instruments[0].Values, Has.Count.EqualTo(1));
+        Assert.That(snapshot.Instruments[0].Values[0].Last, Is.EqualTo(42));
+        Assert.That(snapshot.Instruments[0].Values[0].Count, Is.Null);
+        Assert.That(snapshot.Instruments[0].Values[0].Sum, Is.Null);
+        Assert.That(snapshot.Instruments[0].Values[0].Min, Is.Null);
+    }
+
+    [Test]
+    public void RecordGauge_MultipleUpdates_LastValuePreserved()
+    {
+        var store = CreateStore();
+        store.RecordGauge("test.gauge", 10, null);
+        store.RecordGauge("test.gauge", 20, null);
+        store.RecordGauge("test.gauge", 30, null);
+
+        var values = store.GetSnapshot().Instruments[0].Values[0];
+        Assert.That(values.Last, Is.EqualTo(30));
+    }
+
+    [Test]
+    public void RecordGauge_WithRingBuffer_CapturesMeasurements()
+    {
+        var options = new LocalMetricsOptions { Enabled = true, MaxMeasurementsPerTagSet = 10 };
+        var store = CreateStore(options);
+
+        store.RecordGauge("test.gauge", 100, null);
+        store.RecordGauge("test.gauge", 200, null);
+        store.RecordGauge("test.gauge", 300, null);
+
+        var values = store.GetSnapshot().Instruments[0].Values[0];
+        Assert.That(values.Last, Is.EqualTo(300));
+        Assert.That(values.Measurements, Is.Not.Null);
+        Assert.That(values.Measurements, Has.Count.EqualTo(3));
+        Assert.That(values.Measurements[0].Value, Is.EqualTo(100));
+        Assert.That(values.Measurements[2].Value, Is.EqualTo(300));
+    }
+
+    [Test]
+    public void RecordGauge_WithRingBuffer_TrimsToCapacity()
+    {
+        var options = new LocalMetricsOptions { Enabled = true, MaxMeasurementsPerTagSet = 2 };
+        var store = CreateStore(options);
+
+        store.RecordGauge("test.gauge", 1, null);
+        store.RecordGauge("test.gauge", 2, null);
+        store.RecordGauge("test.gauge", 3, null);
+
+        var values = store.GetSnapshot().Instruments[0].Values[0];
+        Assert.That(values.Measurements, Has.Count.EqualTo(2));
+        Assert.That(values.Measurements[0].Value, Is.EqualTo(2));
+        Assert.That(values.Measurements[1].Value, Is.EqualTo(3));
+    }
+
+    [Test]
+    public void RecordGauge_WithoutRingBuffer_NoMeasurements()
+    {
+        var options = new LocalMetricsOptions { Enabled = true, MaxMeasurementsPerTagSet = 0 };
+        var store = CreateStore(options);
+
+        store.RecordGauge("test.gauge", 100, null);
+        store.RecordGauge("test.gauge", 200, null);
+
+        var values = store.GetSnapshot().Instruments[0].Values[0];
+        Assert.That(values.Last, Is.EqualTo(200));
+        Assert.That(values.Measurements, Is.Null);
+    }
+
+    [Test]
+    public void RecordGauge_WithTags_Captured()
+    {
+        var store = CreateStore();
+        store.RecordGauge("test.gauge", 42, [new("repo", "myrepo")]);
+
+        var values = store.GetSnapshot().Instruments[0].Values[0];
+        Assert.That(values.Last, Is.EqualTo(42));
+        Assert.That(values.Tags, Is.Not.Null);
+        Assert.That(values.Tags[0], Is.EqualTo(new KeyValuePair<string, string>("repo", "myrepo")));
+    }
+
+    [Test]
+    public void RecordGauge_WithReset_ClearsLastAndMeasurements()
+    {
+        var options = new LocalMetricsOptions { Enabled = true, MaxMeasurementsPerTagSet = 10 };
+        var store = CreateStore(options);
+
+        store.RecordGauge("test.gauge", 100, null);
+        store.RecordGauge("test.gauge", 200, null);
+
+        var snapshot1 = store.GetSnapshot(reset: true);
+        var gauge1 = snapshot1.Instruments.First(i => i.Name == "test.gauge");
+        Assert.That(gauge1.Values[0].Last, Is.EqualTo(200));
+        Assert.That(gauge1.Values[0].Measurements, Has.Count.EqualTo(2));
+
+        var snapshot2 = store.GetSnapshot();
+        var gauge2 = snapshot2.Instruments.First(i => i.Name == "test.gauge");
+        Assert.That(gauge2.Values[0].Last, Is.EqualTo(0));
+        Assert.That(gauge2.Values[0].Measurements, Is.Null);
+    }
+
+    [Test]
+    public void RecordGauge_WithoutReset_PreservesValues()
+    {
+        var store = CreateStore();
+        store.RecordGauge("test.gauge", 42, null);
+
+        var snapshot1 = store.GetSnapshot(reset: false);
+        var snapshot2 = store.GetSnapshot(reset: false);
+
+        Assert.That(snapshot1.Instruments[0].Values[0].Last, Is.EqualTo(42));
+        Assert.That(snapshot2.Instruments[0].Values[0].Last, Is.EqualTo(42));
+    }
 }
 
 public sealed class LocalMetricsCollectorPipelineTests

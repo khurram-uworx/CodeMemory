@@ -6,6 +6,6 @@ public sealed record RepoRegistryOptions
 
     public string CloneBasePath { get; init; } = "./cloned-repos";
     public int GitCommandTimeoutSeconds { get; init; } = 300;
-    public bool EnableManualRepoAdd { get; init; } = true;
+    public bool EnableDemoMode { get; init; } = false;
     public string? RebuildCron { get; init; }
 }

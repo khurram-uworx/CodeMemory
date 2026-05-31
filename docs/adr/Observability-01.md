@@ -16,7 +16,7 @@ The instrumentation must be built-in, not bolted on — every deployed instance 
 
 **Exception — MCP STDIO host:** The `CodeMemory.Mcp` host (STDIO transport, single-repo CLI) is intentionally excluded from the OTel pipeline. It has no HTTP endpoint to serve `/metrics`, no Prometheus scraper to poll it, and no dashboard to refresh. Adding OTel infrastructure would add ~200ms startup cost for zero benefit. `CodeMemoryMetrics` instruments are still called from MCP tools for correctness — they produce no output when no `MeterProvider` is registered. See `docs/FOLLOWUP.md` (Gap D) for the rationale.
 
-Additionally, the AspNet host needs a zero-infrastructure local metrics path for the Razor Pages dashboard (`RuntimeMetrics.cshtml`) to show both **runtime metrics** (tool invocations, query duration) and **code-analysis metrics** (symbol counts, file counts per repo) without requiring a Prometheus scraper.
+Additionally, the AspNet host needs a zero-infrastructure local metrics path for the Razor Pages dashboard (`RepoMetrics.cshtml`) to show both **repo metrics** (tool invocations, query duration) and **code-analysis metrics** (symbol counts, file counts per repo) without requiring a Prometheus scraper.
 
 ---
 

@@ -33,6 +33,10 @@ CodeMemory is NOT: an IDE, a chat assistant, a code generator, or a standalone A
 - **Extensibility** — New features MUST extend the MCP tool surface, reuse existing abstractions, and not introduce parallel frameworks
 - **Document** — Record reasoning for non-standard decisions
 
+### ADR Style
+
+ADRs (Architecture Decision Records) should describe **what** the system does at an architectural level and **why**, without pinning down implementation method names, parameter types, or class signatures that can drift during implementation. Include intent, constraints, and tradeoffs; leave concrete API surface to the code. If an ADR contradicts the implementation, update the ADR toward the abstract intent — the implementation is the source of truth for specifics.
+
 ---
 
 ## Long-Term Vision

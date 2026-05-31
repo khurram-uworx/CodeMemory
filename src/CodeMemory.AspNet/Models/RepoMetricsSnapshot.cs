@@ -1,6 +1,6 @@
 namespace CodeMemory.AspNet.Models;
 
-public sealed record RuntimeMetricsSnapshot(
+public sealed record RepoMetricsSnapshot(
     DateTime CollectedAt,
     IReadOnlyList<InstrumentMetric> Instruments
 );

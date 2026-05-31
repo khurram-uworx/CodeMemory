@@ -141,7 +141,7 @@ else
                             </a>
                             @if (Model.LocalMetricsEnabled)
                             {
-                                <a asp-page="/Repos/RuntimeMetrics" asp-route-name="@repo.Name" class="btn btn-sm btn-outline-info" title="Runtime Metrics">
+                                <a asp-page="/Repos/RepoMetrics" asp-route-name="@repo.Name" class="btn btn-sm btn-outline-info" title="Repo Metrics">
                                     ⏱
                                 </a>
                             }
@@ -151,13 +151,16 @@ else
                                     <i class="bi bi-arrow-clockwise"></i>
                                 </button>
                             </form>
-                            <form method="post" asp-page-handler="Delete" class="d-inline"
-                                  onsubmit="return confirm('Delete repo @repo.Name? This will remove all indexed data.')">
-                                <input type="hidden" name="name" value="@repo.Name" />
-                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete">
-                                    <i class="bi bi-trash"></i>
-                                </button>
-                            </form>
+                            @if (Model.CanDeleteRepo)
+                            {
+                                <form method="post" asp-page-handler="Delete" class="d-inline"
+                                      onsubmit="return confirm('Delete repo @repo.Name? This will remove all indexed data.')">
+                                    <input type="hidden" name="name" value="@repo.Name" />
+                                    <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </form>
+                            }
                         </td>
                     </tr>
                     @if (!string.IsNullOrEmpty(repo.ErrorMessage))

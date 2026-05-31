@@ -35,14 +35,14 @@ public sealed class AddModel : PageModel
 
     public IActionResult OnGet()
     {
-        if (!registryOptions.EnableManualRepoAdd)
+        if (registryOptions.EnableDemoMode)
             return RedirectToPage("/");
         return Page();
     }
 
     public async Task<IActionResult> OnPostAsync()
     {
-        if (!registryOptions.EnableManualRepoAdd)
+        if (registryOptions.EnableDemoMode)
             return RedirectToPage("/");
 
         if (!ModelState.IsValid)
