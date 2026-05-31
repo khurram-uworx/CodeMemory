@@ -42,7 +42,7 @@ sealed class InMemoryMetricsStore : IMetricsStore
             state.RemoveTagSet(SerializeTags(tags));
     }
 
-    public RuntimeMetricsSnapshot GetSnapshot(bool reset = false)
+    public RepoMetricsSnapshot GetSnapshot(bool reset = false)
     {
         var snapshotTime = DateTime.UtcNow;
         var instrumentMetrics = new List<InstrumentMetric>(instruments.Count);
@@ -56,7 +56,7 @@ sealed class InMemoryMetricsStore : IMetricsStore
                 values));
         }
 
-        return new RuntimeMetricsSnapshot(snapshotTime, instrumentMetrics);
+        return new RepoMetricsSnapshot(snapshotTime, instrumentMetrics);
     }
 
     static string SerializeTags(IReadOnlyList<KeyValuePair<string, object?>>? tags)

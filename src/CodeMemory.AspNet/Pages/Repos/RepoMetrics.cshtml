@@ -1,9 +1,9 @@
-@page "/Repos/{name}/RuntimeMetrics"
-@model CodeMemory.AspNet.Pages.Repos.RuntimeMetricsModel
+@page "/Repos/{name}/RepoMetrics"
+@model CodeMemory.AspNet.Pages.Repos.RepoMetricsModel
 @using System.Text.Json
 @using System.Text.Json.Serialization
 @{
-    ViewData["Title"] = Model.Repo?.Name ?? "Runtime Metrics";
+    ViewData["Title"] = Model.Repo?.Name ?? "Repo Metrics";
     var json = new JsonSerializerOptions
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -15,12 +15,12 @@
     <ol class="breadcrumb">
         <li class="breadcrumb-item"><a asp-page="/Index">Repos</a></li>
         <li class="breadcrumb-item"><a asp-page="/Repos/Components" asp-route-name="@Model.Repo?.Name">@Model.Repo?.Name</a></li>
-        <li class="breadcrumb-item active">Runtime Metrics</li>
+        <li class="breadcrumb-item active">Repo Metrics</li>
     </ol>
 </nav>
 
 <div class="d-flex justify-content-between align-items-center mb-3">
-    <h1>@Model.Repo?.Name<span class="text-muted fs-4 ms-2">Runtime Metrics</span></h1>
+    <h1>@Model.Repo?.Name<span class="text-muted fs-4 ms-2">Repo Metrics</span></h1>
     <div>
         <a asp-page="/Repos/Components" asp-route-name="@Model.Repo?.Name" class="btn btn-outline-info me-2">
             <i class="bi bi-boxes"></i> Components
@@ -41,7 +41,7 @@
 else if (!Model.IsEnabled)
 {
     <div class="alert alert-info">
-        <h5 class="alert-heading"><i class="bi bi-info-circle"></i> Runtime Metrics Not Available</h5>
+        <h5 class="alert-heading"><i class="bi bi-info-circle"></i> Repo Metrics Not Available</h5>
         <p class="mb-0">
             Local (zero-infrastructure) metrics are not enabled.
             Set <code>LocalMetrics:Enabled: true</code> in <code>appsettings.json</code> to collect and display runtime metrics.
@@ -52,7 +52,7 @@ else if (Model.RepoSnapshot is null)
 {
     <div class="alert alert-info">
         <h5 class="alert-heading"><i class="bi bi-graph-up"></i> No Metrics Yet</h5>
-        <p class="mb-0">No runtime metrics have been recorded for this repository. Metrics appear after indexing completes and tools are invoked.</p>
+        <p class="mb-0">No repo metrics have been recorded for this repository. Metrics appear after indexing completes and tools are invoked.</p>
     </div>
 }
 else

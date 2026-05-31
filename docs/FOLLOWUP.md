@@ -79,7 +79,7 @@ The `codememory.repo.*` gauge panels are not yet provisioned in the dashboard JS
 
 ### Tag key inconsistency (`repo` vs `repo.name`)
 
-Runtime metrics tag repos with `repo.name` (e.g., `IndexingDuration`, `ToolInvocations`), while code-analysis metrics use `repo` (from `RepoMetricsRecorder`). The `RuntimeMetrics.cshtml` PageModel's `FilterByRepo` handles both keys, but this is a hidden convention not enforced by any contract. A new instrument could easily use the wrong tag key and silently not appear in repo-scoped dashboard views.
+Repo metrics tag repos with `repo.name` (e.g., `IndexingDuration`, `ToolInvocations`), while code-analysis metrics use `repo` (from `RepoMetricsRecorder`). The `RepoMetrics.cshtml` PageModel's `FilterByRepo` handles both keys, but this is a hidden convention not enforced by any contract. A new instrument could easily use the wrong tag key and silently not appear in repo-scoped dashboard views.
 
 ### Dual-writer pattern for repo metrics
 
@@ -91,7 +91,7 @@ There is no compiler check or test enforcing both paths stay in sync.
 
 ### Two dashboard pages for code-analysis metrics
 
-`Metrics.cshtml` queries the DB via `MetricsService` on every page load. `RuntimeMetrics.cshtml` reads from `IMetricsStore` (updated on reindex). Both display code-analysis metrics but through different mechanisms and update cadences. An indexing bug that causes `RecordAsync` to fail would produce stale data on `RuntimeMetrics` while `Metrics` remains current — operators need to understand both refresh models.
+`Metrics.cshtml` queries the DB via `MetricsService` on every page load. `RepoMetrics.cshtml` reads from `IMetricsStore` (updated on reindex). Both display code-analysis metrics but through different mechanisms and update cadences. An indexing bug that causes `RecordAsync` to fail would produce stale data on `RepoMetrics` while `Metrics` remains current — operators need to understand both refresh models.
 
 ---
 
@@ -111,7 +111,7 @@ public sealed class SqliteMetricsStore(IConfiguration config) : IMetricsStore
 
     public void RecordCounter(string name, long value, ...) { /* UPSERT */ }
     public void RecordHistogram(string name, double value, ...) { /* INSERT + UPDATE aggregates */ }
-    public RuntimeMetricsSnapshot GetSnapshot(bool reset) { /* SELECT */ }
+    public RepoMetricsSnapshot GetSnapshot(bool reset) { /* SELECT */ }
 }
 ```
 
@@ -147,7 +147,7 @@ Given the demo focus, cumulative values are sufficient. Rate computation is a UI
 
 ### Version tracking
 
-The snapshot doesn't include a version or schema field. If we later change the `RuntimeMetricsSnapshot` schema, consumers (both the MCP tool and future dashboard) need to handle backward compatibility. Consider adding a `SchemaVersion` field.
+The snapshot doesn't include a version or schema field. If we later change the `RepoMetricsSnapshot` schema, consumers (both the MCP tool and future dashboard) need to handle backward compatibility. Consider adding a `SchemaVersion` field.
 
 ### Prometheus toggle on service defaults
 
@@ -162,9 +162,9 @@ The `Prometheus:Enabled` config only toggles the HTTP endpoint (`MapPrometheusSc
 
 ### Consolidate the two dashboard pages
 
-Currently `Metrics.cshtml` (DB-sourced) and `RuntimeMetrics.cshtml` (IMetricsStore-sourced) both display code-analysis metrics through different mechanisms. An operator must understand both refresh models. Options:
+Currently `Metrics.cshtml` (DB-sourced) and `RepoMetrics.cshtml` (IMetricsStore-sourced) both display code-analysis metrics through different mechanisms. An operator must understand both refresh models. Options:
 - Merge runtime metrics into `Metrics.cshtml` as a new card section fed from `IMetricsStore`
-- Or make `RuntimeMetrics.cshtml` the single pane-of-glass by writing all code-analysis metrics through `IMetricsStore` and deprecating the DB-sourced page
+- Or make `RepoMetrics.cshtml` the single pane-of-glass by writing all code-analysis metrics through `IMetricsStore` and deprecating the DB-sourced page
 
 ---
 
@@ -204,12 +204,12 @@ Currently `Metrics.cshtml` (DB-sourced) and `RuntimeMetrics.cshtml` (IMetricsSto
 
 **ADR says:** Does not prescribe dashboard page structure.
 
-**What's implemented:** `Metrics.cshtml` (DB-sourced via `MetricsService`) shows symbol distribution, complexity, coupling. `RuntimeMetrics.cshtml` (IMetricsStore-sourced) shows runtime metrics + repo overview gauges. Both display overlapping code-analysis data through different mechanisms with different staleness characteristics. `RuntimeMetrics.cshtml` links to `Metrics.cshtml` (line 28), but `Metrics.cshtml` has no reciprocal link.
+**What's implemented:** `Metrics.cshtml` (DB-sourced via `MetricsService`) shows symbol distribution, complexity, coupling. `RepoMetrics.cshtml` (IMetricsStore-sourced) shows repo metrics + repo overview gauges. Both display overlapping code-analysis data through different mechanisms with different staleness characteristics. `RepoMetrics.cshtml` links to `Metrics.cshtml`, but `Metrics.cshtml` has no reciprocal link.
 
 **Assessment: The split makes sense architecturally but UX is confusing.** DB-sourced metrics are authoritative (always reflect current index state). IMetricsStore-sourced metrics are faster but may lag on indexing failure. Having both is useful for operators, but the navigation should be bidirectional.
 
 **Recommendation:**
-1. Add a "Runtime Metrics" button to `Metrics.cshtml` linking to `RuntimeMetrics.cshtml`
+1. Add a "Repo Metrics" button to `Metrics.cshtml` linking to `RepoMetrics.cshtml`
 2. Add a note on each page explaining the data source and refresh cadence
 3. Future: consider merging runtime metrics into `Metrics.cshtml` as a new card section once the data sources are unified
 

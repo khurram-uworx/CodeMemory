@@ -1,4 +1,4 @@
-# ADR-Web-LocalMetrics-01: InMemoryMetricsStore — Zero-Infrastructure Runtime Metrics
+# ADR-Web-LocalMetrics-01: InMemoryMetricsStore — Zero-Infrastructure Repo Metrics
 
 ---
 
@@ -35,7 +35,7 @@ Application code
   │    └─► LocalMetricsCollector (MeterListener)   ← captures push-based only
   │         └─► InMemoryMetricsStore (IMetricsStore)
   │              │
-  │              ├─► RuntimeMetricsSnapshot ──► RuntimeMetrics.cshtml
+  │              ├─► RepoMetricsSnapshot ──► RepoMetrics.cshtml
   │              └─► (future) MCP tool
   │
   ├─► Pull-based instruments (ObservableGauge)      ← code-analysis metrics
@@ -61,7 +61,7 @@ Application code
 | `InMemoryMetricsStore` | `IMetricsStore` implementation — `ConcurrentDictionary` of instrument states, each with per-tag-set accumulators | `CodeMemory.AspNet.Services` |
 | `IMetricsStore` | Interface — `RecordCounter()`, `RecordHistogram()`, `GetSnapshot()` | `CodeMemory.AspNet.Storage` |
 | `LocalMetricsOptions` | Config — `Enabled` (default `false`), `MaxUniqueTagCombinations`, `MaxMeasurementsPerTagSet` | `CodeMemory.AspNet.Configuration` |
-| `RuntimeMetricsSnapshot` | Snapshot model — `CollectedAt`, `Instruments`, each with `MetricValue[]` | `CodeMemory.AspNet.Models` |
+| `RepoMetricsSnapshot` | Snapshot model — `CollectedAt`, `Instruments`, each with `MetricValue[]` | `CodeMemory.AspNet.Models` |
 
 ### Instrument Type Detection
 
