@@ -7,6 +7,8 @@ using System.Diagnostics.Metrics;
 
 namespace CodeMemory.AspNet.Services;
 
+sealed record RepoInstrument(string Name, string Description, Func<OverviewStats, int> Selector);
+
 public sealed class RepoMetricsRecorder
 {
     readonly MetricsService metricsService;
@@ -15,6 +17,18 @@ public sealed class RepoMetricsRecorder
     readonly ILogger<RepoMetricsRecorder> logger;
     readonly LocalMetricsOptions options;
     readonly ConcurrentDictionary<string, RepoMetrics> cache = new(StringComparer.OrdinalIgnoreCase);
+
+    static readonly RepoInstrument[] RepoInstruments =
+    [
+        new("codememory.repo.total_symbols", "Total number of symbols per repo", o => o.TotalSymbols),
+        new("codememory.repo.total_files", "Total number of indexed files per repo", o => o.TotalFiles),
+        new("codememory.repo.classes", "Number of class symbols per repo", o => o.Classes),
+        new("codememory.repo.methods", "Number of method symbols per repo", o => o.Methods),
+        new("codememory.repo.interfaces", "Number of interface symbols per repo", o => o.Interfaces),
+        new("codememory.repo.properties", "Number of property symbols per repo", o => o.Properties),
+        new("codememory.repo.fields", "Number of field symbols per repo", o => o.Fields),
+        new("codememory.repo.total_relationships", "Total number of symbol relationships per repo", o => o.TotalRelationships),
+    ];
 
     public RepoMetricsRecorder(
         MetricsService metricsService,
@@ -36,45 +50,13 @@ public sealed class RepoMetricsRecorder
         this.logger = logger;
         options = localMetricsOptions.Value;
 
-        CodeMemoryMetrics.Meter.CreateObservableGauge<long>(
-            "codememory.repo.total_symbols",
-            observeValues: () => cache.Select(kvp => gauge(kvp.Value.Overview.TotalSymbols, kvp.Key)),
-            description: "Total number of symbols per repo");
-
-        CodeMemoryMetrics.Meter.CreateObservableGauge<long>(
-            "codememory.repo.total_files",
-            observeValues: () => cache.Select(kvp => gauge(kvp.Value.Overview.TotalFiles, kvp.Key)),
-            description: "Total number of indexed files per repo");
-
-        CodeMemoryMetrics.Meter.CreateObservableGauge<long>(
-            "codememory.repo.classes",
-            observeValues: () => cache.Select(kvp => gauge(kvp.Value.Overview.Classes, kvp.Key)),
-            description: "Number of class symbols per repo");
-
-        CodeMemoryMetrics.Meter.CreateObservableGauge<long>(
-            "codememory.repo.methods",
-            observeValues: () => cache.Select(kvp => gauge(kvp.Value.Overview.Methods, kvp.Key)),
-            description: "Number of method symbols per repo");
-
-        CodeMemoryMetrics.Meter.CreateObservableGauge<long>(
-            "codememory.repo.interfaces",
-            observeValues: () => cache.Select(kvp => gauge(kvp.Value.Overview.Interfaces, kvp.Key)),
-            description: "Number of interface symbols per repo");
-
-        CodeMemoryMetrics.Meter.CreateObservableGauge<long>(
-            "codememory.repo.properties",
-            observeValues: () => cache.Select(kvp => gauge(kvp.Value.Overview.Properties, kvp.Key)),
-            description: "Number of property symbols per repo");
-
-        CodeMemoryMetrics.Meter.CreateObservableGauge<long>(
-            "codememory.repo.fields",
-            observeValues: () => cache.Select(kvp => gauge(kvp.Value.Overview.Fields, kvp.Key)),
-            description: "Number of field symbols per repo");
-
-        CodeMemoryMetrics.Meter.CreateObservableGauge<long>(
-            "codememory.repo.total_relationships",
-            observeValues: () => cache.Select(kvp => gauge(kvp.Value.Overview.TotalRelationships, kvp.Key)),
-            description: "Total number of symbol relationships per repo");
+        foreach (var inst in RepoInstruments)
+        {
+            CodeMemoryMetrics.Meter.CreateObservableGauge<long>(
+                inst.Name,
+                observeValues: () => cache.Select(kvp => gauge(inst.Selector(kvp.Value.Overview), kvp.Key)),
+                description: inst.Description);
+        }
     }
 
     static Measurement<long> gauge(long value, string repo)
@@ -82,18 +64,6 @@ public sealed class RepoMetricsRecorder
 
     void recordToStore(string name, int value, IReadOnlyList<KeyValuePair<string, object?>> tags)
         => metricsStore!.RecordGauge(name, value, tags);
-
-    static readonly string[] RepoInstruments =
-    [
-        "codememory.repo.total_symbols",
-        "codememory.repo.total_files",
-        "codememory.repo.classes",
-        "codememory.repo.methods",
-        "codememory.repo.interfaces",
-        "codememory.repo.properties",
-        "codememory.repo.fields",
-        "codememory.repo.total_relationships",
-    ];
 
     public void RemoveRepo(string repoName)
     {
@@ -103,8 +73,8 @@ public sealed class RepoMetricsRecorder
             return;
 
         var tags = new[] { new KeyValuePair<string, object?>(CodeMemoryMetrics.Tags.Repo, repoName) };
-        foreach (var instrument in RepoInstruments)
-            metricsStore.RemoveInstrumentTags(instrument, tags);
+        foreach (var inst in RepoInstruments)
+            metricsStore.RemoveInstrumentTags(inst.Name, tags);
     }
 
     public async Task RecordAsync(string repoName)
@@ -123,14 +93,8 @@ public sealed class RepoMetricsRecorder
 
             var tags = new[] { new KeyValuePair<string, object?>(CodeMemoryMetrics.Tags.Repo, repoName) };
             var o = metrics.Overview;
-            recordToStore("codememory.repo.total_symbols", o.TotalSymbols, tags);
-            recordToStore("codememory.repo.total_files", o.TotalFiles, tags);
-            recordToStore("codememory.repo.classes", o.Classes, tags);
-            recordToStore("codememory.repo.methods", o.Methods, tags);
-            recordToStore("codememory.repo.interfaces", o.Interfaces, tags);
-            recordToStore("codememory.repo.properties", o.Properties, tags);
-            recordToStore("codememory.repo.fields", o.Fields, tags);
-            recordToStore("codememory.repo.total_relationships", o.TotalRelationships, tags);
+            foreach (var inst in RepoInstruments)
+                recordToStore(inst.Name, inst.Selector(o), tags);
         }
         catch (Exception ex)
         {

@@ -51,4 +51,15 @@ public static class CodeMemoryMetrics
     public static readonly Counter<long> ToolInvocations = Meter.CreateCounter<long>(
         "codememory.tools.invocations",
         description: "Number of MCP tool invocations per repo/tool");
+
+    // The following metrics are deliberately NOT exposed as OTel instruments
+    // (dashboard-domain only — see RepoMetrics.cshtml / Metrics.cshtml):
+    //
+    //   Complexity.AverageLinesPerMethod       → Histogram<double>         — low signal-to-noise
+    //   Complexity.MethodSizeHistogram         → 6× ObservableGauge<long>  — ad-hoc via dashboard
+    //   Coupling.MostCoupled / MostImportant   → (none)                    — per-symbol topology
+    //   Coupling.RelationshipTypeDistribution  → (none)                    — high cardinality
+    //   TopFilesBySymbols                      → (none)                    — per-file detail
+    //
+    // Add instrument here + record in RepoMetricsRecorder if OTel exposure is needed later.
 }

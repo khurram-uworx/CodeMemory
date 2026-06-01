@@ -14,7 +14,7 @@ CodeMemory needs structured runtime observability — indexing duration, tool in
 
 The instrumentation must be built-in, not bolted on — every deployed instance emits metrics without config.
 
-**Exception — MCP STDIO host:** The `CodeMemory.Mcp` host (STDIO transport, single-repo CLI) is intentionally excluded from the OTel pipeline. It has no HTTP endpoint to serve `/metrics`, no Prometheus scraper to poll it, and no dashboard to refresh. Adding OTel infrastructure would add ~200ms startup cost for zero benefit. `CodeMemoryMetrics` instruments are still called from MCP tools for correctness — they produce no output when no `MeterProvider` is registered. See `docs/FOLLOWUP.md` (Gap D) for the rationale.
+**Exception — MCP STDIO host:** The `CodeMemory.Mcp` host (STDIO transport, single-repo CLI) is intentionally excluded from the OTel pipeline. It has no HTTP endpoint to serve `/metrics`, no Prometheus scraper to poll it, and no dashboard to refresh. Adding OTel infrastructure would add ~200ms startup cost for zero benefit. `CodeMemoryMetrics` instruments are still called from MCP tools for correctness — they produce no output when no `MeterProvider` is registered.
 
 Additionally, the AspNet host needs a zero-infrastructure local metrics path for the Razor Pages dashboard (`RepoMetrics.cshtml`) to show both **repo metrics** (tool invocations, query duration) and **code-analysis metrics** (symbol counts, file counts per repo) without requiring a Prometheus scraper.
 
@@ -124,16 +124,17 @@ Repo overview stats (symbol counts, file counts) are **state** — point-in-time
 - No accumulation artifacts — on re-index the value is atomically replaced
 - Tagged by `repo` name, supporting multi-repo deployments
 
-These same values are also pushed into the local `IMetricsStore` by `RepoMetricsRecorder.RecordAsync()` after each re-index, using `RecordHistogram` — one measurement per re-index, captured with ring-buffer support for the Razor Pages dashboard (see ADR `Web-LocalMetrics-01`).
+These same values are also pushed into the local `IMetricsStore` by `RepoMetricsRecorder.RecordAsync()` after each re-index, using `RecordGauge` — one measurement per re-index, captured with ring-buffer support for the Razor Pages dashboard (see ADR `Web-LocalMetrics-01`).
 
 The `LocalMetricsCollector` (MeterListener) explicitly skips `ObservableGauge<long>` instruments to prevent the 5-second `RecordObservableInstruments()` timer from duplicating these measurements into the local store — the dashboard gets them only from the explicit `RecordAsync` write.
 
 Indexing/query/tool metrics are **events** — each occurrence is a discrete observation. `Histogram` captures the distribution (count, sum, min, max). `Counter` captures cumulative totals. These flow through the `LocalMetricsCollector` MeterListener to `IMetricsStore` automatically.
 
-### 5. The `CodeMemoryMetrics` static class is the single registration point
+### 5. The `CodeMemoryMetrics` static class is the instrument registration hub
 
-All instruments are declared as `static readonly` fields on `CodeMemoryMetrics`, created eagerly in the static initializer via `Meter.Create*()`. OpenTelemetry discovers them via `.AddMeter("CodeMemory")` — no per-instrument registration needed. This means:
-- New instruments are automatically exported — just add a field and record data
+All instruments live on the `CodeMemoryMetrics.Meter` singleton. Push-based instruments (Counter, Histogram) are declared as `static readonly` fields, created eagerly in the static initializer — OpenTelemetry discovers them via `.AddMeter("CodeMemory")` with no per-instrument registration needed. ObservableGauge instruments with instance-state callbacks (e.g., `RepoMetricsRecorder`'s cache-backed repo gauges) are created dynamically on the same meter in their owning service's constructor. This means:
+- New push-based instruments are automatically exported — just add a field and record data
+- ObservableGauges with dynamic callbacks remain co-located with their state, keeping lifecycle management straightforward
 - Instrument names, descriptions, and units are self-documenting at the point of declaration
 - The meter name `"CodeMemory"` is a well-known contract consumed by `MeterProvider`
 
@@ -171,7 +172,7 @@ The Grafana dashboard is auto-provisioned from `monitoring/grafana/dashboards/co
 | Runtime (GC & ThreadPool) | `dotnet_gc_collections_total`, `dotnet_thread_pool_queue_length` |
 | HTTP Request Rate & Duration | `http_server_request_duration_ms_*`, `http_server_active_requests_count` |
 
-The `codememory.repo.*` gauge panels are not yet provisioned in the dashboard JSON.
+The `codememory.repo.*` gauge panels are provisioned in a dedicated dashboard (`monitoring/grafana/dashboards/codememory-repo-gauges.json`) with a repo dropdown and 6 panels across three visualization types — stat cards, a donut chart, and a bar gauge.
 
 ### How to Add a New Metric
 
@@ -199,7 +200,9 @@ No registration needed — `AddMeter("CodeMemory")` picks it up automatically.
 
 ## Compliance
 
-- All custom instruments MUST be declared on `CodeMemoryMetrics.Meter` — no separate meters.
+- All custom instruments MUST use `CodeMemoryMetrics.Meter` — no separate meters.
+- Push-based instruments (Counter, Histogram) SHOULD be declared as `static readonly` fields for discoverability.
+- ObservableGauge instruments with instance-state callbacks MAY be created in service constructors on `CodeMemoryMetrics.Meter`.
 - Instrument names MUST follow the `codememory.<domain>.<name>` convention (dot-separated, lowercase).
 - Tag keys MUST use lowercase dot-separated names (`tool`, `host`, `repo`).
 - New host projects MUST call `builder.AddServiceDefaults()` in `Program.cs`.

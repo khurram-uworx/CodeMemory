@@ -39,9 +39,8 @@ docker run -v codememory-data:/data -p 4792:8080 ghcr.io/khurram-uworx/codememor
 Minimal one-liner for a quick demo with pre-seeded repos:
 
 ```bash
-docker run -p 4792:8080 \
-  -e ASPNETCORE_ENVIRONMENT=Production \
-  -e ASPNETCORE_URLS=http://+:8080 \
+docker run -p 4792:80 \
+  -e ASPNETCORE_URLS=http://+:80 \
   -e LocalMetrics__Enabled=true \
   -e Prometheus__Enabled=false \
   -e RepoRegistry__EnableDemoMode=true \
@@ -53,7 +52,6 @@ docker run -p 4792:8080 \
 
 | Setting | Why |
 |---|---|
-| `Production` | Avoids loading development-only config (local paths, debug settings) |
 | `LocalMetrics__Enabled=true` | See runtime metrics on the dashboard without Prometheus |
 | `Prometheus__Enabled=false` | Cleaner — no unused `/metrics` endpoint in a simple demo |
 | `RepoRegistry__EnableDemoMode=true` | Read-only — repos are pre-seeded, no add/delete UI |
@@ -63,7 +61,7 @@ docker run -p 4792:8080 \
 
 | Port | Purpose |
 |---|---|
-| `8080` | HTTP — Repository Dashboard + MCP endpoints |
+| `8080` | HTTP — Repository Dashboard + MCP endpoints, use ASPNETCORE_URLS to change |
 
 ## docker-compose
 
