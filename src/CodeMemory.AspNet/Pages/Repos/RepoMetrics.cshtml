@@ -77,6 +77,7 @@ else
     <div class="text-muted small mb-3">
         Snapshot collected at: <strong>@snapshot.CollectedAt.ToString("yyyy-MM-dd HH:mm:ss") UTC</strong>
         &middot; @snapshot.Instruments.Count instrument(s) with repo-scoped data
+        &middot; Data sourced from <code>IMetricsStore</code> (updated on re-index; may lag if indexing fails)
     </div>
 
     @* ── Group instruments by category ────────────────────── *@

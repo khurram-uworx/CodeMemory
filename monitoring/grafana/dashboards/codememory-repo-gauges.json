@@ -1,0 +1,376 @@
+{
+  "__inputs": [],
+  "__elements": [],
+  "__requires": [
+    { "type": "grafana", "id": "grafana", "name": "Grafana", "version": "9.0.0" },
+    { "type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0" },
+    { "type": "panel", "id": "stat", "name": "Stat", "version": "" },
+    { "type": "panel", "id": "piechart", "name": "Pie chart", "version": "" },
+    { "type": "panel", "id": "bargauge", "name": "Bar gauge", "version": "" }
+  ],
+  "title": "CodeMemory — Repository Gauges",
+  "description": "Point-in-time snapshot of per-repo codebase metrics. Select a repo from the dropdown to inspect its symbol composition, scale, and density. When All repos are selected, panels show aggregate totals.",
+  "tags": ["codememory", "dotnet", "repo-gauges"],
+  "schemaVersion": 36,
+  "timezone": "browser",
+  "time": { "from": "now-1h", "to": "now" },
+  "refresh": "30s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 3, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "description": "Total number of symbol records indexed for the selected repository",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "background" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "#0d6efd" }]
+          },
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "expr": "sum(codememory_repo_total_symbols{repo=~\"$repo\"})",
+          "legendFormat": "Total Symbols",
+          "interval": ""
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 3, "x": 3, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "description": "Number of source files successfully indexed",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "background" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "#198754" }]
+          },
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "expr": "sum(codememory_repo_total_files{repo=~\"$repo\"})",
+          "legendFormat": "Total Files",
+          "interval": ""
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 3, "x": 6, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "description": "Average symbols per file — a rough density metric. Higher values suggest richer or more complex files per line of code.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "background" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "#fd7e14" }]
+          },
+          "unit": "short",
+          "decimals": 1,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "expr": "sum(codememory_repo_total_symbols{repo=~\"$repo\"}) / sum(codememory_repo_total_files{repo=~\"$repo\"})",
+          "legendFormat": "Symbols / File",
+          "interval": ""
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 3, "x": 9, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "description": "Total number of symbol-to-symbol relationships (references, calls, inheritance) discovered — a proxy for coupling complexity",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "background" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "#6f42c1" }]
+          },
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "expr": "sum(codememory_repo_total_relationships{repo=~\"$repo\"})",
+          "legendFormat": "Relationships",
+          "interval": ""
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Codebase DNA — Symbol Kind Distribution",
+      "type": "piechart",
+      "gridPos": { "h": 8, "w": 6, "x": 0, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "description": "What kinds of symbols make up this codebase? Classes, methods, interfaces, properties, and fields as a proportion of all tracked symbol kinds. A high-class share suggests OOP-heavy design; high method share suggests logic richness.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "mappings": [],
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Classes" },
+            "properties": [{ "id": "color", "value": { "fixed": "#0dcaf0" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Methods" },
+            "properties": [{ "id": "color", "value": { "fixed": "#ffc107" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Interfaces" },
+            "properties": [{ "id": "color", "value": { "fixed": "#fd7e14" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Properties" },
+            "properties": [{ "id": "color", "value": { "fixed": "#6f42c1" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Fields" },
+            "properties": [{ "id": "color", "value": { "fixed": "#6c757d" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Other (kinds)" },
+            "properties": [{ "id": "color", "value": { "fixed": "#adb5bd" } }]
+          }
+        ]
+      },
+      "options": {
+        "displayLabels": ["name", "percent", "value"],
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "values": ["value", "percent"]
+        },
+        "pieType": "donut",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "descending"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(codememory_repo_classes{repo=~\"$repo\"})",
+          "legendFormat": "Classes",
+          "interval": ""
+        },
+        {
+          "expr": "sum(codememory_repo_methods{repo=~\"$repo\"})",
+          "legendFormat": "Methods",
+          "interval": ""
+        },
+        {
+          "expr": "sum(codememory_repo_interfaces{repo=~\"$repo\"})",
+          "legendFormat": "Interfaces",
+          "interval": ""
+        },
+        {
+          "expr": "sum(codememory_repo_properties{repo=~\"$repo\"})",
+          "legendFormat": "Properties",
+          "interval": ""
+        },
+        {
+          "expr": "sum(codememory_repo_fields{repo=~\"$repo\"})",
+          "legendFormat": "Fields",
+          "interval": ""
+        },
+        {
+          "expr": "(sum(codememory_repo_total_symbols{repo=~\"$repo\"}) - (sum(codememory_repo_classes{repo=~\"$repo\"}) + sum(codememory_repo_methods{repo=~\"$repo\"}) + sum(codememory_repo_interfaces{repo=~\"$repo\"}) + sum(codememory_repo_properties{repo=~\"$repo\"}) + sum(codememory_repo_fields{repo=~\"$repo\"}))) or vector(0)",
+          "legendFormat": "Other (kinds)",
+          "interval": ""
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "All Metrics at a Glance",
+      "type": "bargauge",
+      "gridPos": { "h": 8, "w": 6, "x": 6, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "description": "Every repo gauge on one horizontal bar chart. Scan left-to-right to compare magnitudes: symbols scale, file count, symbol kinds, and relationship graph size.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "continuous-GrYlRd" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "rgba(50, 172, 45, 0.97)" },
+              { "value": 50, "color": "rgba(237, 129, 40, 0.89)" },
+              { "value": 100, "color": "rgba(245, 54, 54, 0.9)" }
+            ]
+          },
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true
+      },
+      "targets": [
+        {
+          "expr": "sum(codememory_repo_total_symbols{repo=~\"$repo\"})",
+          "legendFormat": "Total Symbols",
+          "interval": ""
+        },
+        {
+          "expr": "sum(codememory_repo_total_files{repo=~\"$repo\"})",
+          "legendFormat": "Total Files",
+          "interval": ""
+        },
+        {
+          "expr": "sum(codememory_repo_classes{repo=~\"$repo\"})",
+          "legendFormat": "Classes",
+          "interval": ""
+        },
+        {
+          "expr": "sum(codememory_repo_methods{repo=~\"$repo\"})",
+          "legendFormat": "Methods",
+          "interval": ""
+        },
+        {
+          "expr": "sum(codememory_repo_interfaces{repo=~\"$repo\"})",
+          "legendFormat": "Interfaces",
+          "interval": ""
+        },
+        {
+          "expr": "sum(codememory_repo_properties{repo=~\"$repo\"})",
+          "legendFormat": "Properties",
+          "interval": ""
+        },
+        {
+          "expr": "sum(codememory_repo_fields{repo=~\"$repo\"})",
+          "legendFormat": "Fields",
+          "interval": ""
+        },
+        {
+          "expr": "sum(codememory_repo_total_relationships{repo=~\"$repo\"})",
+          "legendFormat": "Relationships",
+          "interval": ""
+        }
+      ]
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "repo",
+        "type": "query",
+        "query": "label_values(codememory_repo_total_symbols, repo)",
+        "refresh": 2,
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": false,
+        "sort": 1
+      }
+    ]
+  },
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  }
+}
