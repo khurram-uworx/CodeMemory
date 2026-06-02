@@ -17,15 +17,71 @@ public sealed record DocumentChunk(
 
 public sealed class SemanticChunker
 {
+    /// <summary>
+    /// Maps each language to the set of line prefixes that identify import/header lines
+    /// at the top of a file. Extend this dictionary to add support for new languages
+    /// or new import patterns. Block-start variants (e.g., "import (", "import {")
+    /// are included so the block-mode tracker in <see cref="extractFileContext"/>
+    /// can detect when a multi-line import block opens.
+    /// </summary>
+    static readonly Dictionary<Language, string[]> ImportHeaderPrefixes = new()
+    {
+        [Language.CSharp] = new[] { "using ", "namespace " },
+        [Language.TypeScript] = new[] { "import ", "import {", "export ", "require(", "/// <reference", "module " },
+        [Language.JavaScript] = new[] { "import ", "import {", "export ", "require(", "/// <reference", "module " },
+        [Language.Java] = new[] { "import ", "package " },
+        [Language.Python] = new[] { "import ", "import (", "from " },
+        [Language.Go] = new[] { "import ", "import (", "package " },
+        [Language.Rust] = new[] { "use ", "pub ", "mod " },
+        [Language.C] = new[] { "#include", "#define", "#pragma" },
+        [Language.Cpp] = new[] { "#include", "#define", "#pragma" },
+    };
+
     static string extractFileContext(string[] fileLines, Language language)
     {
         var context = new StringBuilder();
+        var inBlock = false;
+        var blockDepth = 0;
 
         foreach (var line in fileLines)
         {
             var trimmed = line.TrimStart();
-            if (isImportOrHeaderLine(trimmed, language))
+
+            // When inside a multi-line import block, capture every line
+            // until all opened delimiters are closed.
+            if (inBlock)
+            {
                 context.AppendLine(line.TrimEnd('\r'));
+                foreach (var c in trimmed)
+                {
+                    if (c == '(' || c == '{') blockDepth++;
+                    else if (c == ')' || c == '}') blockDepth--;
+                }
+                if (blockDepth <= 0)
+                    inBlock = false;
+                continue;
+            }
+
+            if (isImportOrHeaderLine(trimmed, language))
+            {
+                context.AppendLine(line.TrimEnd('\r'));
+
+                // Only activate block mode for import syntaxes that
+                // support multi-line blocks (import (, import {,
+                // from ... import (...)).  export, pub, namespace,
+                // package, using etc. all use { for declaration bodies
+                // and must NOT enter block mode.
+                if (isBlockCapableImport(trimmed, language))
+                {
+                    var opens = trimmed.Count(c => c == '(' || c == '{');
+                    var closes = trimmed.Count(c => c == ')' || c == '}');
+                    if (opens > closes)
+                    {
+                        inBlock = true;
+                        blockDepth = opens - closes;
+                    }
+                }
+            }
             else if (trimmed.StartsWith("//") || trimmed.StartsWith("/*"))
                 continue;
             else if (string.IsNullOrWhiteSpace(trimmed))
@@ -37,21 +93,49 @@ public sealed class SemanticChunker
         return context.ToString().TrimEnd();
     }
 
-    static bool isImportOrHeaderLine(string trimmed, Language language)
-        => language switch
+    /// <summary>
+    /// Returns true when the line is a multi-line import block opener.
+    /// Only import-specific syntaxes that support multi-line blocks are
+    /// block-capable — declaration keywords like export, pub, namespace all
+    /// use { for type/function bodies and must not trigger block tracking.
+    /// </summary>
+    static bool isBlockCapableImport(string trimmed, Language language)
+    {
+        // Direct block starts: Go import (...), TS import {, Python import (...)
+        if (trimmed.StartsWith("import (") || trimmed.StartsWith("import {"))
+            return true;
+
+        return language switch
         {
-            Language.CSharp => trimmed.StartsWith("using ") || trimmed.StartsWith("namespace "),
-            Language.TypeScript or Language.JavaScript =>
-                trimmed.StartsWith("import ") || trimmed.StartsWith("export ") ||
-                trimmed.StartsWith("require(") || trimmed.StartsWith("/// <reference") ||
-                trimmed.StartsWith("module "),
-            Language.Java => trimmed.StartsWith("import ") || trimmed.StartsWith("package "),
-            Language.Python => trimmed.StartsWith("import ") || trimmed.StartsWith("from "),
-            Language.Go => trimmed.StartsWith("import ") || trimmed.StartsWith("package "),
-            Language.Rust => trimmed.StartsWith("use ") || trimmed.StartsWith("pub ") || trimmed.StartsWith("mod "),
-            Language.C or Language.Cpp => trimmed.StartsWith("#include") || trimmed.StartsWith("#define") || trimmed.StartsWith("#pragma"),
+            // Python: from ... import (...)
+            Language.Python => trimmed.StartsWith("from ") && trimmed.Contains("import ("),
+
+            // TS/JS: any import ... line with unclosed delimiters.
+            // Covers: import type {, import Foo, {, import {, etc.
+            Language.TypeScript or Language.JavaScript => trimmed.StartsWith("import "),
+
+            // Rust: use ...::{ or pub use ...::{ with unclosed braces.
+            // The "use " prefix handles plain use; "pub use " handles
+            // re-exports.  pub struct/pub fn etc. are NOT matched.
+            Language.Rust => trimmed.StartsWith("use ") || trimmed.StartsWith("pub use "),
+
             _ => false,
         };
+    }
+
+    static bool isImportOrHeaderLine(string trimmed, Language language)
+    {
+        if (!ImportHeaderPrefixes.TryGetValue(language, out var prefixes))
+            return false;
+
+        foreach (var prefix in prefixes)
+        {
+            if (trimmed.StartsWith(prefix))
+                return true;
+        }
+
+        return false;
+    }
 
     static DocumentChunk createTypeChunk(
         Symbol symbol,
