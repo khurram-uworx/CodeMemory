@@ -27,6 +27,13 @@ Open http://localhost:4792/ — the Repository Dashboard.
 | `Prometheus__Enabled` | `true` | Enable Prometheus `/metrics` scrape endpoint |
 | `RepoRegistry__EnableDemoMode` | `false` | Lock repos to pre-configured list (disable add/delete) |
 | `Repositories__{name}` | — | Seed a repo at startup. `{name}` = repo label, value = Git URL or local path |
+| `RateLimiting__Mcp__PermitLimit` | — | Max MCP requests per IP per window. **Absent = no limit.** |
+| `RateLimiting__Mcp__Window` | — | MCP rate limit window (`hh:mm:ss`, e.g. `00:01:00`). Required if `PermitLimit` set. |
+| `RateLimiting__Mcp__QueueLimit` | `0` | MCP queue size when over limit (`0` = reject immediately). |
+| `RateLimiting__Api__PermitLimit` | — | Max API requests per IP per window (`/health`, `/api/repos`, SSE stream). **Absent = no limit.** |
+| `RateLimiting__Api__Window` | — | API rate limit window (`hh:mm:ss`). Required if `PermitLimit` set. |
+| `RateLimiting__Api__QueueLimit` | `0` | API queue size when over limit (`0` = reject immediately). |
+| `Kestrel__Limits__MaxRequestBodySize` | — | Max request body in bytes (e.g. `4194304` for 4 MB). **Absent = Kestrel default (~28.6 MB).** |
 
 Persistent storage requires mounting a volume:
 
@@ -57,11 +64,29 @@ docker run -p 4792:80 \
 | `RepoRegistry__EnableDemoMode=true` | Read-only — repos are pre-seeded, no add/delete UI |
 | `Repositories__*` | Seeds repos at startup. The key after `Repositories__` becomes the repo name in the dashboard |
 
-## Ports
+## Production Deployment (with Rate Limiting)
 
-| Port | Purpose |
+Add environment variables to enable per-IP rate limiting. Both the MCP and API categories are independent — set only what you need.
+
+```bash
+docker run -p 4792:8080 \
+  -e RateLimiting__Mcp__PermitLimit=100 \
+  -e RateLimiting__Mcp__Window=00:01:00 \
+  -e RateLimiting__Api__PermitLimit=50 \
+  -e RateLimiting__Api__Window=00:01:00 \
+  -e Kestrel__Limits__MaxRequestBodySize=4194304 \
+  ghcr.io/khurram-uworx/codememory
+```
+
+| Variable | What it does |
 |---|---|
-| `8080` | HTTP — Repository Dashboard + MCP endpoints, use ASPNETCORE_URLS to change |
+| `RateLimiting__Mcp__PermitLimit=100` | MCP endpoint: max 100 requests per IP per minute |
+| `RateLimiting__Api__PermitLimit=50` | API endpoints: max 50 requests per IP per minute |
+| `Kestrel__Limits__MaxRequestBodySize=4194304` | Reject request bodies larger than 4 MB |
+
+**Absent any of these variables → no limit applied for that category.** Rate limiting is entirely opt-in.
+
+## Ports
 
 ## docker-compose
 

@@ -16,9 +16,11 @@ using CodeMemory.Storage;
 using Memori.Embeddings;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Caching.Memory;
 using System.Reflection;
 using System.Text.Json;
+using System.Threading.RateLimiting;
 
 var version = Assembly.GetExecutingAssembly()
     .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
@@ -164,9 +166,58 @@ builder.Services.AddCors(options =>
         if (corsOrigins is { Length: > 0 })
             policy.WithOrigins(corsOrigins).AllowAnyHeader().AllowAnyMethod();
         else
+            // Default: allow any origin. This is intentional — CodeMemory exposes MCP over
+            // Streamable HTTP and its web UI, both consumed by agents/tools from arbitrary
+            // origins. Enterprise deployments lock this down via Cors:AllowedOrigins config
+            // and network-level controls (firewall, VPN, auth). See issue #69.
             policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod();
     });
 });
+
+// Rate limiting — optional, config-driven. No config section = no limit.
+// Each section (RateLimiting:Mcp, RateLimiting:Api) independently gates its limiter.
+var mcpRateLimitSection = builder.Configuration.GetSection("RateLimiting:Mcp");
+var apiRateLimitSection = builder.Configuration.GetSection("RateLimiting:Api");
+
+if (mcpRateLimitSection.Exists() || apiRateLimitSection.Exists())
+{
+    builder.Services.AddRateLimiter(options =>
+    {
+        options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+        options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
+        {
+            var ip = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+            var path = httpContext.Request.Path.Value ?? "";
+
+            if (path.StartsWith("/api/mcp", StringComparison.OrdinalIgnoreCase) && mcpRateLimitSection.Exists())
+            {
+                return RateLimitPartition.GetFixedWindowLimiter(
+                    partitionKey: $"mcp:{ip}",
+                    factory: _ => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = mcpRateLimitSection.GetValue<int>("PermitLimit"),
+                        Window = mcpRateLimitSection.GetValue<TimeSpan>("Window"),
+                        QueueLimit = mcpRateLimitSection.GetValue<int>("QueueLimit")
+                    });
+            }
+
+            if ((path.StartsWith("/api/", StringComparison.OrdinalIgnoreCase) || path == "/health") && apiRateLimitSection.Exists())
+            {
+                return RateLimitPartition.GetFixedWindowLimiter(
+                    partitionKey: $"api:{ip}",
+                    factory: _ => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = apiRateLimitSection.GetValue<int>("PermitLimit"),
+                        Window = apiRateLimitSection.GetValue<TimeSpan>("Window"),
+                        QueueLimit = apiRateLimitSection.GetValue<int>("QueueLimit")
+                    });
+            }
+
+            return RateLimitPartition.GetNoLimiter($"passthrough:{ip}");
+        });
+    });
+}
 
 // RepoRegistry — EF Core registry DB for dynamic repo registration
 // Provider is derived from Storage:Provider to simplify configuration
@@ -276,6 +327,9 @@ app.MapDefaultEndpoints();
 if (builder.Configuration.GetValue<bool>("Prometheus:Enabled"))
     app.MapPrometheusScrapingEndpoint();
 app.UseCors();
+// Rate limiting middleware — applies when either MCP or API limiter is configured
+if (mcpRateLimitSection.Exists() || apiRateLimitSection.Exists())
+    app.UseRateLimiter();
 app.MapRazorPages();
 
 // Startup bootstrap: seed config → DB, load DB → ServiceRegistry
