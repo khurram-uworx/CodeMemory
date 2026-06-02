@@ -394,7 +394,6 @@ public sealed class TreeSitterSymbolExtractor : ISymbolExtractor
         ["namespace_definition"] = CodeSymbolKind.Module,
         ["type_definition"] = CodeSymbolKind.TypeAlias,
         ["alias_declaration"] = CodeSymbolKind.TypeAlias,
-        ["template_declaration"] = CodeSymbolKind.Class,
     };
 
     static bool isInsideClass(Node node)
