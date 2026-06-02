@@ -12,17 +12,18 @@ public sealed class GitHistoryService : IGitHistoryService, IDisposable
     sealed record CacheEntry(object Result, DateTime Timestamp);
 
     readonly IStorageService storage;
+    readonly IGitMetricStore? metricStore;
     readonly ILogger<GitHistoryService> logger;
-    readonly string repoRoot;
     readonly ConcurrentDictionary<string, CacheEntry> cache = new(StringComparer.OrdinalIgnoreCase);
     readonly TimeSpan cacheTtl;
     readonly Timer cleanupTimer;
 
-    public GitHistoryService(ILogger<GitHistoryService> logger, IStorageService storage)
+    public GitHistoryService(ILogger<GitHistoryService> logger, IStorageService storage,
+        IGitMetricStore? metricStore = null)
     {
         this.logger = logger;
         this.storage = storage;
-        this.repoRoot = storage.RepoRoot;
+        this.metricStore = metricStore;
         cacheTtl = TimeSpan.FromMinutes(5);
         cleanupTimer = new Timer(_ => cleanupCache(), null, cacheTtl, cacheTtl);
     }
@@ -65,7 +66,9 @@ public sealed class GitHistoryService : IGitHistoryService, IDisposable
             RecentCommits: commits.Take(10).ToList());
     }
 
-    async Task<IReadOnlyList<HotspotInfo>?> runGitHotspotsAsync(int top, int maxCommits, CancellationToken ct)
+    async
+        Task<(IReadOnlyList<HotspotInfo> Hotspots, Dictionary<string, string> FileHashes)?>
+        runGitHotspotsAsync(int top, int maxCommits, CancellationToken ct)
     {
         using var activity = CodeMemoryActivitySources.Git.StartActivity("GetHotspots");
         activity?.SetTag("top", top);
@@ -77,7 +80,7 @@ public sealed class GitHistoryService : IGitHistoryService, IDisposable
         if (exitCode != 0 || string.IsNullOrWhiteSpace(stdout))
             return null;
 
-        var fileCounts = new Dictionary<string, (int commits, HashSet<string> authors, string lastDate)>(StringComparer.OrdinalIgnoreCase);
+        var fileCounts = new Dictionary<string, (int commits, HashSet<string> authors, string lastDate, string lastHash)>(StringComparer.OrdinalIgnoreCase);
 
         var blocks = stdout.Trim().Split('\n', StringSplitOptions.RemoveEmptyEntries);
         string? currentHash = null, currentAuthor = null, currentDate = null;
@@ -95,24 +98,41 @@ public sealed class GitHistoryService : IGitHistoryService, IDisposable
             {
                 var filePath = line.Trim();
                 if (!fileCounts.ContainsKey(filePath))
-                    fileCounts[filePath] = (0, [], "");
+                    fileCounts[filePath] = (0, [], "", "");
 
                 var entry = fileCounts[filePath];
                 var authors = entry.authors;
                 authors.Add(currentAuthor ?? "unknown");
-                fileCounts[filePath] = (entry.commits + 1, authors, currentDate!);
+                fileCounts[filePath] = (
+                    entry.commits + 1, authors,
+                    entry.commits == 0 ? currentDate! : entry.lastDate,
+                    entry.commits == 0 ? currentHash! : entry.lastHash);
             }
         }
 
+        var fileHashes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var hotspots = fileCounts
-            .Select(kv => new HotspotInfo(
-                kv.Key, kv.Value.commits, kv.Value.authors.Count, kv.Value.lastDate))
+            .Select(kv =>
+            {
+                fileHashes[kv.Key] = kv.Value.lastHash;
+                return new HotspotInfo(
+                    kv.Key, kv.Value.commits, kv.Value.authors.Count, kv.Value.lastDate);
+            })
             .OrderByDescending(h => h.CommitCount)
             .Take(top)
             .ToList();
 
         logger.LogDebug("GetHotspotsAsync: {Count} hotspots from {Total} files", hotspots.Count, fileCounts.Count);
-        return hotspots;
+        return (hotspots, fileHashes);
+    }
+
+    async Task<string?> getLastCommitHashAsync(string filePath, CancellationToken ct)
+    {
+        var (exitCode, stdout) = await runGitAsync(
+            $"--no-pager log -1 --format=\"%H\" -- \"{filePath}\"", ct);
+        return exitCode == 0 && !string.IsNullOrWhiteSpace(stdout)
+            ? stdout.Trim()
+            : null;
     }
 
     async Task<(int ExitCode, string Stdout)> runGitAsync(string arguments, CancellationToken ct)
@@ -125,7 +145,7 @@ public sealed class GitHistoryService : IGitHistoryService, IDisposable
         {
             var psi = new ProcessStartInfo("git", arguments)
             {
-                WorkingDirectory = repoRoot,
+                WorkingDirectory = storage.RepoRoot,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 RedirectStandardInput = true,
@@ -193,29 +213,92 @@ public sealed class GitHistoryService : IGitHistoryService, IDisposable
             return null;
         }
 
-        var cacheKey = $"history:{symbol.FilePath}";
+        var filePath = symbol.FilePath;
+        var cacheKey = $"history:{storage.RepoRoot}:{filePath}";
+
+        // Check in-memory cache (L1)
         if (cache.TryGetValue(cacheKey, out var cached) && cached.Result is SymbolHistoryResult cachedResult)
             return cachedResult;
 
-        var result = await runGitHistoryAsync(symbol.FilePath, maxCommits, ct);
-        if (result != null)
-            cache[cacheKey] = new CacheEntry(result, DateTime.UtcNow);
+        // Check persistent cache (L2) with validation
+        if (metricStore != null)
+        {
+            var cachedEntry = await metricStore.GetAsync(filePath, ct);
+            if (cachedEntry != null)
+            {
+                var currentHash = await getLastCommitHashAsync(filePath, ct);
+                if (currentHash != null &&
+                    string.Equals(currentHash, cachedEntry.LastCommitHash, StringComparison.OrdinalIgnoreCase))
+                {
+                    var result = new SymbolHistoryResult(
+                        SymbolPath: symbolPath,
+                        FilePath: filePath,
+                        TotalCommits: cachedEntry.CommitCount,
+                        UniqueAuthors: cachedEntry.UniqueAuthors,
+                        FirstCommitDate: cachedEntry.FirstCommitDate,
+                        LastCommitDate: cachedEntry.LastModified,
+                        RecentCommits: cachedEntry.RecentCommits?.Take(
+                            Math.Min(maxCommits, cachedEntry.RecentCommits.Count)).ToList());
 
-        return result;
+                    cache[cacheKey] = new CacheEntry(result, DateTime.UtcNow);
+                    return result;
+                }
+            }
+        }
+
+        var gitResult = await runGitHistoryAsync(filePath, maxCommits, ct);
+        if (gitResult != null)
+        {
+            cache[cacheKey] = new CacheEntry(gitResult, DateTime.UtcNow);
+
+            // Seed persistent cache
+            if (metricStore != null)
+            {
+                var lastHash = await getLastCommitHashAsync(filePath, ct) ?? "";
+                var entry = new GitMetricEntry(
+                    filePath,
+                    gitResult.TotalCommits,
+                    gitResult.UniqueAuthors,
+                    gitResult.LastCommitDate,
+                    gitResult.FirstCommitDate,
+                    lastHash,
+                    gitResult.RecentCommits);
+                await metricStore.SetAsync(filePath, entry, ct);
+            }
+        }
+
+        return gitResult;
     }
 
     public async Task<IReadOnlyList<HotspotInfo>> GetHotspotsAsync(
         int top = 10, int maxCommits = 100, CancellationToken ct = default)
     {
-        const string cacheKey = "hotspots";
+        var cacheKey = $"hotspots:{storage.RepoRoot}:{top}:{maxCommits}";
         if (cache.TryGetValue(cacheKey, out var cached) && cached.Result is IReadOnlyList<HotspotInfo> cachedResult)
             return cachedResult;
 
         var result = await runGitHotspotsAsync(top, maxCommits, ct);
         if (result != null)
-            cache[cacheKey] = new CacheEntry(result, DateTime.UtcNow);
+        {
+            var (hotspots, fileHashes) = result.Value;
+            cache[cacheKey] = new CacheEntry(hotspots, DateTime.UtcNow);
 
-        return result ?? [];
+            // Seed persistent cache with aggregate data
+            if (metricStore != null)
+            {
+                var entries = hotspots.ToDictionary(
+                    h => h.FilePath,
+                    h => new GitMetricEntry(
+                        h.FilePath, h.CommitCount, h.UniqueAuthorCount,
+                        h.LastModified, h.LastModified,
+                        fileHashes.GetValueOrDefault(h.FilePath, "")));
+                await metricStore.UpsertBatchAsync(entries, ct);
+            }
+
+            return hotspots;
+        }
+
+        return [];
     }
 
     public void Dispose()

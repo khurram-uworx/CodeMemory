@@ -4,6 +4,7 @@ using CodeMemory.AspNet.Storage;
 using CodeMemory.Diagnostics;
 using CodeMemory.Indexing;
 using CodeMemory.Services;
+
 using Microsoft.EntityFrameworkCore;
 using System.Collections.Concurrent;
 using System.Diagnostics;
@@ -28,6 +29,7 @@ public sealed class CloneIndexService
     readonly IRepoContextAccessor repoContext;
     readonly IServiceScopeFactory scopeFactory;
     readonly ILogger<CloneIndexService> logger;
+    readonly ILoggerFactory loggerFactory;
     readonly RepoRegistryOptions registryOptions;
     readonly StorageFactory storageFactory;
     readonly RepoMetricsRecorder metricsRecorder;
@@ -39,6 +41,7 @@ public sealed class CloneIndexService
         IRepoContextAccessor repoContext,
         IServiceScopeFactory scopeFactory,
         ILogger<CloneIndexService> logger,
+        ILoggerFactory loggerFactory,
         RepoRegistryOptions registryOptions,
         StorageFactory storageFactory,
         RepoMetricsRecorder metricsRecorder)
@@ -48,6 +51,7 @@ public sealed class CloneIndexService
         this.repoContext = repoContext;
         this.scopeFactory = scopeFactory;
         this.logger = logger;
+        this.loggerFactory = loggerFactory;
         this.registryOptions = registryOptions;
         this.storageFactory = storageFactory;
         this.metricsRecorder = metricsRecorder;

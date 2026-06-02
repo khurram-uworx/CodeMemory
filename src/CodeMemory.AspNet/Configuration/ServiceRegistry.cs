@@ -20,33 +20,24 @@ public sealed class ServiceRegistry : IServiceRegistry
     public bool Unregister(string repoName)
         => storageServices.TryRemove(repoName, out _);
 
-    T getService<T>(string? repoName) where T : class
+    public IStorageService GetStorage(string? repoName)
     {
-        ConcurrentDictionary<string, T> services = typeof(T) switch
-        {
-            var t when t == typeof(IStorageService) =>
-            (ConcurrentDictionary<string, T>)(object)storageServices,
-            _ => throw new NotSupportedException($"Service type '{typeof(T).Name}' is not supported.")
-        };
+        if (repoName is not null && storageServices.TryGetValue(repoName, out var storage))
+            return storage;
 
-        if (repoName is not null && services.TryGetValue(repoName, out var service))
-            return service;
-        else if (repoName is null)
+        if (repoName is null)
         {
-            if (services.TryGetValue("default", out var defaultService))
+            if (storageServices.TryGetValue("default", out var defaultService))
                 return defaultService;
 
-            if (services.Count > 0)
-                return services.First().Value;
+            if (storageServices.Count > 0)
+                return storageServices.First().Value;
 
-            throw new InvalidOperationException($"No {typeof(T).Name} services registered.");
+            throw new InvalidOperationException("No storage services registered.");
         }
 
         throw new InvalidOperationException(
-            $"No {typeof(T).Name} registered for repo '{repoName}'. " +
-            $"Available: {string.Join(", ", services.Keys)}");
+            $"No storage service registered for repo '{repoName}'. " +
+            $"Available: {string.Join(", ", storageServices.Keys)}");
     }
-
-    public IStorageService GetStorage(string? repoName)
-        => getService<IStorageService>(repoName);
 }

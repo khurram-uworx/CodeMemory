@@ -1,6 +1,7 @@
 using CodeMemory.Indexing;
 using CodeMemory.Indexing.Chunking;
 using CodeMemory.Indexing.Extraction;
+using CodeMemory.Indexing.Git;
 using CodeMemory.Indexing.Parsing;
 using CodeMemory.Indexing.Search;
 using CodeMemory.Mcp;
@@ -90,6 +91,9 @@ else
 
 // Storage
 builder.Services.AddCodeMemoryInMemoryStorage(repoRoot);
+
+// Persistent git metric cache (file-backed, zero dependencies)
+builder.Services.AddSingleton<IGitMetricStore, JsonGitMetricStore>();
 
 // Indexing services
 builder.Services.AddSingleton<FileCrawler>();

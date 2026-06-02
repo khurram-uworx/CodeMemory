@@ -1,7 +1,6 @@
 using CodeMemory.AspNet.Configuration;
 using CodeMemory.AspNet.Services;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 
 namespace CodeMemory.Tests.Diagnostics;
 

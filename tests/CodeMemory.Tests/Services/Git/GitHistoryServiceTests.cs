@@ -1,3 +1,4 @@
+using CodeMemory.Indexing.Git;
 using CodeMemory.Services.Git;
 using CodeMemory.Storage;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -42,6 +43,20 @@ public sealed class GitHistoryServiceTests : BaseServicesTests
         };
         using var process = Process.Start(psi)!;
         process.WaitForExit();
+    }
+
+    static string getLastCommitHash(string filePath, string repoRoot)
+    {
+        var psi = new ProcessStartInfo("git", $"--no-pager log -1 --format=\"%H\" -- \"{filePath}\"")
+        {
+            WorkingDirectory = repoRoot,
+            RedirectStandardOutput = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        using var process = Process.Start(psi)!;
+        process.WaitForExit();
+        return process.StandardOutput.ReadToEnd().Trim();
     }
 
     [Test]
@@ -134,5 +149,100 @@ public sealed class GitHistoryServiceTests : BaseServicesTests
         Assert.That(result.RecentCommits.Count, Is.GreaterThan(0));
         Assert.That(result.RecentCommits[0].Author, Is.EqualTo("testuser"));
         Assert.That(result.RecentCommits[0].Hash, Has.Length.EqualTo(40));
+    }
+
+    [Test]
+    public async Task GetSymbolHistoryAsync_CacheHit_ReturnsCachedData()
+    {
+        var repoRoot = createTempRepo();
+        var dbPath = Path.Combine(repoRoot, "test.db");
+        var storage = CreateStorage(repoRoot, dbPath);
+        await storage.InitializeAsync();
+
+        var testClassGuid = Guid.NewGuid().ToString("N");
+        await storage.StoreSymbolsAsync([
+            new SymbolRecord
+            {
+                Id = testClassGuid,
+                Name = "TestClass",
+                Kind = "Class",
+                FilePath = "test.cs",
+                FullName = "TestClass",
+                LineStart = 1, LineEnd = 1,
+            }
+        ]);
+
+        var lastHash = getLastCommitHash("test.cs", repoRoot);
+
+        // Pre-seed cache with FAKE data but REAL hash — should be served from cache
+        var metricStore = new JsonGitMetricStore(storage, NullLogger<JsonGitMetricStore>.Instance);
+        await metricStore.SetAsync("test.cs", new GitMetricEntry(
+            "test.cs", 999, 99, "2099-01-01", "2099-01-01", lastHash));
+
+        var service = new GitHistoryService(NullLogger<GitHistoryService>.Instance, storage, metricStore);
+        var result = await service.GetSymbolHistoryAsync("TestClass");
+
+        Assert.That(result, Is.Not.Null);
+        Assert.That(result.TotalCommits, Is.EqualTo(999));
+        Assert.That(result.UniqueAuthors, Is.EqualTo(99));
+        Assert.That(result.LastCommitDate, Is.EqualTo("2099-01-01"));
+    }
+
+    [Test]
+    public async Task GetSymbolHistoryAsync_CacheStale_Recomputes()
+    {
+        var repoRoot = createTempRepo();
+        var dbPath = Path.Combine(repoRoot, "test.db");
+        var storage = CreateStorage(repoRoot, dbPath);
+        await storage.InitializeAsync();
+
+        var testClassGuid = Guid.NewGuid().ToString("N");
+        await storage.StoreSymbolsAsync([
+            new SymbolRecord
+            {
+                Id = testClassGuid,
+                Name = "TestClass",
+                Kind = "Class",
+                FilePath = "test.cs",
+                FullName = "TestClass",
+                LineStart = 1, LineEnd = 1,
+            }
+        ]);
+
+        // Pre-seed cache with WRONG hash — should be rejected, recompute from git
+        var metricStore = new JsonGitMetricStore(storage, NullLogger<JsonGitMetricStore>.Instance);
+        await metricStore.SetAsync("test.cs", new GitMetricEntry(
+            "test.cs", 999, 99, "2099-01-01", "2099-01-01", "nonexistenthash"));
+
+        var service = new GitHistoryService(NullLogger<GitHistoryService>.Instance, storage, metricStore);
+        var result = await service.GetSymbolHistoryAsync("TestClass");
+
+        Assert.That(result, Is.Not.Null);
+        Assert.That(result.TotalCommits, Is.EqualTo(2));
+        Assert.That(result.UniqueAuthors, Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task GetHotspotsAsync_SeedsMetricStore()
+    {
+        var repoRoot = createTempRepo();
+        var dbPath = Path.Combine(repoRoot, "test.db");
+        var storage = CreateStorage(repoRoot, dbPath);
+        await storage.InitializeAsync();
+
+        var metricStore = new JsonGitMetricStore(storage, NullLogger<JsonGitMetricStore>.Instance);
+        var service = new GitHistoryService(NullLogger<GitHistoryService>.Instance, storage, metricStore);
+
+        await service.GetHotspotsAsync(5, 10);
+
+        var all = await metricStore.GetAllAsync();
+        Assert.That(all, Is.Not.Empty);
+
+        // The hotspot files should have been cached with a valid commit hash
+        var testCs = all.Values.FirstOrDefault(e =>
+            e.FilePath.EndsWith("test.cs", StringComparison.OrdinalIgnoreCase));
+        Assert.That(testCs, Is.Not.Null);
+        Assert.That(testCs.CommitCount, Is.GreaterThanOrEqualTo(2));
+        Assert.That(testCs.LastCommitHash, Is.Not.Empty);
     }
 }
