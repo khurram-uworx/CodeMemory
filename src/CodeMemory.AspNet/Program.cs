@@ -1,10 +1,12 @@
 using CodeMemory.AspNet.Configuration;
+using CodeMemory.AspNet.Extensions;
 using CodeMemory.AspNet.Registry;
 using CodeMemory.AspNet.Services;
 using CodeMemory.AspNet.Storage;
 using CodeMemory.Indexing;
 using CodeMemory.Indexing.Chunking;
 using CodeMemory.Indexing.Extraction;
+using CodeMemory.Indexing.Git;
 using CodeMemory.Indexing.Parsing;
 using CodeMemory.Indexing.Search;
 using CodeMemory.Services;
@@ -16,7 +18,6 @@ using CodeMemory.Storage;
 using Memori.Embeddings;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
-using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Caching.Memory;
 using System.Reflection;
 using System.Text.Json;
@@ -61,30 +62,30 @@ switch (embeddingProvider)
             var vocabPath = Path.GetFullPath(
                 builder.Configuration.GetValue<string>("Embedding:OnnxVocabPath")
                 ?? "models/bge-micro-v2/vocab.txt");
-            LoadOnnxExtension(builder.Services, modelPath, vocabPath);
+            builder.Services.LoadOnnxExtension(modelPath, vocabPath);
             break;
         }
-    //case "sk-connector-onnx":
-    //    {
-    //        var modelPath = Path.GetFullPath(
-    //            builder.Configuration.GetValue<string>("Embedding:OnnxModelPath")
-    //            ?? "models/bge-micro-v2/model.onnx");
-    //        var vocabPath = Path.GetFullPath(
-    //            builder.Configuration.GetValue<string>("Embedding:OnnxVocabPath")
-    //            ?? "models/bge-micro-v2/vocab.txt");
-    //        builder.Services.AddCodeMemorySKOnnxEmbeddingGenerator(modelPath, vocabPath);
-    //        break;
-    //    }
-    //case "ollama":
-    //    {
-    //        var endpoint = builder.Configuration.GetValue<string>("Embedding:OllamaEndpoint")
-    //            ?? "http://localhost:11434";
-    //        var model = builder.Configuration.GetValue<string>("Embedding:OllamaModel")
-    //            ?? "all-minilm";
-    //        builder.Services.AddCodeMemoryOllamaEmbeddingGenerator(
-    //            new Uri(endpoint), model);
-    //        break;
-    //    }
+    case "sk-connector-onnx":
+        {
+            var modelPath = Path.GetFullPath(
+                builder.Configuration.GetValue<string>("Embedding:OnnxModelPath")
+                ?? "models/bge-micro-v2/model.onnx");
+            var vocabPath = Path.GetFullPath(
+                builder.Configuration.GetValue<string>("Embedding:OnnxVocabPath")
+                ?? "models/bge-micro-v2/vocab.txt");
+            builder.Services.LoadSKOnnxExtension(modelPath, vocabPath);
+            break;
+        }
+    case "ollama":
+        {
+            var endpoint = builder.Configuration.GetValue<string>("Embedding:OllamaEndpoint")
+                ?? "http://localhost:11434";
+            var model = builder.Configuration.GetValue<string>("Embedding:OllamaModel")
+                ?? "all-minilm";
+            builder.Services.LoadOllamaExtension(
+                new Uri(endpoint), model);
+            break;
+        }
     default:
         builder.Services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>, NgramEmbeddingGenerator>();
         break;
@@ -95,6 +96,9 @@ builder.Services.AddSingleton<IServiceRegistry>(storageRegistry);
 builder.Services.AddSingleton<IRepoContextAccessor, RepoContextAccessor>();
 builder.Services.AddSingleton<IStorageService, StorageServiceRouter>();
 builder.Services.AddMemoryCache();
+
+// Git metric store — uses IStorageService (StorageServiceRouter) for per-repo resolution
+builder.Services.AddSingleton<IGitMetricStore, JsonGitMetricStore>();
 
 builder.Services.AddScoped<IndexingEngine>();
 builder.Services.AddHostedService<IndexingHostedService>();
@@ -441,40 +445,5 @@ app.MapGet("/api/repos/{name}/status", async (string name, RepoRegistryService r
         indexingCompleted = IndexingState.IsCompleted(repo.Name)
     });
 });
+
 app.Run();
-
-static void LoadOnnxExtension(
-    IServiceCollection services,
-    string modelPath,
-    string vocabPath)
-{
-    try
-    {
-        var assemblyPath = Path.Combine(AppContext.BaseDirectory, "CodeMemory.AspNet.Extensions.dll");
-        if (!File.Exists(assemblyPath))
-            throw new FileNotFoundException(
-                "CodeMemory.AspNet.Extensions.dll not found at expected path. " +
-                "In Docker: ensure docker-compose.yml builds with --build. " +
-                "Local: run 'dotnet publish src/CodeMemory.AspNet.Extensions' first.",
-                assemblyPath);
-
-        var assembly = Assembly.LoadFrom(assemblyPath);
-        var type = assembly.GetType("CodeMemory.AspNet.Extensions.ServiceCollectionExtensions")
-            ?? throw new InvalidOperationException("Type ServiceCollectionExtensions not found");
-        var method = type.GetMethod("AddCodeMemoryOnnxEmbeddingGenerator",
-            BindingFlags.Public | BindingFlags.Static,
-            null,
-            [typeof(IServiceCollection), typeof(string), typeof(string)],
-            null)
-            ?? throw new InvalidOperationException("Method AddCodeMemoryOnnxEmbeddingGenerator not found");
-
-        method.Invoke(null, [services, modelPath, vocabPath]);
-    }
-    catch (Exception ex)
-    {
-        throw new InvalidOperationException(
-            "Failed to load ONNX embedding extension (CodeMemory.AspNet.Extensions). " +
-            "Build with: dotnet publish src/CodeMemory.AspNet.Extensions " +
-            "or use Embedding:Provider=ngram for zero-dependency mode.", ex);
-    }
-}

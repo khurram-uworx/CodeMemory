@@ -16,6 +16,10 @@ For background on the metrics pipeline, endpoints, dashboards, and configuration
 
 **Recommendation:** Switch to base64-encoded JSON or a content hash for tag serialization to safely handle arbitrary tag values.
 
+## Two RepoRoot-Only IStorageService Consumers
+
+`JsonGitMetricStore` and `AspNetSqlQueryTool` both inject `IStorageService` but only access `.RepoRoot` — they don't call any storage read/write/query methods. This is consistent with the existing DI pattern (14/16 services use `IStorageService` for more than just `RepoRoot`), so no abstraction change is warranted for just 2 consumers. Noted for awareness if the count grows.
+
 ### Gap B: Grafana datasource UID is implicit
 
 **What's implemented:** Both Grafana dashboards reference the Prometheus datasource using `uid: "Prometheus"`, while `monitoring/grafana/datasources/prometheus.yaml` provisions the datasource by name only.

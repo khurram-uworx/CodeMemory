@@ -322,9 +322,6 @@ MigrationBackup/
 # Ionide (cross platform F# VS Code tools) working folder
 .ionide/
 
-# CodeMemory index databases — add .memorycode/ to exclude from version control
-.memorycode/
-
 # NPM package downloaded/extracted release artifacts
 packages/code-memory/bin/*
 !packages/code-memory/bin/code-memory.js
@@ -333,10 +330,10 @@ packages/code-memory/bin/*
 FodyWeavers.xsd
 
 /.memori
-/.codememory
+# CodeMemory index databases — add .codememory/ to exclude from version control
+.codememory/
+.codememory.json
 
 /src/CodeMemory.AspNet/appsettings.Development.json
 /src/CodeMemory.AspNet/appsettings.Production.json
 /src/CodeMemory.AspNet/App_Data
-
-.codememory.json
