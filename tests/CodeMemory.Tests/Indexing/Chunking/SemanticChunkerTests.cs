@@ -269,6 +269,145 @@ public sealed class SemanticChunkerTests
     }
 
     [Test]
+    public async Task ChunkAll_WithGo_BlockImport_CapturesAllLines()
+    {
+        Assume.That(isTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            package main
+            import (
+                "fmt"
+                "os"
+            )
+
+            type Worker struct {
+                Name string
+            }
+            func (w Worker) Work() {}
+            """;
+
+        var (symbols, fileText) = await extractTsSymbols(code, ".go");
+        var chunker = new SemanticChunker(NullLogger<SemanticChunker>.Instance);
+        var chunks = chunker.ChunkAll(symbols, fileText, "test.go", Language.Go);
+
+        var workerChunk = chunks.FirstOrDefault(c => c.SymbolId == "Worker");
+        Assert.That(workerChunk, Is.Not.Null);
+        Assert.That(workerChunk!.Content, Does.Contain("package main"));
+        Assert.That(workerChunk.Content, Does.Contain("\"fmt\""));
+        Assert.That(workerChunk.Content, Does.Contain("\"os\""));
+    }
+
+    [Test]
+    public async Task ChunkAll_WithPython_ParenthesizedImport_CapturesAllLines()
+    {
+        Assume.That(isTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            from typing import (
+                Optional,
+                List,
+            )
+
+            class Config:
+                def __init__(self):
+                    pass
+            """;
+
+        var (symbols, fileText) = await extractTsSymbols(code, ".py");
+        var chunker = new SemanticChunker(NullLogger<SemanticChunker>.Instance);
+        var chunks = chunker.ChunkAll(symbols, fileText, "test.py", Language.Python);
+
+        var configChunk = chunks.FirstOrDefault(c => c.SymbolId == "Config");
+        Assert.That(configChunk, Is.Not.Null);
+        Assert.That(configChunk!.Content, Does.Contain("from typing import ("));
+        Assert.That(configChunk.Content, Does.Contain("Optional,"));
+        Assert.That(configChunk.Content, Does.Contain("List,"));
+    }
+
+    [Test]
+    public async Task ChunkAll_WithTypeScript_MultiLineImport_CapturesAllLines()
+    {
+        Assume.That(isTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            import {
+                Component,
+                Helper,
+            } from './component';
+
+            export class MyService {
+                doWork() {}
+            }
+            """;
+
+        var (symbols, fileText) = await extractTsSymbols(code, ".ts");
+        var chunker = new SemanticChunker(NullLogger<SemanticChunker>.Instance);
+        var chunks = chunker.ChunkAll(symbols, fileText, "test.ts", Language.TypeScript);
+
+        var serviceChunk = chunks.FirstOrDefault(c => c.SymbolId == "MyService");
+        Assert.That(serviceChunk, Is.Not.Null);
+        Assert.That(serviceChunk!.Content, Does.Contain("Component,"));
+        Assert.That(serviceChunk.Content, Does.Contain("Helper,"));
+        Assert.That(serviceChunk.Content, Does.Contain("from './component'"));
+
+        // Regression: export class { must not trigger block tracking and
+        // duplicate the class body into file context.
+        var doWorkPos = serviceChunk.Content.IndexOf("doWork()");
+        var doWorkLast = serviceChunk.Content.LastIndexOf("doWork()");
+        Assert.That(doWorkPos, Is.Not.EqualTo(-1));
+        Assert.That(doWorkPos, Is.EqualTo(doWorkLast), "doWork() appears more than once — export triggered block mode");
+    }
+
+    [Test]
+    public async Task ChunkAll_WithTypeScript_ImportTypeBlock_CapturesAllLines()
+    {
+        Assume.That(isTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            import type {
+                Component,
+            } from './component';
+
+            export class MyService {
+                doWork() {}
+            }
+            """;
+
+        var (symbols, fileText) = await extractTsSymbols(code, ".ts");
+        var chunker = new SemanticChunker(NullLogger<SemanticChunker>.Instance);
+        var chunks = chunker.ChunkAll(symbols, fileText, "test.ts", Language.TypeScript);
+
+        var serviceChunk = chunks.FirstOrDefault(c => c.SymbolId == "MyService");
+        Assert.That(serviceChunk, Is.Not.Null);
+        Assert.That(serviceChunk!.Content, Does.Contain("import type {"));
+        Assert.That(serviceChunk.Content, Does.Contain("Component,"));
+        Assert.That(serviceChunk.Content, Does.Contain("from './component'"));
+    }
+
+    [Test]
+    public async Task ChunkAll_WithRust_MultiLineUseBlock_CapturesAllLines()
+    {
+        Assume.That(isTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            use std::sync::{
+                Arc,
+                Mutex,
+            };
+
+            struct Worker {
+                name: String,
+            }
+            fn run() {}
+            """;
+
+        var (symbols, fileText) = await extractTsSymbols(code, ".rs");
+        var chunker = new SemanticChunker(NullLogger<SemanticChunker>.Instance);
+        var chunks = chunker.ChunkAll(symbols, fileText, "test.rs", Language.Rust);
+
+        var workerChunk = chunks.FirstOrDefault(c => c.SymbolId == "Worker");
+        Assert.That(workerChunk, Is.Not.Null);
+        Assert.That(workerChunk!.Content, Does.Contain("use std::sync::{"));
+        Assert.That(workerChunk.Content, Does.Contain("Arc,"));
+        Assert.That(workerChunk.Content, Does.Contain("Mutex,"));
+    }
+
+    [Test]
     public async Task ChunkAll_WithGo_ImportAndPackageInFileContext()
     {
         Assume.That(isTreeSitterAvailable(), "Tree-sitter native libraries not available");

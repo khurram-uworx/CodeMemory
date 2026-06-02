@@ -4,11 +4,17 @@ Observations and known gaps discovered during implementation.
 
 ---
 
-## Metrics Known Gaps
+## 1. Architecture Observations
+
+### Gap 1A: Two RepoRoot-Only IStorageService Consumers
+
+`JsonGitMetricStore` and `AspNetSqlQueryTool` both inject `IStorageService` but only access `.RepoRoot` — they don't call any storage read/write/query methods. This is consistent with the existing DI pattern (14/16 services use `IStorageService` for more than just `RepoRoot`), so no abstraction change is warranted for just 2 consumers. Noted for awareness if the count grows.
+
+## 2.Metrics Known Gaps
 
 For background on the metrics pipeline, endpoints, dashboards, and configuration, see [`docs/METRICS.md`](METRICS.md).
 
-### Gap A: Tag serialization format vulnerable to delimiter collision
+### Gap 2A: Tag serialization format vulnerable to delimiter collision
 
 **What's implemented:** `InMemoryMetricsStore.serializeTags()` joins tags as `key=value|key=value` (sorted by key). `deserializeTags()` splits on `|` then `=`. This is deterministic, human-readable, and round-trips correctly for current tag values.
 
@@ -16,11 +22,7 @@ For background on the metrics pipeline, endpoints, dashboards, and configuration
 
 **Recommendation:** Switch to base64-encoded JSON or a content hash for tag serialization to safely handle arbitrary tag values.
 
-## Two RepoRoot-Only IStorageService Consumers
-
-`JsonGitMetricStore` and `AspNetSqlQueryTool` both inject `IStorageService` but only access `.RepoRoot` — they don't call any storage read/write/query methods. This is consistent with the existing DI pattern (14/16 services use `IStorageService` for more than just `RepoRoot`), so no abstraction change is warranted for just 2 consumers. Noted for awareness if the count grows.
-
-### Gap B: Grafana datasource UID is implicit
+### Gap 2B: Grafana datasource UID is implicit
 
 **What's implemented:** Both Grafana dashboards reference the Prometheus datasource using `uid: "Prometheus"`, while `monitoring/grafana/datasources/prometheus.yaml` provisions the datasource by name only.
 
