@@ -1,10 +1,10 @@
 using CodeMemory.AspNet.Registry;
 using CodeMemory.AspNet.Storage;
 using CodeMemory.Storage;
+using CommunityToolkit.VectorData.SqliteVec;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.SemanticKernel.Connectors.SqliteVec;
 
 namespace CodeMemory.Tests.Storage;
 

@@ -2,12 +2,12 @@ using CodeMemory.AspNet.Registry;
 using CodeMemory.AspNet.Storage;
 using CodeMemory.AspNet.Tools;
 using CodeMemory.Storage;
+using CommunityToolkit.VectorData.SqliteVec;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.SemanticKernel.Connectors.SqliteVec;
 
 namespace CodeMemory.Tests.Mcp;
 

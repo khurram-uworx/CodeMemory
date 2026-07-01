@@ -134,26 +134,30 @@ MCP tools use three patterns — follow the one matching your return type:
 - Tools with external service dependencies use `GetService<T>` fallback — gracefully degrade when backing services are unavailable.
 - MCP SDK serializes typed record returns; unexpected exceptions become JSON-RPC errors automatically.
 
-## Testing
+## Testing Conventions
 
 - **Framework:** NUnit 4.x — `[Test]`, `Assert.That(...)`, `Assert.ThrowsAsync`, no `[TestCase]`
 - **Mocking:** NSubstitute-based factory methods in `MockServices.cs` — use `MockServices.CreateXxxService()` in tests. For unique test scenarios, configure inline with `Substitute.For<IService>()` instead of extending the shared factory.
 - **Naming:** `Method_Scenario_ExpectedBehavior` PascalCase
-- **Pattern:** Arrange-Act-Aggregate (AAA, no explicit comments needed)
+- **Pattern:** Arrange-Act-Assert (AAA); no explicit comments needed
 - **Organization:** Mirror `src/` layout; one class per file, `*Tests.cs` suffix
 - **Base classes:** `BaseToolTests` (MCP integration), `BaseServicesTests` (service tests with real SQLite)
 - **Shared:** `MockServices.cs`, `TestLogger<T>`, `TestConstants`, `TestRepoHelper`, `fixtures/`
 
 ## Code Style
 
-`.editorconfig` at repo root is authoritative. Key conventions not covered there:
-
-- **Primary constructors:** Preferred for service/DI classes over classic constructor with `this.` field assignment
-- **`sealed class`:** Default for non-abstract classes
-- **`readonly` fields:** All DI-injected services
-- **Collection expressions:** `[]` for empty/static, `new List<T>()` for mutable
-- **Private fields:** No underscore prefix (`logger` not `_logger`)
-- **MCP tool return types:** Always use typed records/classes, never `string`. The MCP SDK serializes typed returns automatically into the JSON-RPC envelope. Manual `JsonSerializer.Serialize` + `string` return (the old pattern) bypasses SDK serialization, swallows exceptions into success responses instead of proper JSON-RPC errors, and hides the response schema from `tools/list`. Define result types in the tool file (like `AspNetSqlQueryResult`) or under `Mcp/Models/` for shared types.
+- `.editorconfig` at repo root is authoritative; follow it over any convention below.
+- **Private fields:** `camelCase` without `_` prefix (`logger`, not `_logger`).
+- **Member ordering:** inner classes → constructors → properties → methods; static before instance; private → protected → internal → public.
+- **Primary constructors:** preferred for service/DI classes over classic constructor with field assignment.
+- **Sealed by default:** use `sealed class` for non-abstract classes unless inheritance is explicitly designed.
+- **Collection expressions:** `[]` for empty/static collections; `new List<T>()` or `new Dictionary<K,V>()` for mutable ones.
+- **Nullable reference types:** enabled; do not introduce avoidable warnings.
+- **Omit braces** from single-line `if`/`else` bodies when the body fits one line and is on the same line as the condition.
+- **No comments** in generated code unless explaining a non-obvious design decision.
+- **No Hungarian notation** — no prefixes encoding scope or mutability.
+- **`readonly` fields:** All DI-injected services.
+- **MCP tool return types:** Always use typed records/classes, never `string`. The MCP SDK serializes typed returns automatically into the JSON-RPC envelope. Manual `JsonSerializer.Serialize` + `string` return bypasses SDK serialization, swallows exceptions into success responses instead of proper JSON-RPC errors, and hides the response schema from `tools/list`. Define result types in the tool file (like `AspNetSqlQueryResult`) or under `Mcp/Models/` for shared types.
 
 ## DI Conventions
 
