@@ -1,13 +1,13 @@
 using CodeMemory.AspNet.Registry;
 using CodeMemory.AspNet.Storage.PgVector;
 using CodeMemory.Storage;
+using CommunityToolkit.VectorData.SqliteVec;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.VectorData;
-using Microsoft.SemanticKernel.Connectors.SqliteVec;
 using Microsoft.SemanticKernel.Connectors.SqlServer;
 
 namespace CodeMemory.AspNet.Storage;
