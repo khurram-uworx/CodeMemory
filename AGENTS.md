@@ -125,6 +125,7 @@ Files excluded by default (hardcoded in `FileCrawler.AlwaysIgnored`): `.git`, `.
 - Stateful mode (`Stateless = false`) breaks WebApplicationFactory tests — they don't send the MCP `initialize` handshake.
 - MCP SDK documentation lives in the NuGet cache, not on NuGet.org — NuGet.org search returns Azure Functions MCP docs for the legacy SDK, not the ASP.NET Core `ModelContextProtocol.AspNetCore` package.
 - **Ping before use** — indexing is non-blocking in both hosts; agents MUST poll `ping` until `indexingCompleted: true` (see [Non-Blocking Indexing](#non-blocking-indexing--ping-contract) above).
+- **`SqlQueryParser` is not thread-safe** — it wraps sqlparsercs's stateful `Parser` (mutable token/index instance state reused across `ParseSql` calls). Never hold a shared `SqlQueryParser` instance across concurrent calls; create one per parse (see #127).
 
 ## SQL Parser Development Reference
 
