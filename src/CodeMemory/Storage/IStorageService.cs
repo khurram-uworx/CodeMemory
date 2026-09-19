@@ -20,6 +20,8 @@ public interface IStorageService
 
     Task<SymbolRecord?> GetSymbolByFullNameAsync(string fullName, CancellationToken ct = default);
 
+    Task<IReadOnlyList<SymbolRecord>> SuggestSymbolsAsync(string query, int top = 5, CancellationToken ct = default);
+
     Task<ChunkRecord?> GetChunkAsync(string id, CancellationToken ct = default);
 
     Task<RelationshipRecord?> GetRelationshipAsync(string id, CancellationToken ct = default);

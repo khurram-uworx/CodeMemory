@@ -179,17 +179,47 @@ public sealed class StorageService : IStorageService, IDisposable
     public async Task<SymbolRecord?> GetSymbolByFullNameAsync(string fullName, CancellationToken ct = default)
     {
         throwIfNotInitialized();
+        if (string.IsNullOrWhiteSpace(fullName))
+            return null;
+
         Expression<Func<SymbolRecord, bool>> filter = s => s.FullName == fullName;
-        var results = await symbols!.GetAsync(filter, top: 1, options: null, ct).ToListAsync(ct);
-        var symbol = results.FirstOrDefault();
+        var symbol = (await symbols!.GetAsync(filter, top: 1, options: null, ct).ToListAsync(ct)).FirstOrDefault();
         if (symbol != null)
             return symbol;
 
-        // Fallback: try matching by short name for convenience
-        Expression<Func<SymbolRecord, bool>> nameFilter = s => s.Name == fullName;
-        var nameResults = await symbols!.GetAsync(nameFilter, top: 1, options: null, ct).ToListAsync(ct);
+        // Fallbacks in one deterministic in-memory pass so behavior is identical across backends:
+        // 1) signature-insensitive prefix — "Ns.Util.getLikeMethod(string pattern)" <- "Ns.Util.getLikeMethod";
+        //    overloads resolve to the first match, documented tradeoff.
+        // 2) short name for convenience (existing behavior).
+        var candidates = await symbols!.GetAsync(s => s.FullName != null, top: int.MaxValue, options: null, ct).ToListAsync(ct);
+        symbol = candidates.FirstOrDefault(c => c.FullName.StartsWith(SymbolName.SignaturePrefix(fullName), StringComparison.OrdinalIgnoreCase));
+        if (symbol != null)
+            return symbol;
 
-        return nameResults.FirstOrDefault();
+        return candidates.FirstOrDefault(c => c.Name == fullName);
+    }
+
+    public async Task<IReadOnlyList<SymbolRecord>> SuggestSymbolsAsync(string query, int top = 5, CancellationToken ct = default)
+    {
+        throwIfNotInitialized();
+        if (string.IsNullOrWhiteSpace(query) || top <= 0)
+            return [];
+
+        var candidates = await symbols!.GetAsync(s => s.FullName != null, top: int.MaxValue, options: null, ct).ToListAsync(ct);
+        if (candidates.Count == 0)
+            return [];
+
+        var lastSegment = SymbolName.LastSegment(query);
+
+        return candidates
+            .Where(c => !string.Equals(c.FullName, query, StringComparison.OrdinalIgnoreCase))
+            .Where(c => c.FullName.StartsWith(query, StringComparison.OrdinalIgnoreCase)
+                || (lastSegment.Length > 0 && c.Name.StartsWith(lastSegment, StringComparison.OrdinalIgnoreCase)))
+            .GroupBy(c => c.Id)
+            .Select(g => g.First())
+            .OrderBy(c => c.FullName, StringComparer.OrdinalIgnoreCase)
+            .Take(top)
+            .ToList();
     }
 
     public async Task<ChunkRecord?> GetChunkAsync(string id, CancellationToken ct = default)

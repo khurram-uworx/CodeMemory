@@ -641,6 +641,114 @@ public sealed class StorageServiceTests : BaseServicesTests
         Assert.That(ex, Is.InstanceOf<OperationCanceledException>());
     }
 
+    [Test]
+    public async Task GetSymbolByFullNameAsync_MethodPathWithoutSignature_ResolvesToMethod()
+    {
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
+        await storage.InitializeAsync();
+
+        await storage.StoreSymbolsAsync([
+            new SymbolRecord
+            {
+                Id = "m1",
+                Name = "getLikeMethod",
+                Kind = "Method",
+                FilePath = "/src/QueryUtils.cs",
+                FullName = "Ns.Util.QueryUtils.getLikeMethod(string pattern)",
+                LineStart = 10,
+                LineEnd = 22
+            }
+        ]);
+
+        var resolved = await storage.GetSymbolByFullNameAsync("Ns.Util.QueryUtils.getLikeMethod");
+
+        Assert.That(resolved, Is.Not.Null);
+        Assert.That(resolved!.Id, Is.EqualTo("m1"));
+    }
+
+    [Test]
+    public async Task GetSymbolByFullNameAsync_Overloads_ResolvesToFirstStoredMatch()
+    {
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
+        await storage.InitializeAsync();
+
+        await storage.StoreSymbolsAsync([
+            new SymbolRecord { Id = "ov1", Name = "Parse", Kind = "Method", FilePath = "/src/A.cs",
+                FullName = "Ns.Util.Parser.Parse(string)" },
+            new SymbolRecord { Id = "ov2", Name = "Parse", Kind = "Method", FilePath = "/src/A.cs",
+                FullName = "Ns.Util.Parser.Parse(int)" }
+        ]);
+
+        var resolved = await storage.GetSymbolByFullNameAsync("Ns.Util.Parser.Parse");
+
+        Assert.That(resolved, Is.Not.Null);
+        Assert.That(resolved!.Id, Is.AnyOf("ov1", "ov2"));
+    }
+
+    [Test]
+    public async Task GetSymbolByFullNameAsync_UnknownMethod_ReturnsNull()
+    {
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
+        await storage.InitializeAsync();
+
+        await storage.StoreSymbolsAsync([
+            new SymbolRecord { Id = "m1", Name = "getLikeMethod", Kind = "Method", FilePath = "/src/QueryUtils.cs",
+                FullName = "Ns.Util.QueryUtils.getLikeMethod(string pattern)" }
+        ]);
+
+        var resolved = await storage.GetSymbolByFullNameAsync("Ns.Util.QueryUtils.doesNotExist");
+
+        Assert.That(resolved, Is.Null);
+    }
+
+    [Test]
+    public async Task SuggestSymbolsAsync_MatchesFullNamePrefixAndLastName()
+    {
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
+        await storage.InitializeAsync();
+
+        await storage.StoreSymbolsAsync([
+            new SymbolRecord { Id = "s1", Name = "getLikeMethod", Kind = "Method", FilePath = "/src/A.cs",
+                FullName = "Ns.Util.QueryUtils.getLikeMethod(string)" },
+            new SymbolRecord { Id = "s2", Name = "getRelated", Kind = "Method", FilePath = "/src/A.cs",
+                FullName = "Ns.Util.QueryUtils.getRelated()" },
+            new SymbolRecord { Id = "s3", Name = "getLikeResource", Kind = "Method", FilePath = "/src/B.cs",
+                FullName = "Other.App.getLikeResource()" },
+            new SymbolRecord { Id = "s4", Name = "completelyDifferent", Kind = "Class", FilePath = "/src/C.cs",
+                FullName = "Ns.Util.Other" }
+        ]);
+
+        var suggestions = await storage.SuggestSymbolsAsync("Ns.Util.QueryUtils.get");
+
+        Assert.That(suggestions.Select(s => s.Id), Is.EquivalentTo(["s1", "s2", "s3"]));
+    }
+
+    [Test]
+    public async Task SuggestSymbolsAsync_ExcludesExactMatch_AndHonorsTop()
+    {
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
+        await storage.InitializeAsync();
+
+        await storage.StoreSymbolsAsync([
+            new SymbolRecord { Id = "e1", Name = "Shared", Kind = "Class", FilePath = "/src/A.cs",
+                FullName = "Ns.Classes.Shared" },
+            new SymbolRecord { Id = "e2", Name = "SharedHelper", Kind = "Class", FilePath = "/src/B.cs",
+                FullName = "Ns.Classes.SharedHelper" },
+            new SymbolRecord { Id = "e3", Name = "SharedService", Kind = "Class", FilePath = "/src/C.cs",
+                FullName = "Ns.Classes.SharedService" }
+        ]);
+
+        var suggestions = await storage.SuggestSymbolsAsync("Ns.Classes.Shared", top: 1);
+
+        Assert.That(suggestions.Select(s => s.Id), Is.Not.Contains("e1"));
+        Assert.That(suggestions, Has.Count.EqualTo(1));
+    }
+
     [TearDown]
     public void TearDown()
     {
