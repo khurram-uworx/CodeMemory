@@ -356,6 +356,8 @@ after translating logical table/column names to physical names.
 
 Only SELECT is supported. No INSERT/UPDATE/DELETE/CREATE.
 
+SCHEMA DISCOVERY: Use DESCRIBE TABLES or DESC <table> to list the available relational tables and columns. PRAGMA table_info is available in the stdio InMemoryVectorStore host, but not in this relational backend.
+
 TABLES:
   - SymbolRecord: Id, Name, Kind, FilePath, LineStart, LineEnd, FullName, Modifiers, Documentation
   - RelationshipRecord: Id, SourceSymbolId, TargetSymbolId, RelationshipType
@@ -379,6 +381,8 @@ AND, OR, NOT, +, -, *, /
 AGGREGATES: COUNT(*|col), SUM, AVG, MIN, MAX — use AS alias
 
 EXAMPLES:
+  DESCRIBE TABLES
+  DESC SymbolRecord
   SELECT * FROM SymbolRecord WHERE Kind = 'Class' ORDER BY Name OFFSET 0 ROWS FETCH NEXT 10 ROWS ONLY
   SELECT DISTINCT Kind FROM SymbolRecord
   SELECT FilePath, COUNT(*) AS cnt FROM SymbolRecord GROUP BY FilePath HAVING cnt > 1 ORDER BY cnt DESC
