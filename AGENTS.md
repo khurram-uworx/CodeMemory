@@ -12,6 +12,11 @@ Engineering constraints and implementation guidance for AI coding agents contrib
 
 - **Repo:** `khurram-uworx/CodeMemory`
 - All `gh` commands require `--repo khurram-uworx/CodeMemory`
+- **Write issue/PR bodies and commit messages to files** — never inline `--body "..."`/`-m "..."`.
+  PowerShell (`pwsh`) parses quotes, `$`, backticks, and `(`/`)` inside double-quoted strings and
+  mangles multi-line bodies; write the text to a temp file (e.g.
+  `%TEMP%\opencode-<name>.md`) and pass it with `gh issue create
+  --body-file <file>` / `gh pr create --body-file <file>` / `git commit -F <file>`.
 
 ### MCP Server Verification — Triage Bugs via GitHub Issues
 

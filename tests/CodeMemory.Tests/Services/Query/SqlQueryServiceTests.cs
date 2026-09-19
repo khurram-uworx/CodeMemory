@@ -1109,6 +1109,74 @@ public sealed class SqlQueryServiceTests
         Assert.That(result.Rows![0]["Name"], Is.EqualTo("Helper"));
     }
 
+    // ----- Issue #123 regression: parenthesized boolean groups and chained OR ... LIKE -----
+
+    [Test]
+    public async Task Where_ParenthesizedAndOrLikeGroup_ReturnsMatchingRows()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        // Issue repro shape: AND of a LIKE with a parenthesized OR-group of LIKEs.
+        // MyClass and MyMethod share /src/MyClass.cs and match the OR group; _private is in
+        // the file but matches neither name pattern; a wrongly-AND'd group yields no rows.
+        var result = await service.ExecuteAsync(store,
+            "SELECT Name FROM SymbolRecord WHERE FilePath LIKE '%MyClass%' " +
+            "AND (Name LIKE '%My%' OR Name LIKE '%Helper%') ORDER BY Name");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.Rows!.Select(r => r["Name"]), Is.EquivalentTo(["MyClass", "MyMethod"]));
+    }
+
+    [Test]
+    public async Task Where_ChainedOrLikeAcrossColumns_ReturnsMatchingRows()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        // Issue repro shape: chained OR ... LIKE spreading across Name and FullName.
+        // MyClass and _private match none of the four clauses and must be excluded.
+        var result = await service.ExecuteAsync(store,
+            "SELECT Name FROM SymbolRecord WHERE Name LIKE '%MyMethod%' " +
+            "OR Name LIKE '%Helper%' OR FullName LIKE '%IOld%' OR FullName LIKE 'Helper' " +
+            "ORDER BY Name");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.Rows!.Select(r => r["Name"]), Is.EquivalentTo(["Helper", "IOld", "MyMethod"]));
+    }
+
+    [Test]
+    public async Task Where_ParenthesizedNotGroup_ReturnsMatchingRows()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        // NOT over a parenthesized group AND-combined with a LIKE.
+        var result = await service.ExecuteAsync(store,
+            "SELECT Name FROM SymbolRecord WHERE NOT (Name LIKE '%Method%') " +
+            "AND FilePath LIKE '%MyClass%' ORDER BY Name");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.Rows!.Select(r => r["Name"]), Is.EquivalentTo(["_private", "MyClass"]));
+    }
+
+    [Test]
+    public async Task Where_ParenthesizedGroup_UnknownColumnStillFailsValidation()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        // Schema-first validation (#122) still fires inside parenthesized/OR groups — the
+        // new boolean-composition support must not weaken fail-fast column diagnostics.
+        var result = await service.ExecuteAsync(store,
+            "SELECT Name FROM SymbolRecord WHERE (Kind = 'Class' OR Kind = 'Interface') AND (Nope = 1)");
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Error, Does.Contain("Unknown column 'Nope'"));
+        Assert.That(result.Error, Does.Contain("Available columns on 'SymbolRecord'"));
+        Assert.That(result.Error, Does.Not.Contain("Parse error"));
+    }
+
     [Test]
     public async Task OrderBy_ComputedAlias_SortsCorrectly()
     {
