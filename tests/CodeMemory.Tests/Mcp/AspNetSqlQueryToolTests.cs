@@ -211,6 +211,50 @@ public sealed class AspNetSqlQueryToolTests : BaseToolTests
         }
     }
 
+    [Test]
+    public async Task SqlQueryAsync_NoPositionError_FindsTokenAndCaret()
+    {
+        var (tool, storage, tempDir) = await CreateToolWithData();
+
+        try
+        {
+            var result = await tool.SqlQueryAsync("SELECT Name, FROM SymbolRecord", maxResults: 10);
+
+            Assert.That(result.Success, Is.False);
+            Assert.That(result.Error, Does.Contain("Parse error at line 1, column"));
+            Assert.That(result.Error, Does.Contain("SELECT Name, FROM SymbolRecord"));
+            Assert.That(result.Error, Does.Contain("^"));
+            Assert.That(result.Error, Does.Contain("found: identifier 'FROM'"));
+        }
+        finally
+        {
+            storage.Dispose();
+            Cleanup(tempDir);
+        }
+    }
+
+    [Test]
+    public async Task SqlQueryAsync_StraySemicolon_AddsRemovalTip()
+    {
+        var (tool, storage, tempDir) = await CreateToolWithData();
+
+        try
+        {
+            var result = await tool.SqlQueryAsync(
+                "SELECT Name FROM SymbolRecord;\nWHERE Path = 'Kgs'", maxResults: 10);
+
+            Assert.That(result.Success, Is.False);
+            Assert.That(result.Error, Does.Contain("Parse error at line 2, column"));
+            Assert.That(result.Error, Does.Contain("Expected a SQL statement, found Path"));
+            Assert.That(result.Error, Does.Contain("Tip: found a stray ';' on line 1"));
+        }
+        finally
+        {
+            storage.Dispose();
+            Cleanup(tempDir);
+        }
+    }
+
     static HybridStorageService CreateStorage(out string tempDir)
     {
         tempDir = Path.Combine(Path.GetTempPath(), "CodeMemoryAspNetSqlQueryTests", Guid.NewGuid().ToString());

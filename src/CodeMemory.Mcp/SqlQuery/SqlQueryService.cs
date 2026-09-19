@@ -176,6 +176,20 @@ public sealed class SqlQueryService
         return columns;
     }
 
+    /// <summary>Projected column names and aliases — used to resolve ORDER BY / HAVING references.</summary>
+    static IReadOnlySet<string> projectedNames(List<SelectColumnInfo> parsedColumns)
+    {
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var column in parsedColumns)
+        {
+            if (column.Name is not null) names.Add(column.Name);
+            if (column.Alias is not null) names.Add(column.Alias);
+        }
+
+        return names;
+    }
+
     static string? extractFunctionArg(AstExpr.Function func)
     {
         if (func.Args is FunctionArguments.List listArgs)
@@ -2190,6 +2204,12 @@ public sealed class SqlQueryService
                 if (isVectorSearch)
                     return fail("Vector search (ORDER BY Similarity DESC) is not supported with multi-table queries", sw);
 
+                var validationError = SqlQueryValidator.Validate(
+                    schemaProvider, registry, cteResults, query, selectBody, orderBy,
+                    projectedNames(parsedColumns), isVectorSearch);
+                if (validationError is not null)
+                    return fail(validationError, sw);
+
                 result = await executeJoinQueryAsync(store, selectBody.From, cteResults, whereExpr, maxResults, ct);
             }
             else
@@ -2202,6 +2222,12 @@ public sealed class SqlQueryService
 
                 if (!isCte && entry is null)
                     return fail($"Unknown table '{singleTableName}'. Available: {string.Join(", ", registry.AllEntries.Keys)}", sw);
+
+                var validationError = SqlQueryValidator.Validate(
+                    schemaProvider, registry, cteResults, query, selectBody, orderBy,
+                    projectedNames(parsedColumns), isVectorSearch);
+                if (validationError is not null)
+                    return fail(validationError, sw);
 
                 if (isCte)
                 {
@@ -2236,25 +2262,6 @@ public sealed class SqlQueryService
                         ? await materializeSubqueriesAsync(whereExpr, store, cteResults, fetchTop, ct)
                         : null;
                     result = await queryFilteredAsync(store, entry!, materializedWhere, fetchTop, ct);
-                }
-            }
-
-            // Validate explicit SELECT columns against the record type (single real table only)
-            // so unknown identifiers fail loudly instead of producing phantom {} rows.
-            if (hasExplicitProjection && !isCte && !isMultiTable)
-            {
-                var available = entry!.RecordType
-                    .GetProperties(BindingFlags.Public | BindingFlags.Instance)
-                    .Where(p => p.CanRead)
-                    .Select(p => p.Name)
-                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-                foreach (var col in parsedColumns)
-                {
-                    if (col.Name is not null && !col.Name.StartsWith("__") && !available.Contains(col.Name))
-                        return fail($"Column '{col.Name}' not found on '{singleTableName}'. Available columns: {string.Join(", ", available.OrderBy(n => n))}", sw);
-                    if (col.IsAggregate && col.AggregateArg is not null && !available.Contains(col.AggregateArg))
-                        return fail($"Column '{col.AggregateArg}' not found on '{singleTableName}'. Available columns: {string.Join(", ", available.OrderBy(n => n))}", sw);
                 }
             }
 
