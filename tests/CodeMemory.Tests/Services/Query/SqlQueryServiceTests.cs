@@ -191,8 +191,8 @@ public sealed class SqlQueryServiceTests
         var result = await service.ExecuteAsync(store, "SELECT RowId FROM SymbolRecord");
 
         Assert.That(result.Success, Is.False);
-        Assert.That(result.Error, Does.Contain("Column 'RowId' not found on 'SymbolRecord'"));
-        Assert.That(result.Error, Does.Contain("Available columns:"));
+        Assert.That(result.Error, Does.Contain("Unknown column 'RowId'"));
+        Assert.That(result.Error, Does.Contain("Available columns"));
         Assert.That(result.Error, Does.Contain("Name"));
     }
 
@@ -205,7 +205,113 @@ public sealed class SqlQueryServiceTests
         var result = await service.ExecuteAsync(store, "SELECT COUNT(RowId) FROM SymbolRecord");
 
         Assert.That(result.Success, Is.False);
-        Assert.That(result.Error, Does.Contain("Column 'RowId' not found on 'SymbolRecord'"));
+        Assert.That(result.Error, Does.Contain("Unknown column 'RowId'"));
+        Assert.That(result.Error, Does.Contain("Available columns"));
+    }
+
+    [Test]
+    public async Task Where_UnknownColumn_ReturnsSchemaValidatedError()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        // Exact issue #122 repro: 'Path' is not a column; the real column is 'FilePath'.
+        var result = await service.ExecuteAsync(store,
+            "SELECT * FROM SymbolRecord WHERE Path LIKE '%Kgs%'");
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Error, Does.Contain("Unknown column 'Path'"));
+        Assert.That(result.Error, Does.Contain("Available columns"));
+        Assert.That(result.Error, Does.Contain("FilePath"));
+        Assert.That(result.Error, Does.Not.Contain("Parse error"));
+    }
+
+    [Test]
+    public async Task OrderBy_UnknownColumn_ReturnsClearError()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store, "SELECT Name FROM SymbolRecord ORDER BY Nope");
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Error, Does.Contain("Unknown column 'Nope'"));
+        Assert.That(result.Error, Does.Contain("Available columns"));
+        Assert.That(result.Error, Does.Contain("Kind"));
+    }
+
+    [Test]
+    public async Task GroupBy_UnknownColumn_ReturnsClearError()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store, "SELECT Kind FROM SymbolRecord GROUP BY Nope");
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Error, Does.Contain("Unknown column 'Nope'"));
+        Assert.That(result.Error, Does.Contain("Available columns"));
+    }
+
+    [Test]
+    public async Task Having_UnknownColumn_ReturnsClearError()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT Kind, COUNT(*) AS cnt FROM SymbolRecord GROUP BY Kind HAVING Nope > 1");
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Error, Does.Contain("Unknown column 'Nope'"));
+        Assert.That(result.Error, Does.Contain("Available columns"));
+    }
+
+    [Test]
+    public async Task Select_ComputedExpression_StillSucceeds()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT Name, LineEnd - LineStart AS Length FROM SymbolRecord ORDER BY Name");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(5));
+        Assert.That(result.Rows!.Single(r => (string)r["Name"]! == "MyClass")["Length"], Is.EqualTo(49));
+    }
+
+    [Test]
+    public async Task OrderBy_AliasAndNumeric_StillSucceeds()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var aliasResult = await service.ExecuteAsync(store,
+            "SELECT Name, COUNT(*) AS cnt FROM SymbolRecord GROUP BY Name ORDER BY cnt DESC");
+        Assert.That(aliasResult.Success, Is.True);
+
+        var numericResult = await service.ExecuteAsync(store,
+            "SELECT Name, Kind FROM SymbolRecord ORDER BY 1 DESC");
+        Assert.That(numericResult.Success, Is.True);
+        Assert.That(numericResult.RowCount, Is.EqualTo(5));
+        // Case-insensitive descending: "MyMethod" is the highest name.
+        Assert.That(numericResult.Rows![0]["Name"], Is.EqualTo("MyMethod"));
+    }
+
+    [Test]
+    public async Task OrderBy_Similarity_VectorSearch_StillSucceeds()
+    {
+        var (store, registry, service) = createServices();
+        await seedChunksAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT FilePath, Content FROM ChunkRecord WHERE Content LIKE '%auth%' ORDER BY Similarity DESC");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.GreaterThanOrEqualTo(1));
+        Assert.That(result.Rows![0]["FilePath"]!, Is.EqualTo("/src/Auth.cs"));
+        Assert.That(result.Rows[0], Contains.Key("__score"));
     }
 
     [Test]

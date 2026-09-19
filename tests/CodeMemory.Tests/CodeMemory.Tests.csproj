@@ -14,6 +14,7 @@
     <Compile Include="..\..\src\CodeMemory.Mcp\SqlQuery\ParseErrorFormatter.cs" Link="Includes\ParseErrorFormatter.cs" />
     <Compile Include="..\..\src\CodeMemory.Mcp\SqlQuery\SqlExpressionBuilder.cs" Link="Includes\SqlExpressionBuilder.cs" />
     <Compile Include="..\..\src\CodeMemory.Mcp\SqlQuery\SqlQueryService.cs" Link="Includes\SqlQueryService.cs" />
+    <Compile Include="..\..\src\CodeMemory.Mcp\SqlQuery\SqlQueryValidator.cs" Link="Includes\SqlQueryValidator.cs" />
     <Compile Include="..\..\src\CodeMemory.Mcp\SqlQuery\TableSchemaProvider.cs" Link="Includes\TableSchemaProvider.cs" />
   </ItemGroup>
 
