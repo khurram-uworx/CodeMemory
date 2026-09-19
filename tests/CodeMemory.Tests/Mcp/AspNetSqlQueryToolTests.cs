@@ -421,6 +421,35 @@ public sealed class AspNetSqlQueryToolTests : BaseToolTests
         }
     }
 
+    [Test]
+    public async Task SqlQueryAsync_ConcurrentCalls_AllSucceed()
+    {
+        var (tool, storage, tempDir) = await CreateToolWithData();
+
+        try
+        {
+            // Issue #127 regression: the AspNet tool shared a non-thread-safe
+            // SqlQueryParser that corrupted concurrent parses. Task.Run gives
+            // each call its own thread so the validateQuery parse genuinely
+            // interleaves; 8-way concurrency over 10 rounds makes the pre-fix
+            // race fail near-certainly.
+            for (var round = 0; round < 10; round++)
+            {
+                var results = await Task.WhenAll(Enumerable.Range(0, 8).Select(_ =>
+                    Task.Run(() => tool.SqlQueryAsync(
+                        """SELECT Name FROM SymbolRecord WHERE Kind = 'Class'"""))));
+
+                foreach (var result in results)
+                    AssertSuccess(result, expectedRowCount: 1);
+            }
+        }
+        finally
+        {
+            storage.Dispose();
+            Cleanup(tempDir);
+        }
+    }
+
     static void Cleanup(string tempDir)
     {
         try

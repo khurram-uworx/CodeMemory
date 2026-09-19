@@ -1993,13 +1993,85 @@ public sealed class SqlQueryServiceTests
         await seedSymbolsAsync(store);
         int concurrency = 20;
 
-        var tasks = Enumerable.Range(0, concurrency).Select(_ =>
-            service.ExecuteAsync(store, "SELECT Name, Kind FROM SymbolRecord WHERE Kind = 'Class' ORDER BY Name"));
-
-        var results = await Task.WhenAll(tasks);
+        // Task.Run gives each call its own thread: the parse phase runs before
+        // the first await in ExecuteAsync, so bare awaits would serialize parses
+        // on the caller thread and never exercise issue #127's shared-parser race.
+        var results = await Task.WhenAll(Enumerable.Range(0, concurrency).Select(_ =>
+            Task.Run(() => service.ExecuteAsync(store, "SELECT Name, Kind FROM SymbolRecord WHERE Kind = 'Class' ORDER BY Name"))));
 
         Assert.That(results, Has.All.Matches<SqlQueryResult>(r => r.Success));
         foreach (var r in results)
             Assert.That(r.RowCount, Is.EqualTo(2));
+    }
+
+    [Test]
+    public async Task SqlQuery_ConcurrentIdenticalQueries_AllSucceed()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        // Issue #127 regression: a shared non-thread-safe SqlQueryParser let
+        // concurrent parses corrupt each other — even identical queries failed
+        // with spurious parse errors. 8-way concurrency over 10 rounds makes the
+        // pre-fix race fail near-certainly; the per-call parser is a
+        // deterministic pass.
+        for (var round = 0; round < 10; round++)
+        {
+            var results = await Task.WhenAll(Enumerable.Range(0, 8).Select(_ =>
+                Task.Run(() => service.ExecuteAsync(store, "SELECT COUNT(*) AS Total FROM SymbolRecord"))));
+
+            for (var i = 0; i < results.Length; i++)
+            {
+                Assert.That(results[i].Success, Is.True, $"round {round} call {i}: {results[i].Error}");
+                Assert.That(results[i].RowCount, Is.EqualTo(1), $"round {round} call {i}");
+                Assert.That(Convert.ToInt64(results[i].Rows![0]["Total"]), Is.EqualTo(5), $"round {round} call {i}");
+            }
+        }
+    }
+
+    [Test]
+    public async Task SqlQuery_ConcurrentDistinctQueries_EachReturnsOwnRow()
+    {
+        var (store, registry, service) = createServices();
+        await seedConcurrentSymbolsAsync(store);
+
+        // Issue #127 regression: concurrent parses leaked tokens between distinct
+        // queries (e.g. a comma from one query surfacing in another). Each call
+        // must return exactly its own sentinel row.
+        for (var round = 0; round < 10; round++)
+        {
+            var queries = Enumerable.Range(0, 8)
+                .Select(i => $"SELECT Name FROM SymbolRecord WHERE Name = 'CZ{i}'")
+                .ToArray();
+
+            var results = await Task.WhenAll(queries.Select(sql =>
+                Task.Run(() => service.ExecuteAsync(store, sql))));
+
+            for (var i = 0; i < results.Length; i++)
+            {
+                Assert.That(results[i].Success, Is.True, $"round {round} query {i}: {results[i].Error}");
+                Assert.That(results[i].RowCount, Is.EqualTo(1), $"round {round} query {i}");
+                Assert.That(results[i].Rows![0]["Name"], Is.EqualTo($"CZ{i}"), $"round {round} query {i}");
+            }
+        }
+    }
+
+    internal static async Task seedConcurrentSymbolsAsync(InMemoriVectorStore store)
+    {
+        var coll = store.GetCollection<string, SymbolRecord>("symbols");
+        for (var i = 0; i < 8; i++)
+        {
+            await coll.UpsertAsync(new SymbolRecord
+            {
+                Id = $"s:CZ{i}",
+                Name = $"CZ{i}",
+                Kind = "Method",
+                FilePath = $"/src/CZ{i}.cs",
+                FullName = $"CZ{i}",
+                LineStart = 1,
+                LineEnd = 10,
+                Modifiers = "public"
+            });
+        }
     }
 }
