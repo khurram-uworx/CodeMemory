@@ -13,6 +13,25 @@ Engineering constraints and implementation guidance for AI coding agents contrib
 - **Repo:** `khurram-uworx/CodeMemory`
 - All `gh` commands require `--repo khurram-uworx/CodeMemory`
 
+### MCP Server Verification — Triage Bugs via GitHub Issues
+
+A local code-memory MCP server is wired into the agent harness (`opencode.json`: `code-memory` →
+`dotnet run --project .\src\CodeMemory.Mcp\CodeMemory.Mcp.csproj`, i.e. the current working tree).
+When an MCP tool misbehaves — wrong results, cryptic errors, hangs, silent `[]` — treat it as a
+repo defect to triage, not something to work around in the task at hand:
+
+1. **Ping first** — `ping` returns indexing status and `version` (embeds the git hash); confirm
+   the report is against the current tree, not a stale published package.
+2. **Characterize** — rerun the failing call sequentially and concurrently. Corruption only in
+   parallel is a known hazard (`#127`: shared non-thread-safe `SqlQueryParser` singleton).
+3. **Search opened issues** — `gh issue list --repo khurram-uworx/CodeMemory`; if a matching
+   report exists, add the reproduction details as a comment instead of duplicating (precedent:
+   `#127` findings added as a comment after live re-reproduction).
+4. **Open a new issue when required** — `gh issue create --repo khurram-uworx/CodeMemory` with
+   the exact tool call, expected vs actual, ping version hash, and repro steps; record the number
+   in the plan's issues log (see Task Format). Precedent: `#128` (silent `{}` rows) filed at
+   discovery and fixed on the same branch that shipped `#120`.
+
 ---
 
 ## Domain Boundaries
