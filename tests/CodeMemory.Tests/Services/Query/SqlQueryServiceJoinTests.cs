@@ -348,4 +348,78 @@ public sealed class SqlQueryServiceJoinTests
         Assert.That(result.Rows!.Any(r => r["a.Name"]?.ToString() == "MyClass" && r["b.Name"]?.ToString() == "Helper"), Is.True);
         Assert.That(result.Rows!.Any(r => r["a.Name"]?.ToString() == "Helper" && r["b.Name"]?.ToString() == "IOld"), Is.True);
     }
+
+    [Test]
+    public async Task JoinOn_UnknownColumn_ReturnsClearError()
+    {
+        var (store, registry, service) = SqlQueryServiceTests.createServices();
+        await seedJoinDataAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT s.Name FROM SymbolRecord s JOIN RelationshipRecord r ON s.Id = r.Nope");
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Error, Does.Contain("Unknown column 'r.Nope'"));
+        Assert.That(result.Error, Does.Contain("Available columns on 'RelationshipRecord' (alias r)"));
+        Assert.That(result.Error, Does.Contain("SourceSymbolId"));
+    }
+
+    [Test]
+    public async Task JoinOn_UnknownAlias_ReturnsClearError()
+    {
+        var (store, registry, service) = SqlQueryServiceTests.createServices();
+        await seedJoinDataAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT s.Name FROM SymbolRecord s JOIN RelationshipRecord r ON z.Id = r.SourceSymbolId");
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Error, Does.Contain("Unknown table alias 'z'"));
+        Assert.That(result.Error, Does.Contain("Available aliases: s (SymbolRecord), r (RelationshipRecord)"));
+    }
+
+    [Test]
+    public async Task Select_UnknownColumn_MultiTableJoin_ReturnsClearError()
+    {
+        var (store, registry, service) = SqlQueryServiceTests.createServices();
+        await seedJoinDataAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT s.Name, r.Nope FROM SymbolRecord s, RelationshipRecord r WHERE s.Id = r.TargetSymbolId");
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Error, Does.Contain("Unknown column 'r.Nope'"));
+        Assert.That(result.Error, Does.Contain("Available columns on 'RelationshipRecord' (alias r)"));
+    }
+
+    [Test]
+    public async Task Where_UnqualifiedColumn_MultiTable_RequiresQualification()
+    {
+        var (store, registry, service) = SqlQueryServiceTests.createServices();
+        await seedJoinDataAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT s.Name FROM SymbolRecord s, RelationshipRecord r WHERE Kind = 'Class'");
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Error, Does.Contain("Unknown column 'Kind'"));
+        Assert.That(result.Error, Does.Contain("table-qualified"));
+        Assert.That(result.Error, Does.Contain("Available aliases"));
+        Assert.That(result.Error, Does.Contain("s (SymbolRecord)"));
+        Assert.That(result.Error, Does.Contain("r (RelationshipRecord)"));
+    }
+
+    [Test]
+    public async Task OrderBy_UnknownAlias_MultiTable_ReturnsClearError()
+    {
+        var (store, registry, service) = SqlQueryServiceTests.createServices();
+        await seedJoinDataAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT s.Name FROM SymbolRecord s, RelationshipRecord r WHERE s.Id = r.TargetSymbolId ORDER BY z.Name");
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Error, Does.Contain("Unknown table alias 'z'"));
+        Assert.That(result.Error, Does.Contain("qualify as e.g. 's.Id'"));
+    }
 }

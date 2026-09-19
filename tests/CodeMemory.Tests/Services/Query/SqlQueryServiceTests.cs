@@ -1902,6 +1902,66 @@ public sealed class SqlQueryServiceTests
         Assert.That(result.Rows!.Select(r => r["Name"]), Is.EqualTo(["Helper", "MyClass"]));
     }
 
+    [Test]
+    public async Task Cte_UnknownColumn_ReturnsClearError()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "WITH cte AS (SELECT Name, Kind FROM SymbolRecord) SELECT Name FROM cte WHERE Path = 'X'");
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Error, Does.Contain("Unknown column 'Path'"));
+        Assert.That(result.Error, Does.Contain("Available columns on 'cte'"));
+        Assert.That(result.Error, Does.Contain("Kind"));
+        // CTE/derived sources have no DESCRIBE re-check tip.
+        Assert.That(result.Error, Does.Not.Contain("DESCRIBE"));
+    }
+
+    [Test]
+    public async Task CteBody_UnknownColumn_ReturnsClearError()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "WITH cte AS (SELECT Nope FROM SymbolRecord) SELECT * FROM cte");
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Error, Does.Contain("Unknown column 'Nope'"));
+        Assert.That(result.Error, Does.Contain("Available columns on 'SymbolRecord'"));
+    }
+
+    [Test]
+    public async Task Derived_UnknownColumn_ReturnsClearError()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT Name FROM (SELECT Name FROM SymbolRecord) AS sub WHERE Nope = 'X'");
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Error, Does.Contain("Unknown column 'Nope'"));
+        Assert.That(result.Error, Does.Contain("Available columns on 'sub'"));
+        Assert.That(result.Error, Does.Not.Contain("DESCRIBE"));
+    }
+
+    [Test]
+    public async Task DerivedBody_UnknownColumn_ReturnsClearError()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT Name FROM (SELECT Nope FROM SymbolRecord) AS sub");
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Error, Does.Contain("Unknown column 'Nope'"));
+        Assert.That(result.Error, Does.Contain("Available columns on 'SymbolRecord'"));
+    }
+
     // ----- Feature: expression inside aggregate functions (e.g., AVG(LineEnd - LineStart)) -----
 
     // seedSymbolsAsync data:
