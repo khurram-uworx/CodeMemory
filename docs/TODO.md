@@ -76,10 +76,17 @@ source `DESCRIBE`/`PRAGMA table_info` use). Design:
   - `HAVING`: identifiers resolve against the projected column names/aliases/aggregate keys
     (grouped rows are keyed that way), then real columns.
 - Not validated: `SELECT *`, `COUNT(*)`, `__`-prefixed internals, literals.
-- Message format (per issue's ask, plus table context):
-  - `Unknown column '{col}'. Available columns: {sorted, comma-separated}.`
-  - Qualified: `Unknown column '{table}.{col}'. Available columns: {sorted}.`
-  - Multi-table unqualified: `Unknown column '{col}' — qualify with a table alias ({aliases}). Available columns: {union}.`
+- Message format (per issue's ask, plus **agent-friendly correction guidance** — consumer is an MCP
+  agent that must be able to self-correct from the error alone). Every unknown-column message states:
+  (1) the offending identifier, (2) the valid options (sorted columns and/or aliases), (3) the
+  corrective action (e.g. the exact qualified token to use), and (4) for real tables, how to
+  re-check the schema (`DESCRIBE` / `PRAGMA table_info`):
+  - Single real table: `Unknown column 'Path'. Available columns on 'SymbolRecord': Id, Name, Kind, FilePath, … . Tip: run DESCRIBE SymbolRecord or PRAGMA table_info(SymbolRecord) to re-check the schema.`
+  - Single CTE/derived: same shape, columns = projected/row keys (no `DESCRIBE` tip).
+  - Multi-table unqualified: `Unknown column 'Kind' — multi-table queries require table-qualified columns. Available aliases: s (SymbolRecord), r (RelationshipRecord) — use 's.Kind'. Columns on 's' (SymbolRecord): {sorted}; on 'r' (RelationshipRecord): {sorted}.`
+  - Multi-table qualified, unknown alias: `Unknown table alias 'z'. Available aliases: s (SymbolRecord), r (RelationshipRecord) — e.g. qualify as 's.Id'.`
+  - Multi-table qualified, unknown column: `Unknown column 's.RowId'. Available columns on 'SymbolRecord' (alias s): {sorted}.`
+  - Kept terse — identifiers quoted with `'`, lists comma-separated, single line per case.
 - **Replace** the reflection-based projection check at `SqlQueryService.cs:2242-2259` and the
   `resolveProperty` message with the schema-validated `fail()` sentinel; keep
   `SqlExpressionBuilder.resolveProperty` as an internal safety net (should no longer surface).
