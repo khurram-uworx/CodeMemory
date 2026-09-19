@@ -33,9 +33,77 @@ public sealed class AspNetSqlQueryToolTests : BaseToolTests
         var result = await SendToolsList(client);
 
         var tools = result["result"]?["tools"]?.AsArray();
-        var toolNames = tools!.Select(tool => tool!["name"]?.GetValue<string>()).ToList();
+        var sqlQueryTool = tools!.Single(tool => tool!["name"]?.GetValue<string>() == "sql_query")!;
+        var description = sqlQueryTool["description"]!.GetValue<string>();
 
-        Assert.That(toolNames, Does.Contain("sql_query"));
+        Assert.That(description, Does.Contain("DESCRIBE TABLES"));
+        Assert.That(description, Does.Contain("DESC <table>"));
+        Assert.That(description, Does.Contain("DESC SymbolRecord"));
+    }
+
+    [Test]
+    public async Task SqlQueryAsync_DescribeTables_ReturnsQueryableTables()
+    {
+        var (tool, storage, tempDir) = await CreateToolWithData();
+
+        try
+        {
+            var result = await tool.SqlQueryAsync("DESCRIBE TABLES");
+
+            AssertSuccess(result, expectedRowCount: 2);
+            Assert.That(result.Columns, Is.EqualTo(["Name"]));
+            Assert.That(GetRows(result).Select(row => row["Name"]), Is.EquivalentTo(["SymbolRecord", "RelationshipRecord"]));
+        }
+        finally
+        {
+            storage.Dispose();
+            Cleanup(tempDir);
+        }
+    }
+
+    [Test]
+    public async Task SqlQueryAsync_DescribeTable_ReturnsColumnMetadata()
+    {
+        var (tool, storage, tempDir) = await CreateToolWithData();
+
+        try
+        {
+            var result = await tool.SqlQueryAsync("DESC SymbolRecord");
+
+            AssertSuccess(result, expectedRowCount: 9);
+            Assert.That(result.Columns, Is.EqualTo(["Name", "Type", "IsKey", "IsNullable"]));
+            var columns = GetRows(result).ToDictionary(row => (string)row["Name"]!);
+            Assert.That(columns["Id"]["Type"], Is.EqualTo("string"));
+            Assert.That(columns["Id"]["IsKey"], Is.True);
+            Assert.That(columns["Documentation"]["IsNullable"], Is.True);
+        }
+        finally
+        {
+            storage.Dispose();
+            Cleanup(tempDir);
+        }
+    }
+
+    [Test]
+    public async Task SqlQueryAsync_DescribeUnknownTable_ListsAvailableTables()
+    {
+        var (tool, storage, tempDir) = await CreateToolWithData();
+
+        try
+        {
+            var result = await tool.SqlQueryAsync("DESC sqlite_master");
+
+            Assert.That(result.Success, Is.False);
+            Assert.That(result.Error, Does.Contain("Unknown table 'sqlite_master'"));
+            Assert.That(result.Error, Does.Contain("Available tables"));
+            Assert.That(result.Error, Does.Contain("SymbolRecord"));
+            Assert.That(result.Error, Does.Contain("RelationshipRecord"));
+        }
+        finally
+        {
+            storage.Dispose();
+            Cleanup(tempDir);
+        }
     }
 
     [Test]

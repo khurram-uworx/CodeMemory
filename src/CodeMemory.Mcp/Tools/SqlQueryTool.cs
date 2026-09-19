@@ -37,6 +37,8 @@ Execute SELECT-only SQL queries against the indexed repository.
 
 SCHEMA DISCOVERY: Use DESCRIBE {tablename}, DESC {tablename}, DESCRIBE TABLES, or PRAGMA table_info({tablename}) to discover available columns, types, and keys.
 
+SCHEMA RESOURCES: Read codememory://schema/tables for the table index, or codememory://schema/SymbolRecord, codememory://schema/ChunkRecord, and codememory://schema/RelationshipRecord for column metadata.
+
 Only SELECT is supported. No INSERT/UPDATE/DELETE/CREATE.
 
 TABLES: SymbolRecord, ChunkRecord (incl. vector search & text files), RelationshipRecord
@@ -69,6 +71,8 @@ BEHAVIOR:
   - Only InMemoryVectorStore backend; other backends return error
 
 EXAMPLES:
+  DESCRIBE TABLES
+  DESC SymbolRecord
   SELECT * FROM SymbolRecord WHERE Kind = 'Class' LIMIT 10
   SELECT DISTINCT Kind FROM SymbolRecord
   SELECT FilePath, COUNT(*) AS cnt FROM SymbolRecord GROUP BY FilePath HAVING cnt > 1 ORDER BY cnt DESC
