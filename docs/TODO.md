@@ -57,9 +57,9 @@ validate (targeted), then run regression (full suite). Tests follow repo convent
     `GetRelationshipsByTargetAsync` / `GetRelationshipsBySourceAsync`);
   - symbol not found → message "symbol not found" plus `Suggestions`.
   This is a **breaking MCP schema change** (array → object) — confirmed with the human at G1.
-  `TraceDependencyTool` / `ImpactAnalysisTool` share `FindRelatedAsync` and benefit from the
-  storage-layer fix; their return types are left unchanged (out of scope, note in issues log if
-  a follow-up is warranted).
+  Per G1 decision, `TraceDependencyTool` (`DependencyResult`) and `ImpactAnalysisTool` also get
+  empty-lookup diagnostics (`Message` / `Suggestions`) in this branch — they share
+  `FindRelatedAsync` / `TraceAsync` and the same silent-`[]` failure mode.
 
 ### 2. SQL: validate SELECT projection columns (silent `{}` rows)
 
