@@ -2236,6 +2236,25 @@ public sealed class SqlQueryService
                 }
             }
 
+            // Validate explicit SELECT columns against the record type (single real table only)
+            // so unknown identifiers fail loudly instead of producing phantom {} rows.
+            if (hasExplicitProjection && !isCte && !isMultiTable)
+            {
+                var available = entry!.RecordType
+                    .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+                    .Where(p => p.CanRead)
+                    .Select(p => p.Name)
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var col in parsedColumns)
+                {
+                    if (col.Name is not null && !col.Name.StartsWith("__") && !available.Contains(col.Name))
+                        return fail($"Column '{col.Name}' not found on '{singleTableName}'. Available columns: {string.Join(", ", available.OrderBy(n => n))}", sw);
+                    if (col.IsAggregate && col.AggregateArg is not null && !available.Contains(col.AggregateArg))
+                        return fail($"Column '{col.AggregateArg}' not found on '{singleTableName}'. Available columns: {string.Join(", ", available.OrderBy(n => n))}", sw);
+                }
+            }
+
             // Apply DISTINCT — evaluates computed expressions inline so aliased/math columns work
             if (hasDistinct && !hasGroupBy && !hasAggregates)
             {

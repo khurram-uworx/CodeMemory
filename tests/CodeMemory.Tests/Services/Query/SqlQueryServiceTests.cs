@@ -183,6 +183,45 @@ public sealed class SqlQueryServiceTests
     }
 
     [Test]
+    public async Task Select_UnknownColumn_ReturnsClearError()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store, "SELECT RowId FROM SymbolRecord");
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Error, Does.Contain("Column 'RowId' not found on 'SymbolRecord'"));
+        Assert.That(result.Error, Does.Contain("Available columns:"));
+        Assert.That(result.Error, Does.Contain("Name"));
+    }
+
+    [Test]
+    public async Task Select_UnknownAggregateArg_ReturnsClearError()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store, "SELECT COUNT(RowId) FROM SymbolRecord");
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Error, Does.Contain("Column 'RowId' not found on 'SymbolRecord'"));
+    }
+
+    [Test]
+    public async Task Select_ValidColumns_StillSucceeds()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store, "SELECT Name, Kind FROM SymbolRecord ORDER BY Name");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.Rows!.Select(r => r["Name"]),
+            Is.EquivalentTo(["Helper", "IOld", "MyClass", "MyMethod", "_private"]));
+    }
+
+    [Test]
     public async Task UnknownTable_ReturnsError()
     {
         var (store, registry, service) = createServices();
