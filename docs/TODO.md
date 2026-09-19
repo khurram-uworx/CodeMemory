@@ -2,6 +2,22 @@
 
 Branch: `khurram/120` (base `main`)
 
+## Status — all slices implemented and committed
+
+| # | Slice | Commit |
+|---|---|---|
+| 1 | storage: signature-insensitive resolution + suggestions | `b2b064b` |
+| 2 | SQL SELECT projection validation (fixes #128) | `7935d36` |
+| 3 | SQL parse errors positioned + sanitized (both hosts) | `7005994` |
+| 4 | `semantic_search` `codeOnly` filter | `73834a8` |
+| 5 | regression tests: COUNT(*), LIKE with `/` | `4eb2cf6` |
+| 6 | AGENTS.md SqlParser-cs dev reference | `bda4bce` |
+
+Tool-layer diagnostics for `find_related_code` + trace/impact (`679964f`) and plan docs
+(`de648c5`, `4be9ac1`). Targeted suites green (storage/tool/error-handling 70/70;
+SqlQueryServiceTests + AspNetSqlQueryToolTests 124; SemanticSearchToolTests + SqlQueryServiceTests 118).
+Remaining: full-suite regression (human-approved), G2 review, remove this file, push + PR (offer).
+
 ## Problem
 
 Issue #120 (https://github.com/khurram-uworx/CodeMemory/issues/120) reports five MCP-tool pain
@@ -146,5 +162,6 @@ validate (targeted), then run regression (full suite). Tests follow repo convent
 
 ## GitHub issues log
 
-- (none yet — opened during execution via `gh issue create --repo khurram-uworx/CodeMemory` if
-  deferred work surfaces; recorded here immediately)
+- **#128** `sql_query: SELECT with unknown column silently returns {} rows` — discovered during
+  planning (silent `[{},{}]` for `SELECT RowId FROM SymbolRecord`); tracked as deferred work and
+  fixed on this branch via commit `7935d36` (slice 2). https://github.com/khurram-uworx/CodeMemory/issues/128
