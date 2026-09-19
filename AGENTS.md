@@ -107,6 +107,19 @@ Files excluded by default (hardcoded in `FileCrawler.AlwaysIgnored`): `.git`, `.
 - MCP SDK documentation lives in the NuGet cache, not on NuGet.org — NuGet.org search returns Azure Functions MCP docs for the legacy SDK, not the ASP.NET Core `ModelContextProtocol.AspNetCore` package.
 - **Ping before use** — indexing is non-blocking in both hosts; agents MUST poll `ping` until `indexingCompleted: true` (see [Non-Blocking Indexing](#non-blocking-indexing--ping-contract) above).
 
+## SQL Parser Development Reference
+
+The SQL layer uses the `sqlparsercs` NuGet package (C# port of sqlparser-rs) via `SqlParser`,
+`SqlParser.Ast`, `SqlParser.Dialects`. The upstream source is cloned locally at
+`E:\github\SqlParser-cs` for investigating parser/tokenizer behavior and error messages.
+
+Known quirks (work around them in `CodeMemory.Mcp`/`CodeMemory.AspNet`, do not patch the library):
+- Message duplication — `Parser.cs:6886` calls `Expected("Expected an expression, …")` while
+  `Expected()` itself prefixes `"Expected "`, producing `Expected Expected …`; tokens are dumped in
+  Rust-style debug form (`Identifier { Ident = FROM }`).
+- `ParserException` / `TokenizeException` expose 1-based `Line` and `Column` properties — use them
+  to produce parse errors with query-position context (snippet + caret) rather than raw message dumps.
+
 ## Embedding Limitations & Agent Expectations
 
 code-memory MCP configured for this repo defaults to the `NgramEmbeddingGenerator` (see [ADR Library-Embeddings-01](docs/adr/Library-Embeddings-01.md)) — a **deterministic character n-gram embedding** that requires no ML model, no API keys, and zero startup cost. It is consistent across processes and sessions. However, it is **not true semantic search**.
