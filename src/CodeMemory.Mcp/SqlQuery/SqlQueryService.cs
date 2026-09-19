@@ -1090,7 +1090,6 @@ public sealed class SqlQueryService
     readonly ILogger<SqlQueryService> logger;
     readonly TableSchemaProvider schemaProvider;
     readonly SqlExpressionBuilder builder = new();
-    readonly SqlQueryParser parser = new();
 
     /// <summary>Initializes a new instance of SqlQueryService.</summary>
     public SqlQueryService(CollectionRegistry registry,
@@ -2090,6 +2089,10 @@ public sealed class SqlQueryService
 
             try
             {
+                // SqlQueryParser wraps sqlparsercs's stateful Parser and is not
+                // thread-safe — create per call so concurrent queries cannot
+                // corrupt each other's token stream (issue #127).
+                var parser = new SqlQueryParser();
                 statements = parser.Parse(sql.AsSpan(), Dialect);
             }
             catch (Exception ex)
