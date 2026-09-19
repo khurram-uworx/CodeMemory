@@ -358,6 +358,39 @@ public sealed class SqlQueryServiceTests
     }
 
     [Test]
+    public async Task ParseError_NoPosition_FindsTokenAndCaret()
+    {
+        var (store, registry, service) = createServices();
+
+        // sqlparser-cs reports Line/Column == 0 for trailing-comma errors; the
+        // formatter locates the offending token ('FROM') textually.
+        var result = await service.ExecuteAsync(store, "SELECT Name, FROM SymbolRecord");
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Error, Does.Contain("Parse error at line 1, column"));
+        Assert.That(result.Error, Does.Contain("SELECT Name, FROM SymbolRecord"));
+        Assert.That(result.Error, Does.Contain("^"));
+        Assert.That(result.Error, Does.Contain("found: identifier 'FROM'"));
+    }
+
+    [Test]
+    public async Task ParseError_StraySemicolon_AddsRemovalTip()
+    {
+        var (store, registry, service) = createServices();
+
+        // The parser treats ';' as a statement terminator, so the second line is
+        // parsed as a fresh statement and rejected — point the agent at the cause.
+        var result = await service.ExecuteAsync(store,
+            "SELECT Name FROM SymbolRecord;\nWHERE Path = 'Kgs'");
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Error, Does.Contain("Parse error at line 2, column"));
+        Assert.That(result.Error, Does.Contain("Expected a SQL statement, found Path"));
+        Assert.That(result.Error, Does.Contain("Tip: found a stray ';' on line 1"));
+        Assert.That(result.Error, Does.Contain("statement terminator"));
+    }
+
+    [Test]
     public async Task ParseError_MultiLineQuery_PointsAtOffendingLine()
     {
         var (store, registry, service) = createServices();
