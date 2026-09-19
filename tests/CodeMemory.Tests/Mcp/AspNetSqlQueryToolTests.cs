@@ -187,6 +187,30 @@ public sealed class AspNetSqlQueryToolTests : BaseToolTests
         return (new AspNetSqlQueryTool(storage, NullLogger<AspNetSqlQueryTool>.Instance), storage, tempDir);
     }
 
+    [Test]
+    public async Task SqlQueryAsync_InvalidSql_ReturnsPositionedParseError()
+    {
+        var (tool, storage, tempDir) = await CreateToolWithData();
+
+        try
+        {
+            var result = await tool.SqlQueryAsync(
+                "SELECT Name FROM SymbolRecord WHERE Kind = 'Class' AND", maxResults: 10);
+
+            Assert.That(result.Success, Is.False);
+            Assert.That(result.Error, Does.Contain("Parse error at line 1, column"));
+            Assert.That(result.Error, Does.Contain("SELECT Name FROM SymbolRecord WHERE Kind = 'Class' AND"));
+            Assert.That(result.Error, Does.Contain("^"));
+            Assert.That(result.Error, Does.Not.Contain("Keyword("));
+            Assert.That(result.Error, Does.Not.Contain("Ident ="));
+        }
+        finally
+        {
+            storage.Dispose();
+            Cleanup(tempDir);
+        }
+    }
+
     static HybridStorageService CreateStorage(out string tempDir)
     {
         tempDir = Path.Combine(Path.GetTempPath(), "CodeMemoryAspNetSqlQueryTests", Guid.NewGuid().ToString());

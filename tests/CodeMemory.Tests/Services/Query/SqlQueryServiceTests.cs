@@ -222,6 +222,70 @@ public sealed class SqlQueryServiceTests
     }
 
     [Test]
+    public async Task ParseError_LocatedError_IncludesPositionAndCaret()
+    {
+        var (store, registry, service) = createServices();
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT Name FROM SymbolRecord WHERE Kind = 'Class' AND");
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Error, Does.Contain("Parse error at line 1, column"));
+        Assert.That(result.Error, Does.Contain("SELECT Name FROM SymbolRecord WHERE Kind = 'Class' AND"));
+        Assert.That(result.Error, Does.Contain("^"));
+        Assert.That(result.Error, Does.Contain("Expected an expression"));
+        Assert.That(result.Error, Does.Not.Contain("Ident ="));
+    }
+
+    [Test]
+    public async Task ParseError_NoLocation_ReturnsSanitizedMessage()
+    {
+        var (store, registry, service) = createServices();
+
+        var result = await service.ExecuteAsync(store, "SELECT FROM SymbolRecord");
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Error, Does.Contain("Expected an expression, found: identifier 'FROM'"));
+        Assert.That(result.Error, Does.Not.Contain("Expected Expected"));
+        Assert.That(result.Error, Does.Not.Contain("Identifier {"));
+        Assert.That(result.Error, Does.Not.Contain("Ident ="));
+    }
+
+    [Test]
+    public async Task ParseError_MultiLineQuery_PointsAtOffendingLine()
+    {
+        var (store, registry, service) = createServices();
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT Name\nFROM SymbolRecord\nWHERE Kind = 'Class' AND");
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Error, Does.Contain("Parse error at line 3"));
+        Assert.That(result.Error, Does.Contain("WHERE Kind = 'Class' AND"));
+        Assert.That(result.Error, Does.Contain("^"));
+    }
+
+    [Test]
+    public async Task ParseError_UnterminatedString_ShowsTokenizePosition()
+    {
+        var (store, registry, service) = createServices();
+
+        var result = await service.ExecuteAsync(store, "SELECT 'unterminated FROM SymbolRecord");
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Error, Does.Contain("Parse error at line 1, column"));
+        Assert.That(result.Error, Does.Contain("^"));
+    }
+
+    [Test]
+    public void ParseErrorFormatter_SanitizesDoubledExpectedAndRustTokens()
+    {
+        Assert.That(ParseErrorFormatter.Sanitize(
+            "Expected Expected an expression, found: Identifier { Ident = FROM }"),
+            Is.EqualTo("Expected an expression, found: identifier 'FROM'"));
+    }
+
+    [Test]
     public async Task UnknownTable_ReturnsError()
     {
         var (store, registry, service) = createServices();

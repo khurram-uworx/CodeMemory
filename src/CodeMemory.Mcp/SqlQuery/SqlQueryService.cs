@@ -2095,7 +2095,7 @@ public sealed class SqlQueryService
             catch (Exception ex)
             {
                 logger.LogWarning(ex, "SQL parse error");
-                return fail($"Parse error: {unwrapMessage(ex)}", sw);
+                return fail(ParseErrorFormatter.Format(sql, ex), sw);
             }
 
             if (statements.Count != 1)

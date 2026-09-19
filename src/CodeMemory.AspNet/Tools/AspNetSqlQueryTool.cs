@@ -303,7 +303,7 @@ public sealed class AspNetSqlQueryTool
         }
         catch (Exception ex)
         {
-            return ($"Parse error: {ex.Message}", false);
+            return (ParseErrorFormatter.Format(query, ex), false);
         }
     }
 
