@@ -422,4 +422,21 @@ public sealed class SqlQueryServiceJoinTests
         Assert.That(result.Error, Does.Contain("Unknown table alias 'z'"));
         Assert.That(result.Error, Does.Contain("qualify as e.g. 's.Id'"));
     }
+
+    [Test]
+    public async Task Join_Where_ParenthesizedOrGroup_FiltersCorrectly()
+    {
+        var (store, registry, service) = SqlQueryServiceTests.createServices();
+        await seedJoinDataAsync(store);
+
+        // Issue #123 shape evaluated on merged alias-prefixed rows: paren-wrapped OR across
+        // qualified columns of both tables. IOld->MyClass matches neither branch and is excluded.
+        var result = await service.ExecuteAsync(store,
+            "SELECT s.Name FROM SymbolRecord s JOIN RelationshipRecord r ON s.Id = r.SourceSymbolId " +
+            "WHERE (s.Kind = 'Class' OR r.TargetSymbolId = 's:Helper') ORDER BY s.Name");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(2));
+        Assert.That(result.Rows!.Select(r => r["s.Name"]), Is.EquivalentTo(["Helper", "IOld"]));
+    }
 }
