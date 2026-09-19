@@ -1,5 +1,6 @@
 using CodeMemory.Diagnostics;
 using CodeMemory.Indexing.Graph;
+using CodeMemory.Storage;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
 using System.ComponentModel;
@@ -11,6 +12,7 @@ namespace CodeMemory.Mcp;
 public sealed class TraceDependencyTool
 {
     readonly IDependencyGraphService? graphService;
+    readonly IStorageService? storage;
     readonly ILogger<TraceDependencyTool> logger;
 
     public TraceDependencyTool(ILogger<TraceDependencyTool> logger,
@@ -18,6 +20,7 @@ public sealed class TraceDependencyTool
     {
         this.logger = logger;
         graphService = serviceProvider.GetService<IDependencyGraphService>();
+        storage = serviceProvider.GetService<IStorageService>();
     }
 
     [McpServerTool, Description("Traces dependency chains for a given symbol. Finds related symbols, call graphs, and optionally test coverage.")]
@@ -35,7 +38,7 @@ public sealed class TraceDependencyTool
         if (graphService == null)
         {
             logger.LogWarning("Dependency graph service not registered — returning empty result");
-            return new DependencyResult([], []);
+            return new DependencyResult([], [], Warning: "Dependency graph service not registered.");
         }
 
         var cappedDepth = Math.Clamp(depth, 1, 3);
@@ -88,6 +91,9 @@ public sealed class TraceDependencyTool
             continuationToken = Convert.ToBase64String(JsonSerializer.SerializeToUtf8Bytes(cursorData));
         }
 
+        if (cursor == null && traceResult.Count == 0 && relatedResult.Count == 0 && testFiles.Count == 0)
+            return await BuildEmptyDiagnosticAsync(symbolPath);
+
         return new DependencyResult(
             DependencyChain: traceResult,
             RelatedSymbols: relatedResult,
@@ -96,6 +102,36 @@ public sealed class TraceDependencyTool
             ContinuationToken: continuationToken
         );
     }
+
+    /// <summary>
+    /// Replaces empty results with an actionable diagnostic when the symbol cannot be resolved.
+    /// </summary>
+    async Task<DependencyResult> BuildEmptyDiagnosticAsync(string symbolPath)
+    {
+        try
+        {
+            var symbol = await SymbolLookup.ResolveAsync(storage, symbolPath);
+            if (symbol != null)
+            {
+                logger.LogDebug("TraceDependencyAsync({Symbol}): symbol found but no relationships indexed", symbolPath);
+                return new DependencyResult([], [],
+                    MatchedSymbol: SymbolLookup.ToNode(symbol),
+                    Warning: $"Symbol '{symbolPath}' resolved to '{symbol.FullName}', but no dependency relationships are indexed for it.");
+            }
+
+            var suggestions = await SymbolLookup.SuggestAsync(storage, symbolPath);
+            var message = suggestions.Count > 0
+                ? $"Symbol '{symbolPath}' not found in index. Did you mean one of: {string.Join("; ", suggestions)}?"
+                : $"Symbol '{symbolPath}' not found in index. Check the spelling or query sql_query for available symbols.";
+            logger.LogWarning("TraceDependencyAsync({Symbol}): symbol not found — {Message}", symbolPath, message);
+            return new DependencyResult([], [], Warning: message, Suggestions: suggestions);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to build trace_dependency diagnostics for {Symbol}", symbolPath);
+            return new DependencyResult([], [], Warning: $"Symbol '{symbolPath}' could not be resolved.");
+        }
+    }
 }
 
 public sealed record DependencyResult(
@@ -103,4 +139,6 @@ public sealed record DependencyResult(
     IReadOnlyList<DependencyNode> RelatedSymbols,
     IReadOnlyList<DependencyNode>? TestFiles = null,
     string? Warning = null,
-    string? ContinuationToken = null);
+    string? ContinuationToken = null,
+    DependencyNode? MatchedSymbol = null,
+    IReadOnlyList<string>? Suggestions = null);

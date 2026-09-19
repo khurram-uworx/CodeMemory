@@ -84,7 +84,7 @@ public sealed class ImpactAnalysisToolTests : BaseToolTests
     }
 
     [Test]
-    public async Task ImpactAnalysis_UnknownSymbol_ReturnsEmptyDependencies()
+    public async Task ImpactAnalysis_UnknownSymbol_ReturnsDiagnostic()
     {
         await using var factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(b =>
@@ -95,6 +95,7 @@ public sealed class ImpactAnalysisToolTests : BaseToolTests
                     s.AddSingleton<IArchitectureService>(MockServices.CreateArchitectureService());
                 });
             });
+        await factory.RegisterRepoAsync();
         var client = factory.CreateClient();
 
         var result = await CallTool(client, "impact_analysis",
@@ -107,5 +108,7 @@ public sealed class ImpactAnalysisToolTests : BaseToolTests
         var obj = JsonNode.Parse(text!)!.AsObject();
         Assert.That(obj["downstreamDependencies"]?.AsArray(), Has.Count.EqualTo(0));
         Assert.That(obj["affectedFiles"]?.AsArray(), Has.Count.EqualTo(0));
+        Assert.That(obj["warning"]?.GetValue<string>(), Does.Contain("NonExistent"));
+        Assert.That(obj["warning"]?.GetValue<string>(), Does.Contain("not found in index"));
     }
 }

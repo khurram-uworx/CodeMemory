@@ -70,7 +70,7 @@ public sealed class TraceDependencyToolTests : BaseToolTests
     }
 
     [Test]
-    public async Task TraceDependency_UnknownSymbol_ReturnsEmpty()
+    public async Task TraceDependency_UnknownSymbol_ReturnsDiagnostic()
     {
         await using var factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(b =>
@@ -80,6 +80,7 @@ public sealed class TraceDependencyToolTests : BaseToolTests
                     s.AddSingleton<IDependencyGraphService>(MockServices.CreateDependencyGraphService());
                 });
             });
+        await factory.RegisterRepoAsync();
         var client = factory.CreateClient();
 
         var result = await CallTool(client, "trace_dependency",
@@ -87,6 +88,8 @@ public sealed class TraceDependencyToolTests : BaseToolTests
 
         Assert.That(result["error"], Is.Null);
         var text = result["result"]?["content"]?[0]?["text"]?.GetValue<string>();
-        Assert.That(text, Does.Not.Contain("NonExistent"));
+        Assert.That(text, Does.Contain("warning"));
+        Assert.That(text, Does.Contain("NonExistent"));
+        Assert.That(text, Does.Contain("not found in index"));
     }
 }

@@ -1,6 +1,7 @@
 using CodeMemory.Diagnostics;
 using CodeMemory.Indexing.Architecture;
 using CodeMemory.Indexing.Graph;
+using CodeMemory.Storage;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
 using System.ComponentModel;
@@ -15,13 +16,16 @@ public sealed record ImpactAnalysisResult(
     IReadOnlyList<ComponentInfo> AffectedComponents,
     IReadOnlyList<string>? TestFiles = null,
     string? Warning = null,
-    string? ContinuationToken = null);
+    string? ContinuationToken = null,
+    DependencyNode? MatchedSymbol = null,
+    IReadOnlyList<string>? Suggestions = null);
 
 [McpServerToolType]
 public sealed class ImpactAnalysisTool
 {
     readonly IDependencyGraphService? graphService;
     readonly IArchitectureService? architectureService;
+    readonly IStorageService? storage;
     readonly ILogger<ImpactAnalysisTool> logger;
 
     public ImpactAnalysisTool(ILogger<ImpactAnalysisTool> logger,
@@ -30,6 +34,7 @@ public sealed class ImpactAnalysisTool
         this.logger = logger;
         graphService = serviceProvider.GetService<IDependencyGraphService>();
         architectureService = serviceProvider.GetService<IArchitectureService>();
+        storage = serviceProvider.GetService<IStorageService>();
     }
 
     [McpServerTool, Description("Analyzes the potential impact of changing a symbol. Returns downstream dependencies, affected files, affected components, and test coverage.")]
@@ -116,6 +121,9 @@ public sealed class ImpactAnalysisTool
         logger.LogDebug("ImpactAnalysisAsync({Symbol}): {Downstream} downstream deps, {Files} affected files, {Tests} test files",
             symbolPath, downstream.Count, affectedFiles.Count, testFiles.Count);
 
+        if (cursor == null && downstream.Count == 0)
+            return await BuildEmptyDiagnosticAsync(symbolPath);
+
         return new ImpactAnalysisResult(
             symbolPath,
             downstream,
@@ -124,5 +132,39 @@ public sealed class ImpactAnalysisTool
             testFiles.Count > 0 ? testFiles : null,
             warning,
             continuationToken);
+    }
+
+    /// <summary>
+    /// Replaces an empty impact analysis with an actionable diagnostic when the symbol
+    /// cannot be resolved.
+    /// </summary>
+    async Task<ImpactAnalysisResult> BuildEmptyDiagnosticAsync(string symbolPath)
+    {
+        try
+        {
+            var symbol = await SymbolLookup.ResolveAsync(storage, symbolPath);
+            if (symbol != null)
+            {
+                logger.LogDebug("ImpactAnalysisAsync({Symbol}): symbol found but no downstream dependencies indexed", symbolPath);
+                return new ImpactAnalysisResult(symbolPath, [], [], [],
+                    MatchedSymbol: SymbolLookup.ToNode(symbol),
+                    Warning: $"Symbol '{symbolPath}' resolved to '{symbol.FullName}', but no downstream dependencies are indexed for it.");
+            }
+
+            var suggestions = await SymbolLookup.SuggestAsync(storage, symbolPath);
+            var message = suggestions.Count > 0
+                ? $"Symbol '{symbolPath}' not found in index. Did you mean one of: {string.Join("; ", suggestions)}?"
+                : $"Symbol '{symbolPath}' not found in index. Check the spelling or query sql_query for available symbols.";
+            logger.LogWarning("ImpactAnalysisAsync({Symbol}): symbol not found — {Message}", symbolPath, message);
+            return new ImpactAnalysisResult(symbolPath, [], [], [],
+                Warning: message,
+                Suggestions: suggestions);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to build impact_analysis diagnostics for {Symbol}", symbolPath);
+            return new ImpactAnalysisResult(symbolPath, [], [], [],
+                Warning: $"Symbol '{symbolPath}' could not be resolved.");
+        }
     }
 }
