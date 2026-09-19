@@ -225,7 +225,6 @@ public sealed class AspNetSqlQueryTool
     static string unwrapMessage(Exception ex)
         => ex.InnerException?.Message ?? ex.Message;
 
-    readonly SqlQueryParser parser = new();
     readonly IStorageService storageService;
     readonly ILogger<AspNetSqlQueryTool> logger;
 
@@ -291,6 +290,10 @@ public sealed class AspNetSqlQueryTool
     {
         try
         {
+            // SqlQueryParser wraps sqlparsercs's stateful Parser and is not
+            // thread-safe — create per call so concurrent queries cannot
+            // corrupt each other's token stream (issue #127).
+            var parser = new SqlQueryParser();
             var statements = parser.Parse(query.AsSpan(), Dialect);
 
             if (statements.Count != 1)
