@@ -133,12 +133,23 @@ The SQL layer uses the `sqlparsercs` NuGet package (C# port of sqlparser-rs) via
 `SqlParser.Ast`, `SqlParser.Dialects`. The upstream source is cloned locally at
 `E:\github\SqlParser-cs` for investigating parser/tokenizer behavior and error messages.
 
+`sql_query` validates identifiers against the table schema **before execution** (schema-first
+diagnostics, see #122): `CodeMemory.Mcp.SqlQuery.SqlQueryValidator` checks `SELECT` projections,
+`WHERE`, `GROUP BY`, `HAVING`, `ORDER BY`, and `JOIN ON` against `TableSchemaProvider` schemas
+(and CTE/derived-table row keys), so an unknown column fails fast with
+`Unknown column 'X'. Available columns on 'T': …` (plus `DESCRIBE`/`PRAGMA table_info` tips for
+real tables) instead of silently dropping rows. Multi-table queries require table-qualified
+columns — unqualified identifiers are rejected with alias guidance.
+
 Known quirks (work around them in `CodeMemory.Mcp`/`CodeMemory.AspNet`, do not patch the library):
 - Message duplication — `Parser.cs:6886` calls `Expected("Expected an expression, …")` while
   `Expected()` itself prefixes `"Expected "`, producing `Expected Expected …`; tokens are dumped in
   Rust-style debug form (`Identifier { Ident = FROM }`).
 - `ParserException` / `TokenizeException` expose 1-based `Line` and `Column` properties — use them
   to produce parse errors with query-position context (snippet + caret) rather than raw message dumps.
+  Some structural errors (e.g. a trailing comma before `FROM`) report `Line`/`Column == 0`;
+  `ParseErrorFormatter` then locates the offending token textually, and appends a stray-`;` removal
+  tip for "Expected a SQL statement, found X" errors.
 
 ## Embedding Limitations & Agent Expectations
 
