@@ -286,6 +286,33 @@ public sealed class SqlQueryServiceTests
     }
 
     [Test]
+    public async Task Select_CountStarWithoutGroupBy_ReturnsTotalRowCount()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store, "SELECT COUNT(*) AS Total FROM SymbolRecord");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(1));
+        Assert.That(result.Rows![0]["Total"], Is.EqualTo(5));
+    }
+
+    [Test]
+    public async Task Select_LikePatternWithSlash_MatchesLiteralSlash()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT Name FROM SymbolRecord WHERE FilePath LIKE '%/src/MyClass.cs%' ORDER BY Name");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.Rows!.Select(r => r["Name"]),
+            Is.EquivalentTo(["_private", "MyClass", "MyMethod"]));
+    }
+
+    [Test]
     public async Task UnknownTable_ReturnsError()
     {
         var (store, registry, service) = createServices();
