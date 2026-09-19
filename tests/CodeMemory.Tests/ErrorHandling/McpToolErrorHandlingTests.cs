@@ -43,7 +43,8 @@ public sealed class McpToolErrorHandlingTests
         var tool = new FindRelatedCodeTool(NullLogger<FindRelatedCodeTool>.Instance, EmptyServices());
         var result = await tool.FindRelatedCodeAsync("TestClass");
 
-        Assert.That(result, Is.Empty);
+        Assert.That(result.Results, Is.Empty);
+        Assert.That(result.Message, Does.Contain("not registered"));
     }
 
     [Test]

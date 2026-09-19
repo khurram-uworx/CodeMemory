@@ -417,10 +417,23 @@ public sealed class HybridStorageService : IStorageService, IDisposable
     public async Task<SymbolRecord?> GetSymbolByFullNameAsync(string fullName, CancellationToken ct = default)
     {
         throwIfNotInitialized();
+        if (string.IsNullOrWhiteSpace(fullName))
+            return null;
+
         await using var db = createDbContext();
         var entity = await db.Symbols
             .AsNoTracking()
             .FirstOrDefaultAsync(s => s.FullName == fullName, ct);
+        if (entity != null)
+            return entity.ToRecord();
+
+        // Signature-insensitive fallback — "Ns.Util.getLikeMethod(string pattern)" <- "Ns.Util.getLikeMethod".
+        // Stored first for determinism when overloads exist.
+        entity = await db.Symbols
+            .AsNoTracking()
+            .Where(s => s.FullName != null && s.FullName.StartsWith(SymbolName.SignaturePrefix(fullName)))
+            .OrderBy(s => s.FullName)
+            .FirstOrDefaultAsync(ct);
         if (entity != null)
             return entity.ToRecord();
 
@@ -430,6 +443,40 @@ public sealed class HybridStorageService : IStorageService, IDisposable
             .FirstOrDefaultAsync(s => s.Name == fullName, ct);
 
         return entity?.ToRecord();
+    }
+
+    public async Task<IReadOnlyList<SymbolRecord>> SuggestSymbolsAsync(string query, int top = 5, CancellationToken ct = default)
+    {
+        throwIfNotInitialized();
+        if (string.IsNullOrWhiteSpace(query) || top <= 0)
+            return [];
+
+        var lastSegment = SymbolName.LastSegment(query);
+        await using var db = createDbContext();
+
+        var fullNameMatches = await db.Symbols
+            .AsNoTracking()
+            .Where(s => s.FullName != null && s.FullName.StartsWith(query))
+            .OrderBy(s => s.FullName)
+            .Take(top)
+            .ToListAsync(ct);
+
+        var nameMatches = await db.Symbols
+            .AsNoTracking()
+            .Where(s => lastSegment.Length > 0 && s.Name != null && s.Name.StartsWith(lastSegment))
+            .OrderBy(s => s.FullName)
+            .Take(top)
+            .ToListAsync(ct);
+
+        return fullNameMatches
+            .Concat(nameMatches)
+            .GroupBy(s => s.Id)
+            .Select(g => g.First())
+            .Where(s => !string.Equals(s.FullName, query, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(s => s.FullName, StringComparer.OrdinalIgnoreCase)
+            .Take(top)
+            .Select(s => s.ToRecord())
+            .ToList();
     }
 
     public async Task<ChunkRecord?> GetChunkAsync(string id, CancellationToken ct = default)

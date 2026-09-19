@@ -2095,7 +2095,7 @@ public sealed class SqlQueryService
             catch (Exception ex)
             {
                 logger.LogWarning(ex, "SQL parse error");
-                return fail($"Parse error: {unwrapMessage(ex)}", sw);
+                return fail(ParseErrorFormatter.Format(sql, ex), sw);
             }
 
             if (statements.Count != 1)
@@ -2233,6 +2233,25 @@ public sealed class SqlQueryService
                         ? await materializeSubqueriesAsync(whereExpr, store, cteResults, fetchTop, ct)
                         : null;
                     result = await queryFilteredAsync(store, entry!, materializedWhere, fetchTop, ct);
+                }
+            }
+
+            // Validate explicit SELECT columns against the record type (single real table only)
+            // so unknown identifiers fail loudly instead of producing phantom {} rows.
+            if (hasExplicitProjection && !isCte && !isMultiTable)
+            {
+                var available = entry!.RecordType
+                    .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+                    .Where(p => p.CanRead)
+                    .Select(p => p.Name)
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var col in parsedColumns)
+                {
+                    if (col.Name is not null && !col.Name.StartsWith("__") && !available.Contains(col.Name))
+                        return fail($"Column '{col.Name}' not found on '{singleTableName}'. Available columns: {string.Join(", ", available.OrderBy(n => n))}", sw);
+                    if (col.IsAggregate && col.AggregateArg is not null && !available.Contains(col.AggregateArg))
+                        return fail($"Column '{col.AggregateArg}' not found on '{singleTableName}'. Available columns: {string.Join(", ", available.OrderBy(n => n))}", sw);
                 }
             }
 

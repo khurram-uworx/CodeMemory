@@ -27,7 +27,8 @@ public sealed class SemanticSearchTool
     public async Task<IReadOnlyList<SearchResult>> SemanticSearchAsync(
         [Description("Natural language query describing the code or documentation to find")] string query,
         [Description("Maximum number of results to return (default 10, max 50)")] int maxResults = 10,
-        [Description("Minimum cosine similarity threshold (0-1, default 0). Higher values return only highly relevant results.")] double minimumSimilarity = 0)
+        [Description("Minimum cosine similarity threshold (0-1, default 0). Higher values return only highly relevant results.")] double minimumSimilarity = 0,
+        [Description("When true, excludes documentation chunks (Language = 'Text') and returns code only")] bool codeOnly = false)
     {
         var repoName = storage?.RepoRoot is not null
             ? Path.GetFileName(storage.RepoRoot.TrimEnd(Path.DirectorySeparatorChar))
@@ -49,6 +50,9 @@ public sealed class SemanticSearchTool
         var output = new List<SearchResult>(results.Count);
         foreach (var r in results)
         {
+            if (codeOnly && string.Equals(r.Chunk.Language, "Text", StringComparison.OrdinalIgnoreCase))
+                continue;
+
             var symbolName = r.Chunk.SymbolId;
             if (storage != null && r.Chunk.SymbolId != null)
             {

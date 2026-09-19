@@ -183,6 +183,136 @@ public sealed class SqlQueryServiceTests
     }
 
     [Test]
+    public async Task Select_UnknownColumn_ReturnsClearError()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store, "SELECT RowId FROM SymbolRecord");
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Error, Does.Contain("Column 'RowId' not found on 'SymbolRecord'"));
+        Assert.That(result.Error, Does.Contain("Available columns:"));
+        Assert.That(result.Error, Does.Contain("Name"));
+    }
+
+    [Test]
+    public async Task Select_UnknownAggregateArg_ReturnsClearError()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store, "SELECT COUNT(RowId) FROM SymbolRecord");
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Error, Does.Contain("Column 'RowId' not found on 'SymbolRecord'"));
+    }
+
+    [Test]
+    public async Task Select_ValidColumns_StillSucceeds()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store, "SELECT Name, Kind FROM SymbolRecord ORDER BY Name");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.Rows!.Select(r => r["Name"]),
+            Is.EquivalentTo(["Helper", "IOld", "MyClass", "MyMethod", "_private"]));
+    }
+
+    [Test]
+    public async Task ParseError_LocatedError_IncludesPositionAndCaret()
+    {
+        var (store, registry, service) = createServices();
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT Name FROM SymbolRecord WHERE Kind = 'Class' AND");
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Error, Does.Contain("Parse error at line 1, column"));
+        Assert.That(result.Error, Does.Contain("SELECT Name FROM SymbolRecord WHERE Kind = 'Class' AND"));
+        Assert.That(result.Error, Does.Contain("^"));
+        Assert.That(result.Error, Does.Contain("Expected an expression"));
+        Assert.That(result.Error, Does.Not.Contain("Ident ="));
+    }
+
+    [Test]
+    public async Task ParseError_NoLocation_ReturnsSanitizedMessage()
+    {
+        var (store, registry, service) = createServices();
+
+        var result = await service.ExecuteAsync(store, "SELECT FROM SymbolRecord");
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Error, Does.Contain("Expected an expression, found: identifier 'FROM'"));
+        Assert.That(result.Error, Does.Not.Contain("Expected Expected"));
+        Assert.That(result.Error, Does.Not.Contain("Identifier {"));
+        Assert.That(result.Error, Does.Not.Contain("Ident ="));
+    }
+
+    [Test]
+    public async Task ParseError_MultiLineQuery_PointsAtOffendingLine()
+    {
+        var (store, registry, service) = createServices();
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT Name\nFROM SymbolRecord\nWHERE Kind = 'Class' AND");
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Error, Does.Contain("Parse error at line 3"));
+        Assert.That(result.Error, Does.Contain("WHERE Kind = 'Class' AND"));
+        Assert.That(result.Error, Does.Contain("^"));
+    }
+
+    [Test]
+    public async Task ParseError_UnterminatedString_ShowsTokenizePosition()
+    {
+        var (store, registry, service) = createServices();
+
+        var result = await service.ExecuteAsync(store, "SELECT 'unterminated FROM SymbolRecord");
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Error, Does.Contain("Parse error at line 1, column"));
+        Assert.That(result.Error, Does.Contain("^"));
+    }
+
+    [Test]
+    public void ParseErrorFormatter_SanitizesDoubledExpectedAndRustTokens()
+    {
+        Assert.That(ParseErrorFormatter.Sanitize(
+            "Expected Expected an expression, found: Identifier { Ident = FROM }"),
+            Is.EqualTo("Expected an expression, found: identifier 'FROM'"));
+    }
+
+    [Test]
+    public async Task Select_CountStarWithoutGroupBy_ReturnsTotalRowCount()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store, "SELECT COUNT(*) AS Total FROM SymbolRecord");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(1));
+        Assert.That(result.Rows![0]["Total"], Is.EqualTo(5));
+    }
+
+    [Test]
+    public async Task Select_LikePatternWithSlash_MatchesLiteralSlash()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT Name FROM SymbolRecord WHERE FilePath LIKE '%/src/MyClass.cs%' ORDER BY Name");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.Rows!.Select(r => r["Name"]),
+            Is.EquivalentTo(["_private", "MyClass", "MyMethod"]));
+    }
+
+    [Test]
     public async Task UnknownTable_ReturnsError()
     {
         var (store, registry, service) = createServices();

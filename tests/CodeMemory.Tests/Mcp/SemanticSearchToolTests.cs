@@ -1,6 +1,8 @@
 using CodeMemory.Indexing.Search;
+using CodeMemory.Storage;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using NSubstitute;
 using System.Text.Json.Nodes;
 
 namespace CodeMemory.Tests.Mcp;
@@ -70,5 +72,94 @@ public sealed class SemanticSearchToolTests : BaseToolTests
         Assert.That(content, Is.Not.Null);
         var text = content![0]!["text"]?.GetValue<string>();
         Assert.That(text, Is.EqualTo("[]"));
+    }
+
+    [Test]
+    public async Task SemanticSearch_CodeOnlyTrue_ExcludesDocumentationChunks()
+    {
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(b =>
+            {
+                b.ConfigureServices(s =>
+                {
+                    s.AddSingleton<ISemanticSearchService>(CreateMixedSearchService());
+                });
+            });
+        await factory.RegisterRepoAsync();
+        var client = factory.CreateClient();
+
+        var result = await CallTool(client, "semantic_search",
+            new JsonObject { ["query"] = "database docs", ["maxResults"] = 5, ["codeOnly"] = true });
+
+        Assert.That(result["error"], Is.Null);
+        var content = result["result"]?["content"]?.AsArray();
+        Assert.That(content, Is.Not.Null);
+        var text = content![0]!["text"]?.GetValue<string>();
+
+        var chunkIds = JsonNode.Parse(text!)!.AsArray().Select(n => n!["chunkId"]?.GetValue<string>()).ToList();
+        Assert.That(chunkIds, Is.EquivalentTo(["chunk-code"]));
+    }
+
+    [Test]
+    public async Task SemanticSearch_CodeOnlyFalse_IncludesDocumentationChunks()
+    {
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(b =>
+            {
+                b.ConfigureServices(s =>
+                {
+                    s.AddSingleton<ISemanticSearchService>(CreateMixedSearchService());
+                });
+            });
+        await factory.RegisterRepoAsync();
+        var client = factory.CreateClient();
+
+        var result = await CallTool(client, "semantic_search",
+            new JsonObject { ["query"] = "database docs", ["maxResults"] = 5 });
+
+        Assert.That(result["error"], Is.Null);
+        var content = result["result"]?["content"]?.AsArray();
+        Assert.That(content, Is.Not.Null);
+        var text = content![0]!["text"]?.GetValue<string>();
+
+        var chunkIds = JsonNode.Parse(text!)!.AsArray().Select(n => n!["chunkId"]?.GetValue<string>()).ToList();
+        Assert.That(chunkIds, Is.EquivalentTo(["chunk-code", "chunk-doc"]));
+    }
+
+    static ISemanticSearchService CreateMixedSearchService()
+    {
+        var search = Substitute.For<ISemanticSearchService>();
+        search.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<double>(), Arg.Any<CancellationToken>())
+              .Returns([
+                  new ScoredChunk
+                  {
+                      Chunk = new ChunkRecord
+                      {
+                          Id = "chunk-code",
+                          SymbolId = "DatabaseService",
+                          FilePath = "/src/DatabaseService.cs",
+                          Content = "public class DatabaseService { }",
+                          Language = "CSharp",
+                          LineStart = 1,
+                          LineEnd = 10
+                      },
+                      Score = 0.9
+                  },
+                  new ScoredChunk
+                  {
+                      Chunk = new ChunkRecord
+                      {
+                          Id = "chunk-doc",
+                          SymbolId = "ReadmeDoc",
+                          FilePath = "/docs/README.md",
+                          Content = "Documentation about the database service",
+                          Language = "Text",
+                          LineStart = 1,
+                          LineEnd = 30
+                      },
+                      Score = 0.8
+                  }
+              ]);
+        return search;
     }
 }

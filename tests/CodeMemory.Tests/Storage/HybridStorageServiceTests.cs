@@ -153,6 +153,58 @@ public sealed class HybridStorageServiceTests
     }
 
     [Test]
+    public async Task GetSymbolByFullNameAsync_MethodPathWithoutSignature_ResolvesToMethod()
+    {
+        var storage = CreateStorage(out var tempDir);
+        await storage.InitializeAsync();
+
+        await storage.StoreSymbolsAsync([
+            new SymbolRecord
+            {
+                Id = "m1",
+                Name = "getLikeMethod",
+                Kind = "Method",
+                FilePath = "/src/QueryUtils.cs",
+                FullName = "Ns.Util.QueryUtils.getLikeMethod(string pattern)",
+                LineStart = 10,
+                LineEnd = 22
+            }
+        ]);
+
+        var resolved = await storage.GetSymbolByFullNameAsync("Ns.Util.QueryUtils.getLikeMethod");
+
+        Assert.That(resolved, Is.Not.Null);
+        Assert.That(resolved!.Id, Is.EqualTo("m1"));
+        Assert.That(resolved.FullName, Is.EqualTo("Ns.Util.QueryUtils.getLikeMethod(string pattern)"));
+
+        Cleanup(tempDir);
+    }
+
+    [Test]
+    public async Task SuggestSymbolsAsync_MatchesFullNamePrefixAndLastName()
+    {
+        var storage = CreateStorage(out var tempDir);
+        await storage.InitializeAsync();
+
+        await storage.StoreSymbolsAsync([
+            new SymbolRecord { Id = "s1", Name = "getLikeMethod", Kind = "Method", FilePath = "/src/A.cs",
+                FullName = "Ns.Util.QueryUtils.getLikeMethod(string)" },
+            new SymbolRecord { Id = "s2", Name = "getRelated", Kind = "Method", FilePath = "/src/A.cs",
+                FullName = "Ns.Util.QueryUtils.getRelated()" },
+            new SymbolRecord { Id = "s3", Name = "getLikeResource", Kind = "Method", FilePath = "/src/B.cs",
+                FullName = "Other.App.getLikeResource()" },
+            new SymbolRecord { Id = "s4", Name = "completelyDifferent", Kind = "Class", FilePath = "/src/C.cs",
+                FullName = "Ns.Util.Other" }
+        ]);
+
+        var suggestions = await storage.SuggestSymbolsAsync("Ns.Util.QueryUtils.get");
+
+        Assert.That(suggestions.Select(s => s.Id), Is.EquivalentTo(["s1", "s2", "s3"]));
+
+        Cleanup(tempDir);
+    }
+
+    [Test]
     public async Task Components_RoundTripThroughRegistryStore()
     {
         var storage = CreateStorage(out var tempDir);
