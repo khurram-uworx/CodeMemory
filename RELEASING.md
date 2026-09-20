@@ -23,7 +23,7 @@ git tag v1.1.0
 git push origin v1.1.0
 ```
 
-This triggers the **Release** GitHub Action (`.github/workflows/release.yml`) which:
+This triggers the **Release** GitHub Action (`.github/workflows/cd.yml`) which:
 - Builds the project for each platform in the build matrix (`win-x64` initially)
 - Zips the publish folder (including Tree-sitter native binaries) into `code-memory-{rid}.zip`
 - Creates a GitHub Release with the attached bundle
@@ -57,4 +57,4 @@ npx @uworx/code-memory --repo /some/project
 
 - **Version alignment**: The git tag (`v1.1.0`) and NPM version (`1.1.0`) must match (tag has `v` prefix, NPM does not).
 - **`@uworx` scope**: Requires `--access public` when publishing (set in `publishConfig`).
-- **Platform support matrix**: Add new RIDs to the build matrix in `release.yml` and the `ridMap` in `download-binary.js`.
+- **Platform support matrix**: Add new RIDs to the build matrix in `cd.yml` and the `ridMap` in `download-binary.js`.
