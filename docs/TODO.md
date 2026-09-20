@@ -110,11 +110,40 @@ dedup no longer double-counts).
 
 ## Planned commits
 
-1. `docs: plan issue 137 SQL join perf in TODO.md`
-2. `fix(sql): hash join for RIGHT/FULL OUTER joins` (Change 1)
-3. `fix(sql): fail-fast diagnostic for unbounded nested-loop joins` (Change 2)
-4. `test(sql): regression coverage for issue #137` (Change 3)
-5. `docs: document RIGHT/FULL hash join and nested-loop guard` (Change 4)
+1. `docs: plan issue 137 SQL join perf in TODO.md` — ✅ landed
+2. `fix(sql): hash join for RIGHT/FULL OUTER joins` (Change 1) — ✅ `9c2c013`
+3. `fix(sql): fail-fast diagnostic for unbounded nested-loop joins` (Change 2) — ✅ `a4b5335`
+4. `test(sql): regression coverage for issue #137` (Change 3) — ✅ `99284aa`
+5. `docs: document RIGHT/FULL hash join and nested-loop guard` (Change 4) — ✅ `ce3d974`
+6. (additional, found during test verification) `fix(sql): resolve qualified ORDER BY columns unambiguously in joins` — ✅ `57ce889`
+
+## Execution log (vs plan)
+
+- All four planned changes landed as planned, plus one additive fix discovered when the newly
+  widened hash dispatch ran the pre-existing `CrossJoin_RightJoinSyntax_ReturnsRightOuterRows`
+  test: `ORDER BY r.Id` was stripped to `Id` and resolved by first `.Id`-suffixed row key, so the
+  effective key depended on merged-dict order (old RIGHT path = right-side keys first; new hash
+  RIGHT = left-side keys first) and the sort silently flipped. Fixed in `applyOrderBy` by
+  preferring the fully-qualified compound name when a stripped sort key is ambiguous across join
+  sides; UNION ORDER BY (stripped-name semantics) untouched. Pinned by new
+  `JoinOrderBy_QualifiedAmbiguousColumn_SortsByDeclaredSide` (fails pre-fix).
+- Test expectation corrected during verification: the small non-equi RIGHT join on the seed
+  (3 relationships) is 15 rows, not 21 — the initial arithmetic wrongly included an orphan
+  relationship that is only upserted by the dedicated orphan tests.
+- Verification status: solution build clean; `SqlQueryServiceJoinTests` 34/34; full suite
+  656/656 green (~1m 10s). Live MCP verification still pending — requires the harness to serve this
+  tree (opencode.json currently points the code-memory MCP at the published `@uworx/code-memory`
+  npx package; switch to the `dotnet run --project` variant before restarting).
+- No extra probe project created — runtime smoke checks used the repo's own NUnit suite
+  (`tests/CodeMemory.Probes` untouched). The temporary `Tmp137Debug.cs` diagnostic test was
+  removed after use (see probe lifecycle guidance).
+
+## Blast radius (post-execution)
+
+Unchanged from plan: `SqlQueryService.cs` + new `SqlQueryJoinTooLargeException.cs` (Mcp), the test
+project's linked-source list (`CodeMemory.Tests.csproj`), AGENTS.md. The additional `applyOrderBy`
+ambiguity fix touches the shared ORDER BY path used by every query with ORDER BY — covered by the
+full suite (656 green).
 
 ## Blast radius
 
