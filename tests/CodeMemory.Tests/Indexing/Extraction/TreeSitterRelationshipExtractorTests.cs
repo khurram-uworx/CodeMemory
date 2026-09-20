@@ -265,4 +265,175 @@ public sealed class TreeSitterRelationshipExtractorTests
             r.TargetSymbolId == "Base" &&
             r.RelationshipType == "Inherits"), Is.True);
     }
+
+    [Test]
+    public async Task ExtractRelationships_JavaImportedType_ResolvesViaImportMap()
+    {
+        Assume.That(isTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var consumer = await extractFromCode("""
+            package uk.co.uworx.khoji.agile.internal.error;
+
+            import uk.co.uworx.khoji.agile.internal.ServiceError;
+
+            public class Consumer {
+                private ServiceError error;
+            }
+            """, ".java");
+        var internalError = await extractFromCode("""
+            package uk.co.uworx.khoji.agile.internal;
+
+            public class ServiceError {}
+            """, ".java");
+        var utilError = await extractFromCode("""
+            package uk.co.uworx.khoji.agile.internal.util;
+
+            public class ServiceError {}
+            """, ".java");
+
+        // Two same-named classes exist; only the import disambiguates to the
+        // internal.ServiceError one (Change 4 import-map step beats byName).
+        var allSymbols = consumer.Symbols.Concat(internalError.Symbols).Concat(utilError.Symbols).ToList();
+        var extractor = new TreeSitterRelationshipExtractor(NullLogger<TreeSitterRelationshipExtractor>.Instance);
+        var relationships = extractor.ExtractRelationships(consumer.Result, allSymbols, consumer.FilePath);
+
+        Assert.That(relationships.Any(r =>
+            r.SourceSymbolId == "uk.co.uworx.khoji.agile.internal.error.Consumer.error" &&
+            r.TargetSymbolId == "uk.co.uworx.khoji.agile.internal.ServiceError" &&
+            r.RelationshipType == "References"), Is.True);
+    }
+
+    [Test]
+    public async Task ExtractRelationships_JavaSamePackageType_PrefersSamePackageOverDuplicate()
+    {
+        Assume.That(isTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var consumer = await extractFromCode("""
+            package uk.co.uworx.khoji.agile.internal.error;
+
+            public class Consumer {
+                private FieldError fieldError;
+            }
+            """, ".java");
+        var errorFieldError = await extractFromCode("""
+            package uk.co.uworx.khoji.agile.internal.error;
+
+            public class FieldError {}
+            """, ".java");
+        var internalFieldError = await extractFromCode("""
+            package uk.co.uworx.khoji.agile.internal;
+
+            public class FieldError {}
+            """, ".java");
+
+        var allSymbols = consumer.Symbols.Concat(errorFieldError.Symbols).Concat(internalFieldError.Symbols).ToList();
+        var extractor = new TreeSitterRelationshipExtractor(NullLogger<TreeSitterRelationshipExtractor>.Instance);
+        var relationships = extractor.ExtractRelationships(consumer.Result, allSymbols, consumer.FilePath);
+
+        Assert.That(relationships.Any(r =>
+            r.SourceSymbolId == "uk.co.uworx.khoji.agile.internal.error.Consumer.fieldError" &&
+            r.TargetSymbolId == "uk.co.uworx.khoji.agile.internal.error.FieldError" &&
+            r.RelationshipType == "References"), Is.True);
+    }
+
+    [Test]
+    public async Task ExtractRelationships_JavaAmbiguousBareReference_SkipsEdge()
+    {
+        Assume.That(isTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var consumer = await extractFromCode("""
+            package uk.co.uworx.khoji.agile.internal.error;
+
+            public class Consumer {
+                private BareThing thing;
+            }
+            """, ".java");
+        var utilThing = await extractFromCode("""
+            package uk.co.uworx.khoji.agile.internal.util;
+
+            public class BareThing {}
+            """, ".java");
+        var internalThing = await extractFromCode("""
+            package uk.co.uworx.khoji.agile.internal;
+
+            public class BareThing {}
+            """, ".java");
+
+        // Bare name with no import, not declared in the consumer's package:
+        // two candidates, no context — the reference must be skipped, not
+        // resolved to an arbitrary first match.
+        var allSymbols = consumer.Symbols.Concat(utilThing.Symbols).Concat(internalThing.Symbols).ToList();
+        var extractor = new TreeSitterRelationshipExtractor(NullLogger<TreeSitterRelationshipExtractor>.Instance);
+        var relationships = extractor.ExtractRelationships(consumer.Result, allSymbols, consumer.FilePath);
+
+        Assert.That(relationships.Any(r => r.TargetSymbolId.EndsWith("BareThing")), Is.False);
+    }
+
+    [Test]
+    public async Task ExtractRelationships_JavaFullyQualifiedReference_ResolvesExactFullName()
+    {
+        Assume.That(isTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var consumer = await extractFromCode("""
+            package uk.co.uworx.khoji.agile.internal.error;
+
+            public class Consumer {
+                private uk.co.uworx.khoji.agile.internal.ServiceError error;
+            }
+            """, ".java");
+        var internalError = await extractFromCode("""
+            package uk.co.uworx.khoji.agile.internal;
+
+            public class ServiceError {}
+            """, ".java");
+        var utilError = await extractFromCode("""
+            package uk.co.uworx.khoji.agile.internal.util;
+
+            public class ServiceError {}
+            """, ".java");
+
+        var allSymbols = consumer.Symbols.Concat(internalError.Symbols).Concat(utilError.Symbols).ToList();
+        var extractor = new TreeSitterRelationshipExtractor(NullLogger<TreeSitterRelationshipExtractor>.Instance);
+        var relationships = extractor.ExtractRelationships(consumer.Result, allSymbols, consumer.FilePath);
+
+        Assert.That(relationships.Any(r =>
+            r.SourceSymbolId == "uk.co.uworx.khoji.agile.internal.error.Consumer.error" &&
+            r.TargetSymbolId == "uk.co.uworx.khoji.agile.internal.ServiceError" &&
+            r.RelationshipType == "References"), Is.True);
+    }
+
+    [Test]
+    public async Task ExtractRelationships_JavaSamePackageMethodCall_PrefersSamePackageOverload()
+    {
+        Assume.That(isTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var consumer = await extractFromCode("""
+            package uk.co.uworx.khoji.agile.internal.error;
+
+            public class Consumer {
+                private OutThing thing;
+                public void go() {
+                    thing.ping();
+                }
+            }
+            """, ".java");
+        var errorThing = await extractFromCode("""
+            package uk.co.uworx.khoji.agile.internal.error;
+
+            public class OutThing {
+                public void ping() {}
+            }
+            """, ".java");
+        var internalThing = await extractFromCode("""
+            package uk.co.uworx.khoji.agile.internal;
+
+            public class OutThing {
+                public void ping() {}
+            }
+            """, ".java");
+
+        var allSymbols = consumer.Symbols.Concat(errorThing.Symbols).Concat(internalThing.Symbols).ToList();
+        var extractor = new TreeSitterRelationshipExtractor(NullLogger<TreeSitterRelationshipExtractor>.Instance);
+        var relationships = extractor.ExtractRelationships(consumer.Result, allSymbols, consumer.FilePath);
+
+        Assert.That(relationships.Any(r =>
+            r.SourceSymbolId == "uk.co.uworx.khoji.agile.internal.error.Consumer.go()" &&
+            r.TargetSymbolId == "uk.co.uworx.khoji.agile.internal.error.OutThing.ping()" &&
+            r.RelationshipType == "Calls"), Is.True);
+    }
 }
