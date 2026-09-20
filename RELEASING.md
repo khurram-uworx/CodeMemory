@@ -16,7 +16,26 @@ CodeMemory is released in two channels that share the same version number:
 # (must be semver, e.g. 1.1.0)
 ```
 
-### 2. Tag and push to trigger the binary build
+### 2. Review public docs
+
+Bump/refresh the public docs to describe what changed since the last release — they ship with the code:
+
+```bash
+# See what changed in code since the last tag
+git log --oneline v<PREVIOUS_TAG>..HEAD
+git diff --stat v<PREVIOUS_TAG>..HEAD
+```
+
+Review these files (they live at the repo root and publish with the repo):
+
+- `README.md` — capabilities, feature highlights, quick start
+- `ARCHITECTURE.md` — system architecture, data flow, layering
+- `GETTING-STARTED.md` — install, configure, query a repo
+- `CONTAINER-README.md` — container / Docker Compose deployment
+
+Reflect user-facing changes only where they make sense against the existing structure — no filler, and each piece of info belongs in exactly one of these files, not repeated.
+
+### 3. Tag and push to trigger the binary build
 
 ```bash
 git tag v1.1.0
@@ -28,7 +47,7 @@ This triggers the **Release** GitHub Action (`.github/workflows/cd.yml`) which:
 - Zips the publish folder (including Tree-sitter native binaries) into `code-memory-{rid}.zip`
 - Creates a GitHub Release with the attached bundle
 
-### 3. Wait for the build to finish
+### 4. Wait for the build to finish
 
 Verify the release exists at:
 `https://github.com/khurram-uworx/CodeMemory/releases/tag/v1.1.0`
@@ -36,7 +55,7 @@ Verify the release exists at:
 The NPM postinstall script downloads from:
 `https://github.com/khurram-uworx/CodeMemory/releases/download/v1.1.0/code-memory-win-x64.zip`
 
-### 4. Publish the NPM package
+### 5. Publish the NPM package
 
 ```bash
 cd packages/code-memory
@@ -45,7 +64,7 @@ npm publish
 
 > The NPM package must be published **after** the GitHub Release exists, because its `postinstall` script downloads the binary from the release.
 
-### 5. Verify
+### 6. Verify
 
 ```bash
 npx @uworx/code-memory --version
