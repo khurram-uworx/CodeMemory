@@ -49,6 +49,15 @@ Observed on `TreeSitter.DotNet` 1.3.0 (see probe output for the full trees):
   a `module` node. The `module` query supertype matches both in extraction.
 - **C++** — `namespace MyNs {}` is `namespace_definition` (a direct ancestor of
   classes), qualified names already work for C++.
+- **Java `import_declaration`** (grounding for Change 4, relationship resolution) —
+  the dotted path is the named `scoped_identifier` child (never a `name` field);
+  wildcard imports add a second named `asterisk` child (`import a.b.field.*;` →
+  `scoped_identifier` `a.b.field` + `asterisk` `*`); token fields all have empty
+  keys, so the named children (not fields) are the reliable read.
+- **TypeScript `import_statement`** (Change 4) — named children are `import_clause`
+  (`{ A, B }` / `DefaultThing` / `* as Alias`) and `string` (the module specifier).
+  `'./relative/module'` cannot be expanded to index FullNames without module
+  resolution ⇒ TS imports add no qualifier; same-file/uniqueness rules only.
 
 ## Files
 

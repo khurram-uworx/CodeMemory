@@ -61,6 +61,52 @@ internal static class TreeSitterGrammarProbe
             }
             """);
 
+        Dump("Java: package + imports + cross-package refs", "Java", """
+            package uk.co.uworx.khoji.agile.internal.error;
+
+            import java.util.List;
+            import java.util.ArrayList;
+            import uk.co.uworx.khoji.agile.internal.ServiceError;
+            import uk.co.uworx.khoji.agile.internal.field.*;
+
+            public class ServiceException {
+                private ServiceError error;
+                private List<String> items;
+                public void doSomething(uk.co.uworx.khoji.agile.internal.error.FieldError fieldError) {
+                    error.getResponseType();
+                }
+            }
+            """);
+
+        Dump("TypeScript: import forms", "TypeScript", """
+            import { Component } from './component';
+            import Helper from './helper';
+            import * as Utils from './utils';
+            import './side-effect';
+
+            export class MyService {
+                c: Component;
+                h?: Helper;
+                run(u: Utils.Util) {}
+            }
+            """);
+
+        Console.WriteLine();
+        Console.WriteLine("===== Import summary (what buildResolutionContext would read) =====");
+        PrintImports("Java", """
+            package uk.co.uworx.khoji.agile.internal.error;
+
+            import java.util.List;
+            import uk.co.uworx.khoji.agile.internal.ServiceError;
+            import uk.co.uworx.khoji.agile.internal.field.*;
+            """);
+        PrintImports("TypeScript", """
+            import { Component, Helper } from './component';
+            import DefaultThing from './thing';
+            import * as Utils from './utils';
+            import './side-effect';
+            """);
+
         return 0;
     }
 
@@ -179,4 +225,60 @@ internal static class TreeSitterGrammarProbe
 
     static string Escape(string s) =>
         s.Replace("\r", "").Replace("\n", "\\n").Replace("\t", "\\t");
+
+    /// <summary>
+    /// Prints, per language, the package/import shapes a context-aware relationship
+    /// resolver would consume: Java package + import_declaration nodes (fields and named
+    /// children), TypeScript import_statement clauses. Mirrors the planned
+    /// ResolutionContext builder.
+    /// </summary>
+    static void PrintImports(string languageName, string code)
+    {
+        Console.WriteLine();
+        Console.WriteLine($"-- {languageName} --");
+        try
+        {
+            using var parser = new TreeSitter.Parser(new TreeSitter.Language(languageName));
+            using var tree = parser.Parse(code);
+            var root = tree?.RootNode;
+            if (root is null)
+            {
+                Console.WriteLine("  (null tree)");
+                return;
+            }
+
+            if (languageName == "Java")
+            {
+                var pkg = ProgramPackage(root);
+                Console.WriteLine($"  package: {pkg ?? "<none>"}");
+                foreach (var child in root.NamedChildren)
+                {
+                    if (child.Type != "import_declaration")
+                        continue;
+                    Console.WriteLine($"  import_declaration: '{child.Text.Trim()}'");
+                    foreach (var f in child.Fields)
+                        Console.WriteLine($"    field '{f.Key}' = '{f.Value.Text}'");
+                    foreach (var c in child.NamedChildren)
+                        Console.WriteLine($"    named child '{c.Type}' = '{c.Text}'");
+                }
+            }
+            else
+            {
+                foreach (var child in root.NamedChildren)
+                {
+                    if (child.Type != "import_statement")
+                        continue;
+                    Console.WriteLine($"  import_statement: '{child.Text.Trim()}'");
+                    foreach (var f in child.Fields)
+                        Console.WriteLine($"    field '{f.Key}' = '{f.Value.Text}'");
+                    foreach (var c in child.NamedChildren)
+                        Console.WriteLine($"    named child '{c.Type}' = '{c.Text}'");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"ERROR: {ex.Message}");
+        }
+    }
 }

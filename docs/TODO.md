@@ -114,6 +114,12 @@ Change (intent; shape to code):
 Consequence: fewer but correct edges (intra-module references preserved; cross-module garbage
 eliminated). Re-index required for persisted indexes.
 
+Grounding (probe `tree-sitter`): Java `import_declaration` exposes the dotted path as a named
+`scoped_identifier` child with an optional named `asterisk` child for wildcards (token fields have
+empty keys — read named children); TypeScript `import_statement` carries `import_clause` +
+`string` (source) children, which cannot be expanded to index FullNames without module resolution,
+so TS resolution relies on same-file/uniqueness rules only (documented limitation).
+
 ## Verification steps
 
 1. `dotnet build` the solution (may require an opencode session restart first — the running MCP
