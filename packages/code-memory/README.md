@@ -72,7 +72,7 @@ The `@uworx/code-memory` package is a lightweight CLI wrapper. On `npm install`,
 | `get_symbol_history` | Git commit history for a symbol (commits, authors, dates) |
 | `get_hotspots` | Most frequently changed files ranked by commit count |
 | `sql_query` | SQL queries over indexed data — SELECT/WHERE/ORDER BY/GROUP BY/HAVING, CTEs, derived tables, aggregates, vector search via `ORDER BY Similarity DESC` |
-| `rescan_repository` | Trigger full re-index (clear all data, re-scan, re-store) |
+| `rescan_repository` | Trigger full re-index (clear all data, re-scan, re-store). Optional `excludePatterns` (gitignore-style, comma-separated, one-shot — durable excludes belong in `.gitignore`) |
 | `get_repository_root` | Returns the root path of the currently active repository |
 
 All tools return structured JSON.

@@ -129,11 +129,15 @@ Per-repo configuration loaded by `IndexingEngine.RunIndexingAsync()` at index ti
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `exclude` | `string[]` | `[]` | Additional file/directory patterns to skip beyond `.gitignore` and built-in ignores |
+| `exclude` | `string[]` | `[]` | Additional gitignore-style file/directory patterns to skip beyond `.gitignore` and built-in ignores (e.g. `**/bin/**`, `**/*.generated.cs`) |
 | `languageOverrides` | `object` | `{}` | Map of file extension → language name (e.g., `{".myext": "C#"}`) |
 | `clusteringThreshold` | `double?` | `null` | Default threshold for component clustering; `null` means service falls back to 0.3 |
 
-Files excluded by default (hardcoded in `FileCrawler.AlwaysIgnored`): `.git`, `.codememory`, `.memori`, `.codememory.json`, `node_modules`.
+Ignored paths never enter the index — the repo's `.gitignore` is honored at **any depth**
+(nested `.gitignore` files included, last-match-wins, with git anchoring and dir-only
+semantics), so durable excludes belong in `.gitignore`; `exclude` above is an additive
+gitignore-style layer that cannot be negated. Files excluded by default (matched on **any
+path segment**): `.git`, `.codememory`, `.memori`, `.codememory.json`, `node_modules`.
 
 ### Init Tool
 

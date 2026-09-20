@@ -55,7 +55,7 @@ code-memory
 | `get_edit_context` | Comprehensive edit context for a symbol |
 | `find_related_code` | Find related symbols by relation type |
 | `get_repository_root` | Active repository root path |
-| `rescan_repository` | Trigger full re-index of the repository |
+| `rescan_repository` | Trigger full re-index. Optional `excludePatterns` — gitignore-style, comma-separated, one-shot |
 
 ## MCP Client Registration
 
