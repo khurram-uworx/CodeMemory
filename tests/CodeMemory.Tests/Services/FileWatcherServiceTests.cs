@@ -103,6 +103,49 @@ public sealed class FileWatcherServiceTests
     }
 
     [Test]
+    public async Task StartWatcher_FileUnderIgnoredDir_NotIndexed()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "CodeMemoryWatcherTests", Guid.NewGuid().ToString());
+        Directory.CreateDirectory(dir);
+
+        try
+        {
+            File.WriteAllText(Path.Combine(dir, ".gitignore"), "bin/\n");
+
+            var storage = CreateInMemoryStorage(dir);
+            await storage.InitializeAsync();
+
+            var engine = CreateEngine(storage);
+            var detector = new ProjectFileDetector(NullLogger<ProjectFileDetector>.Instance);
+            using var watcher = new FileWatcherService(
+                dir, storage, engine, detector, NullLogger<FileWatcherService>.Instance);
+
+            await watcher.StartAsync(CancellationToken.None);
+
+            Directory.CreateDirectory(Path.Combine(dir, "bin"));
+            var filePath = Path.Combine(dir, "bin", "MyClass.cs");
+            File.WriteAllText(filePath, """
+                namespace Test;
+                public class MyClass
+                {
+                    public void Helper() { }
+                }
+                """);
+
+            // Give the watcher ample time to (correctly) skip the event.
+            await Task.Delay(2500);
+
+            var symbols = await storage.GetSymbolsByFileAsync("bin/MyClass.cs", 1000);
+            Assert.That(symbols, Is.Empty, "Files under an ignored directory must never be indexed");
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+                Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Test]
     public async Task StartWatcher_ModifyFile_OldSymbolsGoneNewSymbolsPresent()
     {
         var dir = Path.Combine(Path.GetTempPath(), "CodeMemoryWatcherTests", Guid.NewGuid().ToString());
