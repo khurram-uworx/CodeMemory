@@ -116,6 +116,7 @@ dedup no longer double-counts).
 4. `test(sql): regression coverage for issue #137` (Change 3) — ✅ `99284aa`
 5. `docs: document RIGHT/FULL hash join and nested-loop guard` (Change 4) — ✅ `ce3d974`
 6. (additional, found during test verification) `fix(sql): resolve qualified ORDER BY columns unambiguously in joins` — ✅ `57ce889`
+7. (additional, found during live verification) `fix(sql): flow LIMIT early-exit budget into non-equi RIGHT OUTER` — ✅ `8c3fcda`
 
 ## Execution log (vs plan)
 
@@ -130,10 +131,15 @@ dedup no longer double-counts).
 - Test expectation corrected during verification: the small non-equi RIGHT join on the seed
   (3 relationships) is 15 rows, not 21 — the initial arithmetic wrongly included an orphan
   relationship that is only upserted by the dedicated orphan tests.
-- Verification status: solution build clean; `SqlQueryServiceJoinTests` 34/34; full suite
-  656/656 green (~1m 10s). Live MCP verification still pending — requires the harness to serve this
-  tree (opencode.json currently points the code-memory MCP at the published `@uworx/code-memory`
-  npx package; switch to the `dotnet run --project` variant before restarting).
+- Live MCP verification (after human restarted the harness on the `dotnet run` variant — the
+  server now embeds `167eed5`, this branch): equi INNER 798ms/4,429; RIGHT equi 239ms/5,442
+  (baseline 27.7s); FULL equi 190ms/5,442 = RIGHT (no orphan rels; baseline 72.4s and a
+  double-counted 9,800); non-equi FULL `<>` fails fast in 28ms with the diagnostic
+  (10,930,772 pairs > 1M; baseline 74.6s hang). That check also surfaced one more gap: a
+  LIMIT-bounded non-equi RIGHT join ran the full closure anyway (135s for LIMIT 5) because
+  `mergeWithJoinType` dropped the early-exit budget on the RightOuter arm — fixed in `8c3fcda`,
+  pinned by `JoinNonEqui_RightOuterWithLimit_EarlyExitsUnderBudget`. Live re-check of the LIMIT
+  case pending the server rebuild (harness restarted once more).
 - No extra probe project created — runtime smoke checks used the repo's own NUnit suite
   (`tests/CodeMemory.Probes` untouched). The temporary `Tmp137Debug.cs` diagnostic test was
   removed after use (see probe lifecycle guidance).
