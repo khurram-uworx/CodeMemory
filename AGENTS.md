@@ -179,7 +179,10 @@ count exceeds `SqlQueryService.MaxNestedLoopPairs` (1M) fails fast with a
 `SqlQueryJoinTooLargeException` diagnostic instead of appearing to hang. `LIMIT` early-exits the
 join closure only when the query has no `WHERE`/`ORDER BY`/`GROUP BY`/aggregates/`DISTINCT`, so
 an emitted prefix is always a valid no-ORDER-BY result; FULL OUTER never takes the early-exit
-budget because a prefix cannot represent its closure.
+budget because a prefix cannot represent its closure. Qualified `ORDER BY` on multi-table
+results (`ORDER BY r.Id`) resolves to the fully-qualified row key — the stripped-to-`Id` suffix
+match is ambiguous when both join sides share a column, and which key wins must not depend on
+merged-row dict order.
 
 Known quirks (work around them in `CodeMemory.Mcp`/`CodeMemory.AspNet`, do not patch the library):
 - Message duplication — `Parser.cs:6886` calls `Expected("Expected an expression, …")` while
