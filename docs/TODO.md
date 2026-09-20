@@ -197,6 +197,11 @@ Small new class (same file or `src/CodeMemory/Indexing/GitIgnoreEvaluator.cs`):
 - [#140](https://github.com/khurram-uworx/CodeMemory/issues/140) — init tool
   should scaffold default `.gitignore` entries for common dep/build dirs
   (created while planning #132; deferred out of scope for this branch).
+- [#141](https://github.com/khurram-uworx/CodeMemory/issues/141) — `rescan_repository`
+  duplicates rows: `StorageService.ClearAllAsync` is a no-op for `InMemoriVectorStore`
+  (reflection hack misses in-memory store; old rows survive and get appended again).
+  Discovered during live MCP verification of this branch; **fixed on this branch**
+  (storage fix + `StorageServiceClearAllTests` regression tests).
 - As each task executes: any newly discovered deferred work → create a GitHub
   issue immediately (`gh issue create --repo khurram-uworx/CodeMemory`) and
   record it here. Do not rely on memory.

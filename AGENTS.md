@@ -154,8 +154,9 @@ path segment**): `.git`, `.codememory`, `.memori`, `.codememory.json`, `node_mod
 ## SQL Parser Development Reference
 
 The SQL layer uses the `sqlparsercs` NuGet package (C# port of sqlparser-rs) via `SqlParser`,
-`SqlParser.Ast`, `SqlParser.Dialects`. The upstream source is cloned locally at
-`E:\github\SqlParser-cs` for investigating parser/tokenizer behavior and error messages.
+`SqlParser.Ast`, `SqlParser.Dialects`. The upstream source is cloned locally (relative to this
+repo, `..\..\github\SqlParser-cs`; absolute `E:\github\SqlParser-cs`) for investigating
+parser/tokenizer behavior and error messages.
 
 `sql_query` validates identifiers against the table schema **before execution** (schema-first
 diagnostics, see #122): `CodeMemory.Mcp.SqlQuery.SqlQueryValidator` checks `SELECT` projections,
@@ -183,6 +184,25 @@ Known quirks (work around them in `CodeMemory.Mcp`/`CodeMemory.AspNet`, do not p
   Some structural errors (e.g. a trailing comma before `FROM`) report `Line`/`Column == 0`;
   `ParseErrorFormatter` then locates the offending token textually, and appends a stray-`;` removal
   tip for "Expected a SQL statement, found X" errors.
+
+## Dependency Sources & Upstream Reporting
+
+External code you may need while debugging — relative paths assume this repo is
+`E:\khurram-uworx\CodeMemory`:
+
+| Dependency | Local clone (relative / absolute) | Ours? | Report issues |
+|---|---|---|---|
+| **Memori** (`khurram-uworx/Memori`) | `..\Memori` / `E:\khurram-uworx\Memori` | ✅ yes — sister project | `gh issue create --repo khurram-uworx/Memori` (body via temp file, per GitHub rules) |
+| **SqlParser-cs** (upstream `TylerBrinks/SqlParser-cs`) | `..\..\github\SqlParser-cs` / `E:\github\SqlParser-cs` | ❌ no | **Never** file upstream — work around quirks in this repo (see SQL Parser section) |
+| **tree-sitter-dotnet-bindings** (upstream `mariusgreuel/tree-sitter-dotnet-bindings`) | `..\..\github\tree-sitter-dotnet-bindings` / `E:\github\tree-sitter-dotnet-bindings` | ❌ no | **Never** file upstream — it powers the `TreeSitter.DotNet` NuGet package used by the symbol extractor; debug locally only |
+
+Memori holds the `IEmbeddingGenerator` implementations (incl. `NgramEmbeddingGenerator`, the
+default for this repo's MCP host) and the `InMemoriVectorStore` backing this repo's in-memory
+storage path. When a defect traces into Memori code (e.g. a vector-store primitive), reproduce
+against the local clone, then report upstream to `khurram-uworx/Memori` and work around it here
+until a fixed package is referenced. The other two are third-party sources cloned for
+investigation only — never send them upstream issues or PRs; fix/paper-over any gaps in
+`CodeMemory.Mcp` / `CodeMemory.AspNet` instead.
 
 ## Embedding Limitations & Agent Expectations
 
