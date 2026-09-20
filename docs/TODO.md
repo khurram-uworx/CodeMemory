@@ -87,6 +87,30 @@ persistent (AspNet/SQLite) indexes — note in PR body/CHANGELOG.
    `find_related_code("uk.co.uworx.khoji.agile.internal.error.ServiceException")` equals the bare
    results; bare `Request` returns suggestions, not the mixed language set.
 
+## Grounding (G1) — verified before implementation
+
+Probe via the new `tests/CodeMemory.Probes` (`tree-sitter` mode, `TreeSitter.DotNet` 1.3.0):
+
+- **Java** — `package_declaration` is a *sibling* of classes under `program` (never an ancestor);
+  it exposes **no `name` field** in this grammar version; the dotted package is its last named
+  child (`scoped_identifier` → `uk.co.uworx.khoji.agile.internal.error`). Default-package files
+  emit no `package_declaration`. ⇒ extractor must scan `program` children and read the named-child
+  text (with a keyword/';'-strip fallback).
+- **TypeScript** — `namespace Foo {}` → concrete `internal_module` node (with a `name` field)
+  wrapped by `expression_statement`, so `internal_module` must join the walk set; `module Foo {}`
+  → `module` node, already in `tsKindMap` (qualifies today).
+- **C++** — `namespace_definition` remains a direct class ancestor — unchanged.
+- Blast radius confirmed: all tree-sitter languages' FullNames; persisted (AspNet/SQLite) indexes
+  must be re-indexed to pick up qualified FullNames (in-memory re-indexes each start).
+
+## Probe lifecycle record
+
+- The tree-sitter grammar probe was prototyped at
+  `C:\Users\khurram\AppData\Local\Temp\opencode\ts-probe`, judged reusable (grammar-version
+  verification will be needed again) and relocated to `tests/CodeMemory.Probes` (`tree-sitter`
+  mode); the temp copy was deleted. `tests/CodeMemory.Probes` is the single accumulating console
+  project for probes (see AGENTS.md §Probes).
+
 ## Planned commits
 
 1. `docs: plan fix for issue 131 in TODO.md`
