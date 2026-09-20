@@ -1750,35 +1750,90 @@ public sealed class SqlQueryService
     }
 
     /// <summary>
-    /// Hash equi-join for INNER/LEFT joins: indexes the right rows by composite key, probes with
-    /// each left row, and re-evaluates the residual ON predicate per candidate. Replaces the
-    /// O(n·m) nested loop with near-linear work for equi-joins (issue #126).
+    /// Hash equi-join for INNER/LEFT/RIGHT/FULL OUTER joins: indexes one side by composite key,
+    /// probes with the other, and re-evaluates the residual ON predicate per candidate. Replaces
+    /// the O(n·m) nested loop with near-linear work for equi-joins (issues #126/#137).
+    /// INNER/LEFT/FULL emit left-major; RIGHT OUTER probes from the right side so its output is
+    /// right-major and stays representable under a LIMIT early-exit; FULL OUTER tracks which right
+    /// rows matched and appends unmatched right rows at the end (its caller passes no budget — a
+    /// prefix cannot represent the full-outer closure).
     /// </summary>
     static List<Dictionary<string, object?>> hashEquiJoin(
         List<Dictionary<string, object?>> left,
         List<Dictionary<string, object?>> right,
         List<(string leftKey, string rightKey)> keys,
         AstExpr? residual,
-        bool isLeft,
+        JoinType joinType,
         int? budget)
     {
         var leftKeys = keys.Select(k => k.leftKey).ToList();
         var rightKeys = keys.Select(k => k.rightKey).ToList();
 
-        var index = new Dictionary<string, List<Dictionary<string, object?>>>(StringComparer.Ordinal);
-        foreach (var row in right)
-        {
-            var key = buildCompositeJoinKey(row, rightKeys, out bool hasNull);
-            if (hasNull) continue;
-            if (!index.TryGetValue(key, out var bucket))
-                index[key] = bucket = [];
-            bucket.Add(row);
-        }
-
+        var leftNullColumns = left.Count > 0
+            ? left[0].Keys.Where(k => !k.StartsWith("__")).ToList()
+            : [];
         var rightNullColumns = right.Count > 0
             ? right[0].Keys.Where(k => !k.StartsWith("__")).ToList()
             : [];
 
+        if (joinType == JoinType.RightOuter)
+        {
+            // Reverse probe: index the left rows, walk the right rows preserving every right row
+            // (null left columns when unmatched) in right-major order.
+            var leftIndex = new Dictionary<string, List<Dictionary<string, object?>>>(StringComparer.Ordinal);
+            foreach (var row in left)
+            {
+                var key = buildCompositeJoinKey(row, leftKeys, out bool hasNull);
+                if (hasNull) continue;
+                if (!leftIndex.TryGetValue(key, out var bucket))
+                    leftIndex[key] = bucket = [];
+                bucket.Add(row);
+            }
+
+            var rightResult = new List<Dictionary<string, object?>>();
+            foreach (var r in right)
+            {
+                var key = buildCompositeJoinKey(r, rightKeys, out bool hasNull);
+                bool matched = false;
+
+                if (!hasNull && leftIndex.TryGetValue(key, out var bucket))
+                    foreach (var l in bucket)
+                    {
+                        var merged = mergePair(l, r);
+                        if (residual is not null && !isTruthy(evaluateExpression(residual, merged)))
+                            continue;
+                        rightResult.Add(merged);
+                        matched = true;
+                        if (budget is not null && rightResult.Count >= budget)
+                            return rightResult;
+                    }
+
+                if (!matched)
+                {
+                    var nullRow = new Dictionary<string, object?>(r);
+                    foreach (var column in leftNullColumns)
+                        nullRow.TryAdd(column, null);
+                    rightResult.Add(nullRow);
+                    if (budget is not null && rightResult.Count >= budget)
+                        return rightResult;
+                }
+            }
+            return rightResult;
+        }
+
+        // INNER/LEFT/FULL: index the right rows, probe with each left row (left-major emission).
+        var rightIndex = new Dictionary<string, List<Dictionary<string, object?>>>(StringComparer.Ordinal);
+        foreach (var row in right)
+        {
+            var key = buildCompositeJoinKey(row, rightKeys, out bool hasNull);
+            if (hasNull) continue;
+            if (!rightIndex.TryGetValue(key, out var bucket))
+                rightIndex[key] = bucket = [];
+            bucket.Add(row);
+        }
+
+        bool isFull = joinType == JoinType.FullOuter;
+        var matchedRight = isFull ? new HashSet<Dictionary<string, object?>>() : null;
         var result = new List<Dictionary<string, object?>>();
 
         foreach (var l in left)
@@ -1786,8 +1841,7 @@ public sealed class SqlQueryService
             var key = buildCompositeJoinKey(l, leftKeys, out bool hasNull);
             bool matched = false;
 
-            if (!hasNull && index.TryGetValue(key, out var bucket))
-            {
+            if (!hasNull && rightIndex.TryGetValue(key, out var bucket))
                 foreach (var r in bucket)
                 {
                     var merged = mergePair(l, r);
@@ -1795,12 +1849,12 @@ public sealed class SqlQueryService
                         continue;
                     result.Add(merged);
                     matched = true;
+                    matchedRight?.Add(r);
                     if (budget is not null && result.Count >= budget)
                         return result;
                 }
-            }
 
-            if (isLeft && !matched)
+            if (joinType is JoinType.LeftOuter or JoinType.FullOuter && !matched)
             {
                 var nullRow = new Dictionary<string, object?>(l);
                 foreach (var column in rightNullColumns)
@@ -1808,6 +1862,18 @@ public sealed class SqlQueryService
                 result.Add(nullRow);
                 if (budget is not null && result.Count >= budget)
                     return result;
+            }
+        }
+
+        if (isFull && matchedRight is not null)
+        {
+            foreach (var r in right)
+            {
+                if (matchedRight.Contains(r)) continue;
+                var nullRow = new Dictionary<string, object?>(r);
+                foreach (var column in leftNullColumns)
+                    nullRow.TryAdd(column, null);
+                result.Add(nullRow);
             }
         }
 
@@ -2026,14 +2092,19 @@ public sealed class SqlQueryService
                 }
 
                 // Hash equi-join fast path: equality between distinct-prefixed columns of the
-                // running left set and the joined right set — replaces the O(n*m) nested loop.
-                if ((joinType is JoinType.Inner or JoinType.LeftOuter) && rightPrefix is not null && onCondition is not null)
+                // running left set and the joined right set — replaces the O(n*m) nested loop for
+                // INNER/LEFT/RIGHT/FULL OUTER (issues #126/#137).
+                if (joinType is JoinType.Inner or JoinType.LeftOuter or JoinType.RightOuter or JoinType.FullOuter
+                    && rightPrefix is not null && onCondition is not null)
                 {
                     var extracted = tryExtractEquiJoin(onCondition, rightPrefix);
                     if (extracted.keys.Count > 0)
                     {
+                        // FULL OUTER cannot early-exit on a LIMIT budget: unmatched right rows are
+                        // preserved at the end, so a prefix would not represent the closure.
+                        var budgetForJoin = joinType == JoinType.FullOuter ? null : rowBudget;
                         current = hashEquiJoin(current, rightRows, extracted.keys, extracted.residual,
-                            joinType == JoinType.LeftOuter, rowBudget);
+                            joinType, budgetForJoin);
                         continue;
                     }
                 }
