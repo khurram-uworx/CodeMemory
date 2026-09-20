@@ -23,9 +23,9 @@ public sealed class AdminTool
         this.logger = logger;
     }
 
-    [McpServerTool, Description("Triggers a full re-index of the current repository. Clears all stored symbols, chunks, and relationships, then rescans the entire codebase. Use this after git pull, manual file changes, or to recover from a corrupted index.")]
+    [McpServerTool, Description("Triggers a full re-index of the current repository. Clears all stored symbols, chunks, and relationships, then rescans the entire codebase. Use this after git pull, manual file changes, or to recover from a corrupted index. Durable exclusions belong in .gitignore or .codememory.json \"exclude\"; excludePatterns is an optional one-shot gitignore-style filter (e.g. '**/*.generated.cs,**/bin/**').")]
     public async Task<AdminRescanResult> RescanRepositoryAsync(
-        [Description("Optional: skip files matching these patterns (e.g., '**/*.generated.cs,**/bin/**')")] string? excludePatterns = null,
+        [Description("Optional: skip files matching these gitignore-style patterns for this one rescan (e.g., '**/*.generated.cs,**/bin/**')")] string? excludePatterns = null,
         CancellationToken ct = default)
     {
         var rescanRepoName = Path.GetFileName(storage.RepoRoot.TrimEnd(Path.DirectorySeparatorChar));
@@ -40,7 +40,13 @@ public sealed class AdminTool
 
         using var scope = scopeFactory.CreateScope();
         var engine = scope.ServiceProvider.GetRequiredService<IndexingEngine>();
-        var result = await engine.RunIndexingAsync(repoRoot, ct);
+
+        var patterns = string.IsNullOrWhiteSpace(excludePatterns)
+            ? []
+            : excludePatterns.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        var result = await engine.RunIndexingAsync(repoRoot, ct,
+            extraExclusions: patterns.Length > 0 ? patterns : null);
 
         IndexingState.MarkCompleted(repoRoot);
         IndexingState.StoreRelationshipCount(repoRoot, result.RelationshipCount);
