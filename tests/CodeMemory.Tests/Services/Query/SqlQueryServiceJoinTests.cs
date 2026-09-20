@@ -649,6 +649,26 @@ public sealed class SqlQueryServiceJoinTests
     }
 
     [Test]
+    public async Task JoinNonEqui_RightOuterWithLimit_EarlyExitsUnderBudget()
+    {
+        // RIGHT OUTER is right-major, so a LIMIT early-exit prefix is a valid result. The
+        // budget must flow into the non-equi nested-loop arm — without it, a LIMIT 5 query
+        // silently runs the full 10k × 3k pair closure (a hang at index scale, verified live
+        // during #137: 135s for LIMIT 5).
+        var (store, registry, service) = SqlQueryServiceTests.createServices();
+        await seedScaleJoinDataAsync(store, symbolCount: 3_000, relationshipCount: 10_000);
+
+        var sw = Stopwatch.StartNew();
+        var result = await service.ExecuteAsync(store,
+            "SELECT r.Id FROM RelationshipRecord r RIGHT JOIN SymbolRecord s ON r.SourceSymbolId <> s.Id LIMIT 5");
+        sw.Stop();
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(5));
+        Assert.That(sw.Elapsed, Is.LessThan(TimeSpan.FromSeconds(5)), $"LIMIT early-exit took {sw.Elapsed.TotalSeconds:F1}s");
+    }
+
+    [Test]
     public async Task JoinOrderBy_QualifiedAmbiguousColumn_SortsByDeclaredSide()
     {
         // ORDER BY r.Id was silently stripped to "Id", then resolved by first ".Id"-suffixed

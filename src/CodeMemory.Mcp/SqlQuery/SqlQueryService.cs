@@ -1697,9 +1697,11 @@ public sealed class SqlQueryService
             JoinType.Cross => crossJoin(left, right, budget),
             JoinType.Inner => innerJoin(left, right, onCondition, budget),
             JoinType.LeftOuter => leftJoin(left, right, onCondition, budget),
-            // RIGHT/FULL OUTER keep the full nested loop today; above the pair cap the guard in
-            // this method rejects them before the loop starts (issue #137).
-            JoinType.RightOuter => leftJoin(right, left, onCondition),
+            // RIGHT OUTER is right-major (the preserved side is iterated first, like the hash
+            // reverse probe), so a LIMIT early-exit prefix is a valid result — pass the budget
+            // through. FULL OUTER never takes the budget: a prefix cannot represent its closure
+            // (unmatched right rows are appended at the end).
+            JoinType.RightOuter => leftJoin(right, left, onCondition, budget),
             JoinType.FullOuter => fullOuterJoin(left, right, onCondition),
             _ => crossJoin(left, right, budget)
         };
