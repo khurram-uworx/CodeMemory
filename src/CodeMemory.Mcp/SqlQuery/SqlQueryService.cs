@@ -1574,12 +1574,22 @@ public sealed class SqlQueryService
         return merged;
     }
 
-    static List<Dictionary<string, object?>> crossJoin(List<Dictionary<string, object?>> left, List<Dictionary<string, object?>> right)
-        => left.SelectMany(l => right.Select(r => mergePair(l, r))).ToList();
-
-    static List<Dictionary<string, object?>> innerJoin(List<Dictionary<string, object?>> left, List<Dictionary<string, object?>> right, AstExpr? onCondition)
+    static List<Dictionary<string, object?>> crossJoin(List<Dictionary<string, object?>> left, List<Dictionary<string, object?>> right, int? budget = null)
     {
-        if (onCondition is null) return crossJoin(left, right);
+        var result = new List<Dictionary<string, object?>>();
+        foreach (var l in left)
+            foreach (var r in right)
+            {
+                result.Add(mergePair(l, r));
+                if (budget is not null && result.Count >= budget)
+                    return result;
+            }
+        return result;
+    }
+
+    static List<Dictionary<string, object?>> innerJoin(List<Dictionary<string, object?>> left, List<Dictionary<string, object?>> right, AstExpr? onCondition, int? budget = null)
+    {
+        if (onCondition is null) return crossJoin(left, right, budget);
 
         var result = new List<Dictionary<string, object?>>();
         foreach (var l in left)
@@ -1587,12 +1597,16 @@ public sealed class SqlQueryService
             {
                 var merged = mergePair(l, r);
                 if (isTruthy(evaluateExpression(onCondition, merged)))
+                {
                     result.Add(merged);
+                    if (budget is not null && result.Count >= budget)
+                        return result;
+                }
             }
         return result;
     }
 
-    static List<Dictionary<string, object?>> leftJoin(List<Dictionary<string, object?>> left, List<Dictionary<string, object?>> right, AstExpr? onCondition)
+    static List<Dictionary<string, object?>> leftJoin(List<Dictionary<string, object?>> left, List<Dictionary<string, object?>> right, AstExpr? onCondition, int? budget = null)
     {
         var result = new List<Dictionary<string, object?>>();
         var rightKeys = right.Count > 0 ? right[0].Keys.Where(k => !k.StartsWith("__")).ToList() : [];
@@ -1607,6 +1621,8 @@ public sealed class SqlQueryService
                 {
                     result.Add(merged);
                     matched = true;
+                    if (budget is not null && result.Count >= budget)
+                        return result;
                 }
             }
             if (!matched)
@@ -1615,6 +1631,8 @@ public sealed class SqlQueryService
                 foreach (var k in rightKeys)
                     nullRow.TryAdd(k, null);
                 result.Add(nullRow);
+                if (budget is not null && result.Count >= budget)
+                    return result;
             }
         }
         return result;
@@ -1638,17 +1656,162 @@ public sealed class SqlQueryService
 
     static List<Dictionary<string, object?>> mergeWithJoinType(
         List<Dictionary<string, object?>> left, List<Dictionary<string, object?>> right,
-        JoinType joinType, AstExpr? onCondition)
+        JoinType joinType, AstExpr? onCondition, int? budget = null)
     {
         return joinType switch
         {
-            JoinType.Cross => crossJoin(left, right),
-            JoinType.Inner => innerJoin(left, right, onCondition),
-            JoinType.LeftOuter => leftJoin(left, right, onCondition),
+            JoinType.Cross => crossJoin(left, right, budget),
+            JoinType.Inner => innerJoin(left, right, onCondition, budget),
+            JoinType.LeftOuter => leftJoin(left, right, onCondition, budget),
+            // RIGHT/FULL OUTER keep the full nested loop — an early-exit prefix cannot
+            // represent an outer result faithfully, so correctness wins over speed here.
             JoinType.RightOuter => leftJoin(right, left, onCondition),
             JoinType.FullOuter => fullOuterJoin(left, right, onCondition),
-            _ => crossJoin(left, right)
+            _ => crossJoin(left, right, budget)
         };
+    }
+
+    /// <summary>
+    /// Extracts equi-join key pairs from an ON condition: an AND-tree of
+    /// <c>Eq(CompoundIdentifier, CompoundIdentifier)</c> conjuncts where exactly one operand's
+    /// prefix is the join side is hashable. Returns prefixed row-key names for both sides plus the
+    /// residual (non-extracted) condition, which is re-evaluated per candidate row.
+    /// </summary>
+    static (List<(string leftKey, string rightKey)> keys, AstExpr? residual) tryExtractEquiJoin(
+        AstExpr? onCondition, string joinSidePrefix)
+    {
+        if (onCondition is null) return ([], null);
+
+        var keys = new List<(string leftKey, string rightKey)>();
+        var residualParts = new List<AstExpr>();
+
+        void Walk(AstExpr expr)
+        {
+            if (expr is AstExpr.BinaryOp { Op: BinaryOperator.And } andOp)
+            {
+                Walk(andOp.Left);
+                Walk(andOp.Right);
+                return;
+            }
+
+            if (expr is AstExpr.BinaryOp { Op: BinaryOperator.Eq } eq
+                && eq.Left is AstExpr.CompoundIdentifier leftId && leftId.Idents.Count >= 2
+                && eq.Right is AstExpr.CompoundIdentifier rightId && rightId.Idents.Count >= 2)
+            {
+                var leftPrefix = leftId.Idents[^2].Value;
+                var leftColumn = leftId.Idents[^1].Value;
+                var rightPrefix = rightId.Idents[^2].Value;
+                var rightColumn = rightId.Idents[^1].Value;
+
+                bool leftIsSide = string.Equals(leftPrefix, joinSidePrefix, StringComparison.OrdinalIgnoreCase);
+                bool rightIsSide = string.Equals(rightPrefix, joinSidePrefix, StringComparison.OrdinalIgnoreCase);
+
+                if (leftIsSide != rightIsSide)
+                {
+                    if (rightIsSide)
+                        keys.Add(($"{leftPrefix}.{leftColumn}", $"{joinSidePrefix}.{rightColumn}"));
+                    else
+                        keys.Add(($"{rightPrefix}.{rightColumn}", $"{joinSidePrefix}.{leftColumn}"));
+                    return;
+                }
+            }
+
+            residualParts.Add(expr);
+        }
+
+        Walk(onCondition);
+
+        if (keys.Count == 0) return ([], null);
+
+        AstExpr? residual = null;
+        foreach (var part in residualParts)
+            residual = residual is null ? part : new AstExpr.BinaryOp(residual, BinaryOperator.And, part);
+
+        return (keys, residual);
+    }
+
+    /// <summary>Builds a composite join key from a row's prefixed column values.</summary>
+    static string buildCompositeJoinKey(Dictionary<string, object?> row, IReadOnlyList<string> keyColumns, out bool hasNull)
+    {
+        hasNull = false;
+        var sb = new StringBuilder();
+        foreach (var column in keyColumns)
+        {
+            var value = row.GetValueOrDefault(column);
+            if (value is null)
+            {
+                hasNull = true;
+                return "";
+            }
+            if (sb.Length > 0) sb.Append('\0');
+            sb.Append(value);
+        }
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Hash equi-join for INNER/LEFT joins: indexes the right rows by composite key, probes with
+    /// each left row, and re-evaluates the residual ON predicate per candidate. Replaces the
+    /// O(n·m) nested loop with near-linear work for equi-joins (issue #126).
+    /// </summary>
+    static List<Dictionary<string, object?>> hashEquiJoin(
+        List<Dictionary<string, object?>> left,
+        List<Dictionary<string, object?>> right,
+        List<(string leftKey, string rightKey)> keys,
+        AstExpr? residual,
+        bool isLeft,
+        int? budget)
+    {
+        var leftKeys = keys.Select(k => k.leftKey).ToList();
+        var rightKeys = keys.Select(k => k.rightKey).ToList();
+
+        var index = new Dictionary<string, List<Dictionary<string, object?>>>(StringComparer.Ordinal);
+        foreach (var row in right)
+        {
+            var key = buildCompositeJoinKey(row, rightKeys, out bool hasNull);
+            if (hasNull) continue;
+            if (!index.TryGetValue(key, out var bucket))
+                index[key] = bucket = [];
+            bucket.Add(row);
+        }
+
+        var rightNullColumns = right.Count > 0
+            ? right[0].Keys.Where(k => !k.StartsWith("__")).ToList()
+            : [];
+
+        var result = new List<Dictionary<string, object?>>();
+
+        foreach (var l in left)
+        {
+            var key = buildCompositeJoinKey(l, leftKeys, out bool hasNull);
+            bool matched = false;
+
+            if (!hasNull && index.TryGetValue(key, out var bucket))
+            {
+                foreach (var r in bucket)
+                {
+                    var merged = mergePair(l, r);
+                    if (residual is not null && !isTruthy(evaluateExpression(residual, merged)))
+                        continue;
+                    result.Add(merged);
+                    matched = true;
+                    if (budget is not null && result.Count >= budget)
+                        return result;
+                }
+            }
+
+            if (isLeft && !matched)
+            {
+                var nullRow = new Dictionary<string, object?>(l);
+                foreach (var column in rightNullColumns)
+                    nullRow.TryAdd(column, null);
+                result.Add(nullRow);
+                if (budget is not null && result.Count >= budget)
+                    return result;
+            }
+        }
+
+        return result;
     }
 
     static string? findLeftPrefixForUsing(Dictionary<string, object?> sampleRow, string colName)
@@ -1746,7 +1909,8 @@ public sealed class SqlQueryService
         TableWithJoins twj,
         Dictionary<string, List<Dictionary<string, object?>>> cteResults,
         int defaultMaxResults,
-        CancellationToken ct)
+        CancellationToken ct,
+        int? rowBudget = null)
     {
         List<Dictionary<string, object?>> current;
         string? basePrefix = null;
@@ -1787,7 +1951,7 @@ public sealed class SqlQueryService
                 }
 
             case TableFactor.NestedJoin nested:
-                current = await evaluateGroupAsync(store, nested.TableWithJoins!, cteResults, defaultMaxResults, ct);
+                current = await evaluateGroupAsync(store, nested.TableWithJoins!, cteResults, defaultMaxResults, ct, rowBudget);
                 break;
 
             default:
@@ -1839,7 +2003,7 @@ public sealed class SqlQueryService
                         }
 
                     case TableFactor.NestedJoin nested:
-                        rightRows = await evaluateGroupAsync(store, nested.TableWithJoins!, cteResults, defaultMaxResults, ct);
+                        rightRows = await evaluateGroupAsync(store, nested.TableWithJoins!, cteResults, defaultMaxResults, ct, rowBudget);
                         break;
 
                     default:
@@ -1861,7 +2025,20 @@ public sealed class SqlQueryService
                         onCondition = generateUsingCondition(usingCols.Idents, leftPrefix, rightPrefix);
                 }
 
-                current = mergeWithJoinType(current, rightRows, joinType, onCondition);
+                // Hash equi-join fast path: equality between distinct-prefixed columns of the
+                // running left set and the joined right set — replaces the O(n*m) nested loop.
+                if ((joinType is JoinType.Inner or JoinType.LeftOuter) && rightPrefix is not null && onCondition is not null)
+                {
+                    var extracted = tryExtractEquiJoin(onCondition, rightPrefix);
+                    if (extracted.keys.Count > 0)
+                    {
+                        current = hashEquiJoin(current, rightRows, extracted.keys, extracted.residual,
+                            joinType == JoinType.LeftOuter, rowBudget);
+                        continue;
+                    }
+                }
+
+                current = mergeWithJoinType(current, rightRows, joinType, onCondition, rowBudget);
             }
         }
 
@@ -1874,19 +2051,22 @@ public sealed class SqlQueryService
         Dictionary<string, List<Dictionary<string, object?>>> cteResults,
         AstExpr? whereExpr,
         int defaultMaxResults,
-        CancellationToken ct)
+        CancellationToken ct,
+        int? rowBudget = null)
     {
         var groupResults = new List<List<Dictionary<string, object?>>>();
         foreach (var twj in from)
         {
-            var group = await evaluateGroupAsync(store, twj, cteResults, defaultMaxResults, ct);
+            var group = await evaluateGroupAsync(store, twj, cteResults, defaultMaxResults, ct, rowBudget);
             groupResults.Add(group);
         }
 
         if (groupResults.Count == 0) return [];
         var result = groupResults[0];
         for (int i = 1; i < groupResults.Count; i++)
-            result = crossJoin(result, groupResults[i]);
+            result = whereExpr is null
+                ? crossJoin(result, groupResults[i], rowBudget)
+                : crossJoin(result, groupResults[i]);
 
         if (whereExpr is not null)
         {
@@ -2210,7 +2390,13 @@ public sealed class SqlQueryService
                 if (validationError is not null)
                     return fail(validationError, sw);
 
-                result = await executeJoinQueryAsync(store, selectBody.From, cteResults, whereExpr, maxResults, ct);
+                // Early-exit budget: safe only when the full closure is not required and no
+                // WHERE filter could shrink a prefix subset below the requested limit.
+                int? rowBudget = !needsFullFetch && whereExpr is null
+                    && orderBy?.Expressions is not { Count: > 0 } && top < int.MaxValue
+                        ? top
+                        : null;
+                result = await executeJoinQueryAsync(store, selectBody.From, cteResults, whereExpr, maxResults, ct, rowBudget);
             }
             else
             {
