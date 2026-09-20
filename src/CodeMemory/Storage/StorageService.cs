@@ -331,41 +331,20 @@ public sealed class StorageService : IStorageService, IDisposable
     public async Task ClearAllAsync(CancellationToken ct = default)
     {
         throwIfNotInitialized();
-        await Task.Run(() =>
-        {
-            var dbPath = vectorStore.GetType().GetField("_connectionString", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)?.GetValue(vectorStore) as string;
-            if (!string.IsNullOrEmpty(dbPath))
-            {
-                var builder = new System.Data.Common.DbConnectionStringBuilder
-                {
-                    ConnectionString = dbPath
-                };
-                if (builder.TryGetValue("Data Source", out var dataSource))
-                {
-                    var filePath = dataSource?.ToString();
-                    if (!string.IsNullOrEmpty(filePath) && filePath != ":memory:")
-                    {
-                        for (var retry = 0; retry < 3; retry++)
-                        {
-                            try
-                            {
-                                if (File.Exists(filePath))
-                                    File.Delete(filePath);
-                                break;
-                            }
-                            catch (IOException) when (retry < 2)
-                            {
-                                Thread.Sleep(200 * (retry + 1));
-                            }
-                        }
-                    }
-                }
-            }
-            symbols = null;
-            chunks = null;
-            relationships = null;
-            initialized = false;
-        }, ct);
+
+        // Delete the collections through the store itself (BCL ConcurrentDictionary-backed
+        // in InMemoriVectorStore), so re-InitializeAsync binds fresh empty tables. Deleting the
+        // physical DB file via reflection does not apply to in-memory stores and silently leaked
+        // stale rows into rescan results (see issue #141).
+        await Task.WhenAll(
+            vectorStore.EnsureCollectionDeletedAsync("symbols", ct),
+            vectorStore.EnsureCollectionDeletedAsync("chunks", ct),
+            vectorStore.EnsureCollectionDeletedAsync("relationships", ct));
+
+        symbols = null;
+        chunks = null;
+        relationships = null;
+        initialized = false;
     }
 
     public Task StoreComponentMappingAsync(IReadOnlyList<ComponentInformation> components, CancellationToken ct = default)
