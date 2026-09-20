@@ -202,6 +202,14 @@ MCP tools use three patterns — follow the one matching your return type:
 - **Base classes:** `BaseToolTests` (MCP integration), `BaseServicesTests` (service tests with real SQLite)
 - **Shared:** `MockServices.cs`, `TestLogger<T>`, `TestConstants`, `TestRepoHelper`, `fixtures/`
 
+## Probes (`tests/CodeMemory.Probes`)
+
+- Standalone, run-manually console app for diagnostics the NUnit suite shouldn't own — grammar shapes, parser/extractor behavior, indexing output. Console-only (no NUnit SDK), so `dotnet test` and CI skip it; one project accumulates all probes.
+- Run: `dotnet run --project tests/CodeMemory.Probes -- <probe>` (no argument = all probes).
+- Each probe is `internal static class XxxProbe { public static int Run() }` registered in `Program.cs`'s dispatch switch; document what it measures and observed results in the project README.md.
+- Probe lifecycle: prototype in a temp directory → decide reusability → move the reusable probe here, delete the temp copy, and record the decision in the current plan's `docs/TODO.md`.
+- Keep probe projects free of the `CodeMemory` library reference unless a probe genuinely needs it — that keeps probe builds from colliding with a running MCP server's locked DLLs.
+
 ## Code Style
 
 - `.editorconfig` at repo root is authoritative; follow it over any convention below.
