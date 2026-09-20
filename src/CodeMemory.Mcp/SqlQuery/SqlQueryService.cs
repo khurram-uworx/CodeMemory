@@ -1574,8 +1574,27 @@ public sealed class SqlQueryService
         return merged;
     }
 
+    /// <summary>
+    /// Cap on nested-loop pair evaluations (≈2–3s at measured per-pair cost). Equi-join shapes
+    /// run through the hash fast path; joins that can only be evaluated as an unbounded nested
+    /// loop above this cap fail fast instead of hanging (issue #137).
+    /// </summary>
+    const long MaxNestedLoopPairs = 1_000_000;
+
+    static void guardNestedLoopPairs(JoinType joinType, int leftCount, int rightCount)
+    {
+        long pairs = (long)leftCount * rightCount;
+        if (pairs > MaxNestedLoopPairs)
+            throw new SqlQueryJoinTooLargeException(joinType.ToString(), pairs, MaxNestedLoopPairs);
+    }
+
     static List<Dictionary<string, object?>> crossJoin(List<Dictionary<string, object?>> left, List<Dictionary<string, object?>> right, int? budget = null)
     {
+        // Comma-join cross products with a WHERE filter run without a budget — the "unprotected"
+        // cross products from issue #137. Guard them like every other unbounded nested loop.
+        if (budget is null)
+            guardNestedLoopPairs(JoinType.Cross, left.Count, right.Count);
+
         var result = new List<Dictionary<string, object?>>();
         foreach (var l in left)
             foreach (var r in right)
@@ -1658,13 +1677,18 @@ public sealed class SqlQueryService
         List<Dictionary<string, object?>> left, List<Dictionary<string, object?>> right,
         JoinType joinType, AstExpr? onCondition, int? budget = null)
     {
+        // Only non-extractable joins reach this point (equi-joins took the hash fast path). An
+        // unbounded nested loop at index scale is a hang — fail fast with a diagnostic instead.
+        if (budget is null)
+            guardNestedLoopPairs(joinType, left.Count, right.Count);
+
         return joinType switch
         {
             JoinType.Cross => crossJoin(left, right, budget),
             JoinType.Inner => innerJoin(left, right, onCondition, budget),
             JoinType.LeftOuter => leftJoin(left, right, onCondition, budget),
-            // RIGHT/FULL OUTER keep the full nested loop — an early-exit prefix cannot
-            // represent an outer result faithfully, so correctness wins over speed here.
+            // RIGHT/FULL OUTER keep the full nested loop today; above the pair cap the guard in
+            // this method rejects them before the loop starts (issue #137).
             JoinType.RightOuter => leftJoin(right, left, onCondition),
             JoinType.FullOuter => fullOuterJoin(left, right, onCondition),
             _ => crossJoin(left, right, budget)
@@ -2620,6 +2644,16 @@ public sealed class SqlQueryService
                 : null;
 
             return new SqlQueryResult(true, result.Count, (long)sw.Elapsed.TotalMilliseconds, columns, result, Warning: warning);
+        }
+        catch (SqlQueryJoinTooLargeException ex)
+        {
+            // Clean fail-fast diagnostic for joins that would run an unbounded nested loop at
+            // index scale (issue #137) — not an engine error.
+            sw.Stop();
+            CodeMemoryMetrics.SqlQueryDuration.Record(sw.Elapsed.TotalMilliseconds, repoTag);
+
+            logger.LogWarning(ex, "SQL query rejected: nested-loop join exceeds the pair limit: {Sql}", sql);
+            return fail(ex.Message, sw);
         }
         catch (Exception ex)
         {
