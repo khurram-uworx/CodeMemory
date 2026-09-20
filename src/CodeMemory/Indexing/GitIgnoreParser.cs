@@ -82,6 +82,8 @@ public sealed class GitIgnoreParser
             var anchored = line.StartsWith('/');
             if (anchored)
                 line = line[1..];
+            else if (!line.StartsWith("**/") && containsUnescapedSeparator(line))
+                anchored = true;
 
             var rule = compileRule(negated, anchored, dirOnly, line);
             if (rule != null)
@@ -126,8 +128,8 @@ public sealed class GitIgnoreParser
             return null;
 
         const RegexOptions options = RegexOptions.IgnoreCase | RegexOptions.Compiled;
-        var patternRegex = new Regex(baseRegex + (dirOnly ? "(?:/.*)?$" : "$"), options);
-        Regex? descendantsOnly = dirOnly ? new Regex(baseRegex + "/.+$", options) : null;
+        var patternRegex = new Regex("^" + baseRegex + (dirOnly ? "(?:/.*)?$" : "$"), options);
+        Regex? descendantsOnly = dirOnly ? new Regex("^" + baseRegex + "/.+$", options) : null;
 
         return new Rule(negated, dirOnly, patternRegex, descendantsOnly);
     }
@@ -151,6 +153,7 @@ public sealed class GitIgnoreParser
             {
                 if (i + 1 < pattern.Length && pattern[i + 1] == '*')
                 {
+                    var starStart = i;
                     i += 2;
 
                     if (i < pattern.Length && pattern[i] == '/')
@@ -161,9 +164,11 @@ public sealed class GitIgnoreParser
                     }
                     else if (i >= pattern.Length)
                     {
-                        // Trailing "**": everything inside the matched prefix when anchored
-                        // (e.g. "a/**"); for unanchored patterns it degrades to a regular star.
-                        sb.Append(anchored ? ".*" : "[^/]*");
+                        // Trailing "**". Directly after a slash ("abc/**") it matches everything
+                        // inside that directory; otherwise (per git) it degrades to a regular
+                        // asterisk because "**" adjacent to a non-slash is not a globstar.
+                        var afterSlash = starStart > 0 && pattern[starStart - 1] == '/';
+                        sb.Append(afterSlash ? ".*" : "[^/]*");
                     }
                     else
                     {
@@ -230,6 +235,29 @@ public sealed class GitIgnoreParser
             end--;
         }
         return line[..end];
+    }
+
+    /// <summary>
+    /// Returns true when <paramref name="pattern"/> contains an unescaped '/' at a position other
+    /// than the first character. Per gitignore(5), a separator in the middle anchors the pattern to
+    /// the directory of the .gitignore file; a leading "**/" is the documented exception and stays
+    /// unanchored (it matches in all directories).
+    /// </summary>
+    static bool containsUnescapedSeparator(string pattern)
+    {
+        for (var i = 0; i < pattern.Length; i++)
+        {
+            if (pattern[i] == '\\')
+            {
+                i++;
+                continue;
+            }
+
+            if (pattern[i] == '/' && i > 0)
+                return true;
+        }
+
+        return false;
     }
 
     static string normalize(string relativePath)
