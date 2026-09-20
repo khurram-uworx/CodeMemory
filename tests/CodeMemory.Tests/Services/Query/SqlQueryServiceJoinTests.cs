@@ -1,5 +1,6 @@
 using CodeMemory.Storage;
 using Memori.Storage;
+using System.Diagnostics;
 
 namespace CodeMemory.Tests.Services.Query;
 
@@ -438,5 +439,91 @@ public sealed class SqlQueryServiceJoinTests
         Assert.That(result.Success, Is.True);
         Assert.That(result.RowCount, Is.EqualTo(2));
         Assert.That(result.Rows!.Select(r => r["s.Name"]), Is.EquivalentTo(["Helper", "IOld"]));
+    }
+
+    // ── Issue #126 regression: JOINs at index scale must not hang ──
+
+    static async Task seedScaleJoinDataAsync(InMemoriVectorStore store, int symbolCount, int relationshipCount)
+    {
+        var sym = store.GetCollection<string, SymbolRecord>("symbols");
+        for (int i = 0; i < symbolCount; i++)
+            await sym.UpsertAsync(new SymbolRecord
+            {
+                Id = $"s:{i}",
+                Name = $"Sym{i:D6}",
+                Kind = i % 2 == 0 ? "Class" : "Method",
+                FilePath = $"/src/module{i % 50}.cs",
+                FullName = $"Namespace.Sym{i}",
+                LineStart = i % 100,
+                LineEnd = (i % 100) + 8,
+                Modifiers = "public"
+            });
+
+        var rel = store.GetCollection<string, RelationshipRecord>("relationships");
+        for (int i = 0; i < relationshipCount; i++)
+            await rel.UpsertAsync(new RelationshipRecord
+            {
+                Id = $"r:{i}",
+                SourceSymbolId = $"s:{i % symbolCount}",
+                TargetSymbolId = $"s:{(i * 7) % symbolCount}",
+                RelationshipType = (i % 3) switch { 0 => "Calls", 1 => "References", _ => "Inherits" }
+            });
+    }
+
+    [Test]
+    public async Task JoinScale_ReportedQueryWithLimit5_ReturnsFiveRowsQuickly()
+    {
+        var (store, registry, service) = SqlQueryServiceTests.createServices();
+        await seedScaleJoinDataAsync(store, symbolCount: 3_000, relationshipCount: 10_000);
+
+        var sw = Stopwatch.StartNew();
+        var result = await service.ExecuteAsync(store,
+            "SELECT r.RelationshipType, s.Name AS SourceName, t.Name AS TargetName, t.FilePath AS TargetPath " +
+            "FROM RelationshipRecord r JOIN SymbolRecord s ON r.SourceSymbolId = s.Id " +
+            "JOIN SymbolRecord t ON r.TargetSymbolId = t.Id LIMIT 5");
+        sw.Stop();
+
+        // Nested-loop joins (pre-fix) ran 2 × 10_000 × 3_000 pair evaluations here —
+        // tens of seconds. The hash equi-join must return the 5 rows in well under 5s.
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(5));
+        Assert.That(result.Rows!.All(r => r["SourceName"] is not null && r["TargetName"] is not null));
+        Assert.That(sw.Elapsed, Is.LessThan(TimeSpan.FromSeconds(5)), $"LIMIT 5 join took {sw.Elapsed.TotalSeconds:F1}s");
+    }
+
+    [Test]
+    public async Task JoinScale_FullClosureCount_CompletesUnderBudget()
+    {
+        var (store, registry, service) = SqlQueryServiceTests.createServices();
+        await seedScaleJoinDataAsync(store, symbolCount: 3_000, relationshipCount: 10_000);
+
+        var sw = Stopwatch.StartNew();
+        var result = await service.ExecuteAsync(store,
+            "SELECT COUNT(*) AS total FROM RelationshipRecord r " +
+            "JOIN SymbolRecord s ON r.SourceSymbolId = s.Id " +
+            "JOIN SymbolRecord t ON r.TargetSymbolId = t.Id");
+        sw.Stop();
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.Rows![0]["total"], Is.EqualTo(10_000L));
+        Assert.That(sw.Elapsed, Is.LessThan(TimeSpan.FromSeconds(5)), $"full-closure join took {sw.Elapsed.TotalSeconds:F1}s");
+    }
+
+    [Test]
+    public async Task JoinOn_WrongColumnName_Issue126_ReturnsErrorNotHang()
+    {
+        // v0.6.0 silently evaluated the misspelled join key as NULL and (at scale) looked
+        // like another hang; schema-first validation must fail fast instead (see #122).
+        var (store, registry, service) = SqlQueryServiceTests.createServices();
+        await seedScaleJoinDataAsync(store, symbolCount: 3_000, relationshipCount: 10_000);
+
+        var sw = Stopwatch.StartNew();
+        var result = await service.ExecuteAsync(store,
+            "SELECT s.Name FROM RelationshipRecord r JOIN SymbolRecord s ON r.SourceId = s.Id LIMIT 5");
+        sw.Stop();
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Error, Does.Contain("Unknown column 'r.SourceId'"));
+        Assert.That(sw.Elapsed, Is.LessThan(TimeSpan.FromSeconds(5)), $"validation took {sw.Elapsed.TotalSeconds:F1}s");
     }
 }
