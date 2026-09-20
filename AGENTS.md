@@ -37,6 +37,21 @@ repo defect to triage, not something to work around in the task at hand:
    in the plan's issues log (see Task Format). Precedent: `#128` (silent `{}` rows) filed at
    discovery and fixed on the same branch that shipped `#120`.
 
+### MCP Server Lifecycle — Never Force-Kill the Process
+
+The running code-memory MCP server (`opencode.json`: `code-memory` → `dotnet run
+--project .\src\CodeMemory.Mcp\CodeMemory.Mcp.csproj`) is the build of the current working tree
+and is already available — `ping` confirms it via `version` (embedded git hash). The harness does
+**not** lazily reload the server after a kill: if an agent force-kills the `dotnet` process, the
+`code-memory` tools become unavailable ("Unknown tool") until a human restarts the harness or
+resumes the session. Therefore:
+
+- **Never `Stop-Process` the code-memory MCP server.**
+- When the server must rebuild/re-index new code (e.g. after committing changes to the MCP tree),
+  **prompt the human to manually restart the harness / resume the session** — that relaunches
+  `dotnet run --project .\src\CodeMemory.Mcp\CodeMemory.Mcp.csproj` from the current tree and
+  starts a fresh index. Then poll `ping` until `indexingCompleted: true` before calling tools.
+
 ---
 
 ## Domain Boundaries
