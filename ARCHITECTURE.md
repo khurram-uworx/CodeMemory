@@ -126,7 +126,7 @@ Startup
   │         ├─ set repo context
   │         ├─ IndexingEngine.RunIndexingAsync (logic in CodeMemory)
   │         │    ├─ storage.InitializeAsync()
-  │         │    ├─ crawler.WalkAsync() — walks repo, respects .gitignore
+  │         │    ├─ crawler.WalkAsync() — walks repo, honors nested .gitignore (git-compliant semantics)
   │         │    │
   │         │    └─ for each supported file (routed by language):
   │         │         ├─ ILanguageParser.ParseAsync() → ParseResult (Roslyn or Tree-sitter)
@@ -233,6 +233,8 @@ Storage schema metadata via TableSchemaProvider:
   └─ GetJoinKeys() → JoinKeyInfo[] (7 known foreign-key pairs)
   └─ DescribeAll() → formatted text including join keys
 ```
+
+JOIN execution: equality `ON` conditions (incl. `USING(cols)`) run as **hash equi-joins** — a composite-key index is built over one side instead of an O(n·m) nested loop, with RIGHT (reverse probe) and FULL (right-unmatched append) variants. Non-equi predicates fall back to the nested loop, but unbounded loops estimated above `MaxNestedLoopPairs` (1M) row pairs fail fast with a `SqlQueryJoinTooLargeException` diagnostic rather than hanging; `LIMIT` supplies an early-exit budget for prefix-valid results. Columns are validated against `TableSchemaProvider` schemas before execution, so unknown identifiers fail fast with available-column diagnostics.
 
 ### File Watcher (Post-Indexing Auto-Reindex)
 
