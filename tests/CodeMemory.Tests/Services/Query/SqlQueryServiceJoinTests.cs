@@ -649,6 +649,31 @@ public sealed class SqlQueryServiceJoinTests
     }
 
     [Test]
+    public async Task JoinOrderBy_QualifiedAmbiguousColumn_SortsByDeclaredSide()
+    {
+        // ORDER BY r.Id was silently stripped to "Id", then resolved by first ".Id"-suffixed
+        // key in the merged row — which key won depended on merge/dict order, so INNER/LEFT
+        // sorted by s.Id and the RIGHT hash path sorted by s.Id too (flipping the pre-fix
+        // RIGHT result). The qualified name must win: rows ordered by r.Id (call1, call2, call3)
+        // regardless of join side or merge layout.
+        var (store, registry, service) = SqlQueryServiceTests.createServices();
+        await seedJoinDataAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT s.Name, r.Id FROM SymbolRecord s JOIN RelationshipRecord r ON s.Id = r.SourceSymbolId ORDER BY r.Id");
+
+        Assert.That(result.Success, Is.True);
+        var rows = result.Rows!;
+        Assert.That(rows.Count, Is.EqualTo(3));
+        Assert.That(rows[0]["r.Id"], Is.EqualTo("r:call1"));
+        Assert.That(rows[0]["s.Name"], Is.EqualTo("IOld"));
+        Assert.That(rows[1]["r.Id"], Is.EqualTo("r:call2"));
+        Assert.That(rows[1]["s.Name"], Is.EqualTo("Helper"));
+        Assert.That(rows[2]["r.Id"], Is.EqualTo("r:call3"));
+        Assert.That(rows[2]["s.Name"], Is.EqualTo("IOld"));
+    }
+
+    [Test]
     public async Task JoinNonEqui_SmallScale_StillEvaluates()
     {
         // The fail-fast guard must not fire for small inputs: a non-extractable RIGHT JOIN ON
@@ -661,7 +686,10 @@ public sealed class SqlQueryServiceJoinTests
         var result = await service.ExecuteAsync(store,
             "SELECT COUNT(*) AS total FROM RelationshipRecord r RIGHT JOIN SymbolRecord s ON r.SourceSymbolId <> s.Id");
 
+        // RIGHT JOIN preserves every symbol row; each matches every relationship except those
+        // whose source equals the symbol's own Id: IOld 1 (call2), Helper 2 (call1, call3), the
+        // other four symbols 3 each (all three relationships) — total 15.
         Assert.That(result.Success, Is.True);
-        Assert.That(result.Rows![0]["total"], Is.EqualTo(21L));
+        Assert.That(result.Rows![0]["total"], Is.EqualTo(15L));
     }
 }

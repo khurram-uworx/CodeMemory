@@ -1147,6 +1147,16 @@ public sealed class SqlQueryService
 
             if (sortColumn is null) continue;
 
+            // Qualified ORDER BY (e.g. ORDER BY r.Id) must target the prefixed join-row key
+            // directly: the stripped column name ("Id") is ambiguous when both join sides carry
+            // the same column, and which suffix-matching key wins depends on merge/dict order
+            // (issue #137 — RIGHT/FULL OUTER hash merges changed that order and flipped the sort).
+            if (!sortColumn.Contains('.')
+                && orderExpr.Expression is AstExpr.CompoundIdentifier { Idents.Count: > 1 } compound
+                && rows.Count > 0
+                && rows[0].Keys.Count(k => k.EndsWith('.' + orderCol.Name, StringComparison.Ordinal)) > 1)
+                sortColumn = string.Join('.', compound.Idents.Select(i => i.Value));
+
             var selector = makeSortSelector(sortColumn, parsedColumns);
 
             if (i == 0)
