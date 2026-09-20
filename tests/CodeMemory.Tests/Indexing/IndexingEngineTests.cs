@@ -118,4 +118,55 @@ public sealed class IndexingEngineTests
                 Directory.Delete(repoDir, recursive: true);
         }
     }
+
+    [Test]
+    public async Task RunIndexingAsync_ExtraExclusions_ExcludeFilesFromIndex()
+    {
+        var repoDir = Path.Combine(Path.GetTempPath(), "CodeMemoryIndexingTests", Guid.NewGuid().ToString());
+        Directory.CreateDirectory(Path.Combine(repoDir, "bin"));
+        File.WriteAllText(Path.Combine(repoDir, "bin", "Generated.cs"), "public class Generated {}");
+        File.WriteAllText(Path.Combine(repoDir, "HandWritten.cs"), "public class HandWritten {}");
+
+        try
+        {
+            var store = new InMemoriVectorStore();
+            var storage = new StorageService(repoDir,
+                NullLogger<StorageService>.Instance, store);
+            var engine = CreateEngine(storage);
+
+            await engine.RunIndexingAsync(repoDir, default, extraExclusions: ["**/bin/**"]);
+
+            var generated = await storage.GetSymbolsByFileAsync("bin/Generated.cs", 1000);
+            Assert.That(generated, Is.Empty, "Files under an extra-excluded dir must not be indexed");
+
+            var handwritten = await storage.GetSymbolsByFileAsync("HandWritten.cs", 1000);
+            Assert.That(handwritten, Is.Not.Empty);
+            Assert.That(handwritten.Any(s => s.Name == "HandWritten"), Is.True);
+        }
+        finally
+        {
+            if (Directory.Exists(repoDir))
+                Directory.Delete(repoDir, recursive: true);
+        }
+    }
+
+    static IndexingEngine CreateEngine(IStorageService storage)
+    {
+        var crawler = new FileCrawler(NullLogger<FileCrawler>.Instance);
+        var roslynParser = new RoslynCSharpParser(NullLogger<RoslynCSharpParser>.Instance);
+        var tsParser = new TreeSitterParser(NullLogger<TreeSitterParser>.Instance);
+        var roslynExtractor = new RoslynSymbolExtractor(NullLogger<RoslynSymbolExtractor>.Instance);
+        var roslynRelExtractor = new RoslynRelationshipExtractor(NullLogger<RoslynRelationshipExtractor>.Instance);
+        var tsExtractor = new TreeSitterSymbolExtractor(NullLogger<TreeSitterSymbolExtractor>.Instance);
+        var tsRelExtractor = new TreeSitterRelationshipExtractor(NullLogger<TreeSitterRelationshipExtractor>.Instance);
+        var chunker = new SemanticChunker(NullLogger<SemanticChunker>.Instance);
+        var detector = new ProjectFileDetector(NullLogger<ProjectFileDetector>.Instance);
+
+        return new IndexingEngine(
+            NullLogger<IndexingEngine>.Instance, crawler,
+            roslynParser, tsParser,
+            roslynExtractor, roslynRelExtractor,
+            tsExtractor, tsRelExtractor,
+            chunker, storage, detector);
+    }
 }

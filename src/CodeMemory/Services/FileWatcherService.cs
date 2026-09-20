@@ -1,4 +1,5 @@
 using CodeMemory.Indexing;
+using CodeMemory.Indexing.Configuration;
 using CodeMemory.Indexing.Parsing;
 using CodeMemory.Services.Architecture;
 using CodeMemory.Storage;
@@ -37,7 +38,7 @@ public sealed class FileWatcherService : IDisposable
 
     FileSystemWatcher? watcher;
     Timer? debounceTimer;
-    GitIgnoreParser gitIgnore;
+    GitIgnoreEvaluator? evaluator;
     Task? currentBatch;
     bool disposed;
 
@@ -55,7 +56,6 @@ public sealed class FileWatcherService : IDisposable
         this.engine = engine;
         this.projectFileDetector = projectFileDetector;
         this.logger = logger;
-        gitIgnore = GitIgnoreParser.Empty;
     }
 
     void OnChanged(object? sender, FileSystemEventArgs e)
@@ -119,7 +119,7 @@ public sealed class FileWatcherService : IDisposable
     bool isGitIgnored(string fullPath)
     {
         var relative = toRelativePath(fullPath);
-        return relative != null && gitIgnore.IsIgnored(relative);
+        return relative != null && evaluator != null && evaluator.IsIgnored(relative, isDir: false);
     }
 
     string? toRelativePath(string fullPath)
@@ -286,7 +286,9 @@ public sealed class FileWatcherService : IDisposable
         if (watcher != null)
             return Task.CompletedTask;
 
-        gitIgnore = GitIgnoreParser.Load(Path.Combine(repoRoot, ".gitignore"));
+        var config = CodeMemoryConfig.Load(repoRoot, logger);
+        evaluator = new GitIgnoreEvaluator(repoRoot,
+            extraRootPatterns: config.Exclude.Count > 0 ? config.Exclude : null);
 
         watcher = new FileSystemWatcher(repoRoot)
         {

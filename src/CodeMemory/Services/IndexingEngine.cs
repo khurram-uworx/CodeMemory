@@ -139,7 +139,7 @@ public sealed class IndexingEngine
     }
 
     public async Task<IndexingResult> RunIndexingAsync(string repoRoot, CancellationToken ct,
-        IProgress<double>? progress = null)
+        IProgress<double>? progress = null, IReadOnlyList<string>? extraExclusions = null)
     {
         using var activity = CodeMemoryActivitySources.Indexing.StartActivity("RunIndexing");
         activity?.SetTag("repo.path", repoRoot);
@@ -169,9 +169,18 @@ public sealed class IndexingEngine
         var collectedBuildFiles = new List<string>();
 
         progress?.Report(0.01);
+        var exclusions = new List<string>(config.Exclude.Count + (extraExclusions?.Count ?? 0));
+        exclusions.AddRange(config.Exclude);
+        if (extraExclusions != null)
+            exclusions.AddRange(extraExclusions);
+
+        var additionalExclusions = exclusions.Count > 0
+            ? exclusions.Distinct(StringComparer.OrdinalIgnoreCase).ToHashSet(StringComparer.OrdinalIgnoreCase)
+            : null;
+
         await foreach (var entry in crawler.WalkAsync(repoRoot,
             onProgress: p => progress?.Report(0.01 + p * 0.94),
-            additionalExclusions: config.Exclude.Count > 0 ? config.Exclude.ToHashSet(StringComparer.OrdinalIgnoreCase) : null,
+            additionalExclusions: additionalExclusions,
             cancellationToken: ct))
         {
             logger.LogDebug("Found file: {Path} ({Ext})", entry.RelativePath, entry.Extension);

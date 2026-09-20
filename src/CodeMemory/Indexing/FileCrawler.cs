@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Logging;
-using System.Collections.Frozen;
 using System.Runtime.CompilerServices;
 
 namespace CodeMemory.Indexing;
@@ -12,68 +11,6 @@ public sealed record FileEntry(
 
 public sealed class FileCrawler
 {
-    static bool isFileIgnored(string relPath, GitIgnoreParser ignoreParser)
-        => ignoreParser.IsIgnored(relPath);
-
-    static string getRelativePath(Uri rootUri, string fullPath)
-    {
-        var fileUri = new Uri(fullPath);
-        var relative = rootUri.MakeRelativeUri(fileUri).ToString();
-        return Uri.UnescapeDataString(relative);
-    }
-
-    static GitIgnoreParser loadGitIgnore(string rootPath)
-    {
-        var gitIgnorePath = Path.Combine(rootPath, ".gitignore");
-        return GitIgnoreParser.Load(gitIgnorePath);
-    }
-
-    static bool isDirIgnored(string? relDir, GitIgnoreParser ignoreParser, FrozenSet<string>? additionalExclusions)
-    {
-        if (string.IsNullOrEmpty(relDir))
-            return false;
-
-        var dirName = relDir.Split('/', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
-        if (dirName != null && AlwaysIgnored.Contains(dirName))
-            return true;
-
-        if (additionalExclusions?.Contains(relDir.Replace('\\', '/')) == true)
-            return true;
-
-        if (additionalExclusions?.Any(e =>
-        {
-            if (e.EndsWith('/'))
-                return relDir.Replace('\\', '/').StartsWith(e.TrimEnd('/'));
-            return false;
-        }) == true)
-            return true;
-
-        return ignoreParser.IsIgnored(relDir + "/") || ignoreParser.IsIgnored(relDir);
-    }
-
-    static bool isFileIgnoredByConfig(string relPath, FrozenSet<string>? additionalExclusions)
-    {
-        if (additionalExclusions is null || additionalExclusions.Count == 0)
-            return false;
-
-        var normalized = relPath.Replace('\\', '/');
-        return additionalExclusions.Any(e =>
-        {
-            if (e.StartsWith('*'))
-                return normalized.EndsWith(e[1..], StringComparison.OrdinalIgnoreCase);
-            if (e.Contains('*'))
-                return false;
-            return normalized == e || normalized.StartsWith(e + "/");
-        });
-    }
-
-    static readonly FrozenSet<string> AlwaysIgnored = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-    {
-        ".git",
-        ".codememory", ".memori", ".codememory.json",
-        "node_modules"
-    }.ToFrozenSet();
-
     readonly ILogger<FileCrawler> logger;
     readonly HashSet<string> allowedExtensions;
 
@@ -91,11 +28,14 @@ public sealed class FileCrawler
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         rootPath = Path.GetFullPath(rootPath);
-        ignoreParser ??= loadGitIgnore(rootPath);
 
-        var additionalExcl = additionalExclusions?.Count > 0
-            ? additionalExclusions.Select(e => e.Replace('\\', '/')).ToFrozenSet(StringComparer.OrdinalIgnoreCase)
+        string[]? extraPatterns = additionalExclusions?.Count > 0
+            ? [.. additionalExclusions.Select(e => e.Replace('\\', '/'))]
             : null;
+
+        var evaluator = ignoreParser != null
+            ? GitIgnoreEvaluator.FromRootParser(rootPath, ignoreParser, extraPatterns)
+            : new GitIgnoreEvaluator(rootPath, extraPatterns);
 
         var rootUri = new Uri(rootPath + Path.DirectorySeparatorChar);
 
@@ -113,7 +53,7 @@ public sealed class FileCrawler
             {
                 var relDir = getRelativePath(rootUri, dir);
 
-                if (isDirIgnored(relDir, ignoreParser, additionalExcl))
+                if (isDirIgnored(relDir, evaluator))
                 {
                     logger.LogDebug("Skipping ignored directory: {Dir}", relDir);
                     continue;
@@ -134,7 +74,7 @@ public sealed class FileCrawler
                 foreach (var subDir in subDirs)
                 {
                     var subRelDir = getRelativePath(rootUri, subDir);
-                    if (!isDirIgnored(subRelDir, ignoreParser, additionalExcl))
+                    if (!isDirIgnored(subRelDir, evaluator))
                         filteredSubDirs.Add(subDir);
                 }
 
@@ -157,7 +97,7 @@ public sealed class FileCrawler
                         continue;
 
                     var relPath = getRelativePath(rootUri, filePath);
-                    if (!isFileIgnored(relPath, ignoreParser) && !isFileIgnoredByConfig(relPath, additionalExcl))
+                    if (!isFileIgnored(relPath, evaluator))
                         fileList.Add(filePath);
                 }
 
@@ -196,5 +136,28 @@ public sealed class FileCrawler
             }
             finally { }
         }
+    }
+
+    static bool isDirIgnored(string? relDir, GitIgnoreEvaluator evaluator)
+    {
+        if (string.IsNullOrEmpty(relDir))
+            return false;
+
+        return evaluator.IsIgnored(relDir, isDir: true);
+    }
+
+    static bool isFileIgnored(string? relPath, GitIgnoreEvaluator evaluator)
+    {
+        if (string.IsNullOrEmpty(relPath))
+            return false;
+
+        return evaluator.IsIgnored(relPath, isDir: false);
+    }
+
+    static string getRelativePath(Uri rootUri, string fullPath)
+    {
+        var fileUri = new Uri(fullPath);
+        var relative = rootUri.MakeRelativeUri(fileUri).ToString();
+        return Uri.UnescapeDataString(relative);
     }
 }

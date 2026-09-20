@@ -337,3 +337,6 @@ FodyWeavers.xsd
 /src/CodeMemory.AspNet/appsettings.Development.json
 /src/CodeMemory.AspNet/appsettings.Production.json
 /src/CodeMemory.AspNet/App_Data
+
+# Git worktree clones used by delta/local tooling — keep out of the code-memory crawl
+.delta/
