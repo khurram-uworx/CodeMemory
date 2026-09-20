@@ -190,13 +190,22 @@ public sealed class StorageService : IStorageService, IDisposable
         // Fallbacks in one deterministic in-memory pass so behavior is identical across backends:
         // 1) signature-insensitive prefix — "Ns.Util.getLikeMethod(string pattern)" <- "Ns.Util.getLikeMethod";
         //    overloads resolve to the first match, documented tradeoff.
-        // 2) short name for convenience (existing behavior).
+        // 2) last-segment — a dotted path on an index with simple FullNames (e.g. built before
+        //    package/namespace qualification) resolves via the trailing identifier when it is
+        //    unambiguous; ambiguous bare names (Request ×4 across packages) return null so the
+        //    caller surfaces the not-found + suggestions diagnostics instead of an arbitrary match.
         var candidates = await symbols!.GetAsync(s => s.FullName != null, top: int.MaxValue, options: null, ct).ToListAsync(ct);
         symbol = candidates.FirstOrDefault(c => c.FullName.StartsWith(SymbolName.SignaturePrefix(fullName), StringComparison.OrdinalIgnoreCase));
         if (symbol != null)
             return symbol;
 
-        return candidates.FirstOrDefault(c => c.Name == fullName);
+        var lastSegment = SymbolName.LastSegment(fullName);
+        if (lastSegment.Length == 0)
+            return null;
+
+        var byShortName = candidates.Where(c => c.Name == lastSegment).ToList();
+
+        return byShortName.Count == 1 ? byShortName[0] : null;
     }
 
     public async Task<IReadOnlyList<SymbolRecord>> SuggestSymbolsAsync(string query, int top = 5, CancellationToken ct = default)

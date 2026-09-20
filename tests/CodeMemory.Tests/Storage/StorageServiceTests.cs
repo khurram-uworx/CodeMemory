@@ -705,6 +705,67 @@ public sealed class StorageServiceTests : BaseServicesTests
     }
 
     [Test]
+    public async Task GetSymbolByFullNameAsync_DottedPath_ResolvesUniqueLastNameOnSimpleIndex()
+    {
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
+        await storage.InitializeAsync();
+
+        // Simulates an index built before package qualification (FullName == Name).
+        await storage.StoreSymbolsAsync([
+            new SymbolRecord
+            {
+                Id = "se1",
+                Name = "ServiceException",
+                Kind = "Class",
+                FilePath = "/src/error/ServiceException.java",
+                FullName = "ServiceException"
+            }
+        ]);
+
+        var resolved = await storage.GetSymbolByFullNameAsync("uk.co.uworx.khoji.agile.internal.error.ServiceException");
+
+        Assert.That(resolved, Is.Not.Null);
+        Assert.That(resolved!.Id, Is.EqualTo("se1"));
+    }
+
+    [Test]
+    public async Task GetSymbolByFullNameAsync_AmbiguousLastName_ReturnsNull()
+    {
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
+        await storage.InitializeAsync();
+
+        await storage.StoreSymbolsAsync([
+            new SymbolRecord { Id = "req1", Name = "Request", Kind = "Class", FilePath = "/src/a/Request.java", FullName = "Request" },
+            new SymbolRecord { Id = "req2", Name = "Request", Kind = "Class", FilePath = "/src/b/Request.java", FullName = "Request" }
+        ]);
+
+        // Dotted path misses exact/prefix matches on a simple index; the last segment
+        // is ambiguous (Request in two packages) → null so callers surface suggestions.
+        var resolved = await storage.GetSymbolByFullNameAsync("uk.co.uworx.khoji.a.Request");
+
+        Assert.That(resolved, Is.Null);
+    }
+
+    [Test]
+    public async Task GetSymbolByFullNameAsync_BareAmbiguousName_ReturnsNullInsteadOfArbitraryMatch()
+    {
+        (var repoRoot, var dbPath) = GetTempDbPath();
+        var storage = CreateStorage(repoRoot, dbPath);
+        await storage.InitializeAsync();
+
+        await storage.StoreSymbolsAsync([
+            new SymbolRecord { Id = "req1", Name = "Request", Kind = "Class", FilePath = "/src/a/Request.java", FullName = "Request" },
+            new SymbolRecord { Id = "req2", Name = "Request", Kind = "Class", FilePath = "/src/b/Request.java", FullName = "Request" }
+        ]);
+
+        var resolved = await storage.GetSymbolByFullNameAsync("Request");
+
+        Assert.That(resolved, Is.Null);
+    }
+
+    [Test]
     public async Task SuggestSymbolsAsync_MatchesFullNamePrefixAndLastName()
     {
         (var repoRoot, var dbPath) = GetTempDbPath();
