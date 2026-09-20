@@ -5,6 +5,13 @@
 
 CodeMemory transforms repositories into queryable intelligence — extracting symbols, relationships, and semantic understanding — and exposing it through MCP tools designed for AI coding agents.
 
+What's new in 0.7:
+- **SQL JOINs at index scale** — INNER/LEFT/RIGHT/FULL OUTER equi-joins run on a hash fast path; oversized non-equi joins fail fast with a diagnostic instead of hanging
+- **Schema-first SQL diagnostics** — `sql_query` validates columns before executing, so unknown identifiers fail fast with the available columns and correction hints
+- **Sharper symbol & relationship resolution** — qualified package/namespace names (Java/TS), receiver-type resolution, signature-insensitive lookups with suggestions
+- **MCP tool diagnostics** — typed `find_related_code` results, explicit not-found messages for trace/impact, and a `codeOnly` filter for semantic search
+- **Git-compliant ignore handling** — nested `.gitignore` files honored at any depth with git-ordered semantics; `rescan_repository` accepts one-shot `excludePatterns`
+
 What's new in 0.6:
 - **OpenTelemetry metrics & monitoring** — Prometheus scraping, Grafana dashboards, Aspire Dashboard, Docker Compose monitoring stack
 - **Repository Dashboard** — `RepoMetrics.cshtml` page with runtime metrics, code-analysis metrics (symbol counts, complexity, coupling)

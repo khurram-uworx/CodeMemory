@@ -70,3 +70,5 @@ SELECT FilePath, Content FROM ChunkRecord WHERE Content LIKE '%database%' OR Con
 | Modifiers field | Comma-separated string — use `LIKE '%public%'`, never `=` |
 | `RelationshipRecord` | May be empty — depends on extraction phase |
 | `ORDER BY Similarity DESC` | Requires `Content LIKE` in WHERE — cannot rank unfiltered results |
+| Unknown columns | Fail fast with `Unknown column 'X'. Available columns on 'T': …` plus `DESCRIBE` / `PRAGMA table_info` tips. Multi-table queries require table-qualified columns |
+| Large non-equi JOINs | Equi-predicate `ON` / `USING(cols)` joins use a hash fast path; unbounded non-equi joins estimated over ~1M row pairs fail fast with a `SqlQueryJoinTooLargeException` diagnostic instead of hanging |
