@@ -39,26 +39,51 @@ public sealed class TreeSitterRelationshipExtractor : IRelationshipExtractor
     /// <summary>
     /// Resolves a reference to a symbol with a deterministic precedence and no
     /// arbitrary first match (parity with storage-side resolution, #131 Change 2):
-    /// fully-qualified name → explicit import → same file → same package →
-    /// wildcard-imported package → unique name overall → null (edge skipped).
+    /// fully-qualified name → explicit import → typed-receiver members → same file →
+    /// same package → wildcard-imported package → unique name overall → null
+    /// (edge skipped).
+    ///
+    /// <paramref name="typesOnly"/> narrows the by-name candidate pool to type kinds
+    /// (class/interface/struct/enum/record/type alias) so constructors, methods and
+    /// fields that share a type's name never compete when resolving a type reference.
+    /// <paramref name="receiverTypeFullName"/> is the resolved declaring type of a
+    /// member-access receiver (obj.method()): members of that type are preferred as
+    /// stronger evidence than file/package proximity, and zero matches means the
+    /// member is not in the index (e.g. implicit enum methods) — the edge is skipped
+    /// rather than guessed.
     ///
     /// Method overloads of a single declaring type resolve to the first match —
     /// the same documented tradeoff as the storage signature-prefix step.
     /// </summary>
-    static Symbol? resolveSymbol(string name, ResolutionContext ctx)
+    static Symbol? resolveSymbol(string name, ResolutionContext ctx,
+        bool typesOnly = false, string? receiverTypeFullName = null)
     {
         if (primitiveTypes.Contains(name))
             return null;
 
-        if (ctx.ByFullName.Contains(name))
+        // Fully-qualified reference text (contains dots) → exact FullName match.
+        // Bare identifiers never take this path: a top-level symbol whose FullName
+        // equals the bare name (e.g. a TypeScript module-level `name`) must not win
+        // over same-language candidates (#131 Change 4).
+        if (name.Contains('.') && ctx.ByFullName.Contains(name))
             return ctx.ByFullName[name].First();
 
         if (ctx.Imports.TryGetValue(name, out var qualified) && ctx.ByFullName.Contains(qualified))
             return ctx.ByFullName[qualified].First();
 
-        var candidates = collectCandidates(name, ctx);
+        var candidates = collectCandidates(name, ctx, typesOnly);
         if (candidates.Count == 0)
             return null;
+
+        // Typed receiver: obj.method() → prefer members of obj's declared type.
+        // Stronger evidence than file/package proximity; zero matches means the
+        // member is not in the index (implicit enum methods, external types).
+        if (receiverTypeFullName != null)
+            return preferFamily(candidates
+                .Where(c => c.FullName.StartsWith(
+                    receiverTypeFullName + ".", StringComparison.Ordinal))
+                .ToList());
+
         if (candidates.Count == 1)
             return candidates[0];
 
@@ -87,21 +112,37 @@ public sealed class TreeSitterRelationshipExtractor : IRelationshipExtractor
         return null;
     }
 
-    static List<Symbol> collectCandidates(string name, ResolutionContext ctx)
+    static List<Symbol> collectCandidates(string name, ResolutionContext ctx, bool typesOnly)
     {
+        List<Symbol> result;
         if (ctx.ByName.Contains(name))
-            return ctx.ByName[name].ToList();
+            result = ctx.ByName[name].ToList();
+        else
+        {
+            var withParens = $"{name}()";
+            if (ctx.ByName.Contains(withParens))
+                result = ctx.ByName[withParens].ToList();
+            else
+            {
+                var prefix = name + "(";
+                result = new List<Symbol>();
+                foreach (var entry in ctx.ByName)
+                    if (entry.Key.StartsWith(prefix, StringComparison.Ordinal))
+                        result.AddRange(entry);
+            }
+        }
 
-        var withParens = $"{name}()";
-        if (ctx.ByName.Contains(withParens))
-            return ctx.ByName[withParens].ToList();
+        IEnumerable<Symbol> filtered = result;
+        if (typesOnly)
+            filtered = filtered.Where(s => s.Kind is CodeSymbolKind.Class or CodeSymbolKind.Interface
+                or CodeSymbolKind.Struct or CodeSymbolKind.Enum or CodeSymbolKind.Record
+                or CodeSymbolKind.TypeAlias);
 
-        var prefix = name + "(";
-        var list = new List<Symbol>();
-        foreach (var entry in ctx.ByName)
-            if (entry.Key.StartsWith(prefix, StringComparison.Ordinal))
-                list.AddRange(entry);
-        return list;
+        // Cross-language references are meaningless by construction — a Java file can
+        // never reference a TypeScript member. Unknown-language symbols (the C# /
+        // Roslyn path owns its own cross-references) are excluded from tree-sitter
+        // resolution pools entirely.
+        return filtered.Where(s => s.Language == ctx.Language).ToList();
     }
 
     /// <summary>
@@ -149,6 +190,191 @@ public sealed class TreeSitterRelationshipExtractor : IRelationshipExtractor
         "String", "Integer", "Boolean", "Character", "Byte", "Short", "Long",
         "Float", "Double", "Void",
     };
+
+    /// <summary>
+    /// Resolves the declared type (as a symbol FullName) of a member-access
+    /// receiver using declarations visible in the current file: parameters, locals
+    /// and fields. Returns null for `this`/`super` receivers, unnamed receivers,
+    /// primitive types, and type names that cannot be resolved — the caller then
+    /// falls back to the general resolution pipeline.
+    /// </summary>
+    static string? resolveReceiverType(Node receiver, ResolutionContext ctx)
+    {
+        if (receiver == default)
+            return null;
+
+        switch (receiver.Type)
+        {
+            case "identifier":
+            case "attribute_identifier":
+            {
+                var receiverName = receiver.Text;
+                if (string.IsNullOrWhiteSpace(receiverName))
+                    return null;
+
+                var typeName = findDeclaredTypeName(receiver, receiverName);
+                if (typeName is null || primitiveTypes.Contains(typeName))
+                    return null;
+
+                var typeSymbol = resolveSymbol(typeName, ctx, typesOnly: true);
+                return typeSymbol?.FullName;
+            }
+            case "member_expression":
+            case "field_access":
+            {
+                // a.b.method() — recurse into the innermost object.
+                var objField = receiver.Fields.FirstOrDefault(f => f.Key == "object");
+                return objField.Key != null ? resolveReceiverType(objField.Value, ctx) : null;
+            }
+            default:
+                return null;
+        }
+    }
+
+    /// <summary>
+    /// Searches declarations visible at the receiver site — the nearest enclosing
+    /// method/constructor scope first, then the class body's fields — for the
+    /// receiver identifier and returns its declared type text.
+    /// </summary>
+    static string? findDeclaredTypeName(Node receiver, string name)
+    {
+        var scope = receiver.Parent;
+        Node? methodScope = null;
+        Node? classScope = null;
+
+        while (scope != default)
+        {
+            if (methodScope == null && scope.Type is "method_declaration" or "constructor_declaration"
+                or "method_definition" or "function_declaration" or "function_definition"
+                or "arrow_function" or "arrow_function_expression")
+                methodScope = scope;
+            if (classScope == null && scope.Type is "class_declaration" or "class_definition"
+                or "class_specifier" or "struct_specifier" or "interface_declaration"
+                or "interface_type_declaration")
+                classScope = scope;
+            if (methodScope != null && classScope != null)
+                break;
+            scope = scope.Parent;
+        }
+
+        if (methodScope != default)
+        {
+            var budget = 400;
+            var typeName = searchScope(methodScope, name, ref budget);
+            if (typeName != null)
+                return typeName;
+        }
+
+        if (classScope != default)
+        {
+            // Fields only — direct members of the class body, never the internals
+            // of sibling methods (a parameter in another method must not satisfy a
+            // receiver lookup here).
+            var body = classScope.NamedChildren.FirstOrDefault(c => c.Type == "class_body");
+            var members = body == default ? classScope.NamedChildren : body.NamedChildren;
+            foreach (var member in members)
+            {
+                var typeName = typeOfDeclarationFor(member, name);
+                if (typeName != null)
+                    return typeName;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Bounded descendant search for a declaration of <paramref name="name"/>,
+    /// returning its declared type text. <paramref name="budget"/> caps visited
+    /// nodes so receiver lookups stay linear in practice.
+    /// </summary>
+    static string? searchScope(Node node, string name, ref int budget)
+    {
+        if (budget <= 0)
+            return null;
+        budget--;
+
+        var typeName = typeOfDeclarationFor(node, name);
+        if (typeName != null)
+            return typeName;
+
+        foreach (var child in node.NamedChildren)
+        {
+            var result = searchScope(child, name, ref budget);
+            if (result != null)
+                return result;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Returns the declared type text if <paramref name="node"/> is a declaration
+    /// (parameter, class field, local or variable declarator) that declares
+    /// <paramref name="name"/>; null otherwise.
+    /// </summary>
+    static string? typeOfDeclarationFor(Node node, string name)
+    {
+        switch (node.Type)
+        {
+            case "formal_parameter":
+            case "parameter":
+            case "required_parameter":
+            case "optional_parameter":
+            case "field_definition":
+            case "property_signature":
+            {
+                var nameField = node.Fields.FirstOrDefault(f => f.Key == "name");
+                if (nameField.Key == null || nameField.Value.Text != name)
+                    return null;
+                var typeField = node.Fields.FirstOrDefault(f => f.Key == "type");
+                return typeField.Key != null ? declaredTypeText(typeField.Value) : null;
+            }
+            case "variable_declarator":
+            {
+                var nameField = node.Fields.FirstOrDefault(f => f.Key == "name");
+                if (nameField.Key == null || nameField.Value.Text != name)
+                    return null;
+                var typeField = node.Fields.FirstOrDefault(f => f.Key == "type");
+                return typeField.Key != null ? declaredTypeText(typeField.Value) : null;
+            }
+            case "field_declaration":
+            case "local_variable_declaration":
+            case "variable_declaration":
+            {
+                var typeField = node.Fields.FirstOrDefault(f => f.Key == "type");
+                if (typeField.Key == null)
+                    return null;
+                foreach (var field in node.Fields)
+                {
+                    if (field.Key != "declarator")
+                        continue;
+                    if (variableDeclaratorName(field.Value) == name)
+                        return declaredTypeText(typeField.Value);
+                }
+                return null;
+            }
+            default:
+                return null;
+        }
+    }
+
+    static string? variableDeclaratorName(Node declarator)
+    {
+        var nameField = declarator.Fields.FirstOrDefault(f => f.Key == "name");
+        if (nameField.Key != null)
+            return nameField.Value.Text;
+        return declarator.NamedChildren.FirstOrDefault(c => c.Type == "identifier")?.Text;
+    }
+
+    static string? declaredTypeText(Node typeNode)
+    {
+        if (typeNode == default)
+            return null;
+        var effective = typeNode.Type == "type_annotation"
+            ? typeNode.NamedChildren.FirstOrDefault()
+            : typeNode;
+        return effective == default ? null : extractTypeName(effective);
+    }
 
     /// <summary>
     /// Builds the per-file resolution context. Java: reads the program-level
@@ -269,7 +495,7 @@ public sealed class TreeSitterRelationshipExtractor : IRelationshipExtractor
         {
             var typeName = extractTypeName(typeChild);
             if (typeName == null || primitiveTypes.Contains(typeName)) continue;
-            var target = resolveSymbol(typeName, ctx);
+            var target = resolveSymbol(typeName, ctx, typesOnly: true);
             if (target == null || target.FullName == source.FullName) continue;
             addRelationship(source.FullName, target.FullName, relType, seen, results);
         }
@@ -307,7 +533,7 @@ public sealed class TreeSitterRelationshipExtractor : IRelationshipExtractor
                 {
                     var typeName = extractTypeName(child);
                     if (typeName == null || primitiveTypes.Contains(typeName)) continue;
-                    var target = resolveSymbol(typeName, ctx);
+                    var target = resolveSymbol(typeName, ctx, typesOnly: true);
                     if (target == null || target.FullName == source.FullName) continue;
                     addRelationship(source.FullName, target.FullName, "Inherits", seen, results);
                 }
@@ -323,7 +549,7 @@ public sealed class TreeSitterRelationshipExtractor : IRelationshipExtractor
 
                 if (typeName != null && !primitiveTypes.Contains(typeName))
                 {
-                    var target = resolveSymbol(typeName, ctx);
+                    var target = resolveSymbol(typeName, ctx, typesOnly: true);
 
                     if (target != null && target.FullName != source.FullName)
                         addRelationship(source.FullName, target.FullName, "Inherits", seen, results);
@@ -365,7 +591,7 @@ public sealed class TreeSitterRelationshipExtractor : IRelationshipExtractor
                         if (typeNode == default) continue;
                         var typeName = extractTypeName(typeNode);
                         if (typeName == null || primitiveTypes.Contains(typeName)) continue;
-                        var target = resolveSymbol(typeName, ctx);
+                        var target = resolveSymbol(typeName, ctx, typesOnly: true);
                         if (target == null || target.FullName == source.FullName) continue;
                         addRelationship(source.FullName, target.FullName, "Inherits", seen, results);
                     }
@@ -384,7 +610,7 @@ public sealed class TreeSitterRelationshipExtractor : IRelationshipExtractor
                     {
                         var typeName = extractTypeName(bound);
                         if (typeName == null || primitiveTypes.Contains(typeName)) continue;
-                        var target = resolveSymbol(typeName, ctx);
+                        var target = resolveSymbol(typeName, ctx, typesOnly: true);
                         if (target == null || target.FullName == source.FullName) continue;
                         addRelationship(source.FullName, target.FullName, "Inherits", seen, results);
                     }
@@ -398,7 +624,7 @@ public sealed class TreeSitterRelationshipExtractor : IRelationshipExtractor
             foreach (var baseType in extractBaseTypes(node))
             {
                 if (primitiveTypes.Contains(baseType)) continue;
-                var target = resolveSymbol(baseType, ctx);
+                var target = resolveSymbol(baseType, ctx, typesOnly: true);
                 if (target == null || target.FullName == source.FullName) continue;
                 addRelationship(source.FullName, target.FullName, "Inherits", seen, results);
             }
@@ -457,7 +683,7 @@ public sealed class TreeSitterRelationshipExtractor : IRelationshipExtractor
                 var typeName = extractTypeName(child);
                 if (typeName == null || primitiveTypes.Contains(typeName)) continue;
 
-                var target = resolveSymbol(typeName, ctx);
+                var target = resolveSymbol(typeName, ctx, typesOnly: true);
                 if (target == null || target.FullName == source.FullName) continue;
 
                 addRelationship(source.FullName, target.FullName, relType, seen, results);
@@ -468,7 +694,7 @@ public sealed class TreeSitterRelationshipExtractor : IRelationshipExtractor
             var typeName = extractTypeName(typeListNode);
             if (typeName != null && !primitiveTypes.Contains(typeName))
             {
-                var target = resolveSymbol(typeName, ctx);
+                var target = resolveSymbol(typeName, ctx, typesOnly: true);
                 if (target != null && target.FullName != source.FullName)
                     addRelationship(source.FullName, target.FullName, relType, seen, results);
             }
@@ -486,6 +712,7 @@ public sealed class TreeSitterRelationshipExtractor : IRelationshipExtractor
 
         var funcNode = funcField.Value;
         string? methodName = null;
+        Node? receiverNode = default;
 
         if (funcNode.Type is "identifier" or "property_identifier")
             methodName = funcNode.Text;
@@ -494,12 +721,16 @@ public sealed class TreeSitterRelationshipExtractor : IRelationshipExtractor
             var propField = funcNode.Fields.FirstOrDefault(f => f.Key == "property");
             if (propField.Key != null)
                 methodName = propField.Value.Text;
+            var objField = funcNode.Fields.FirstOrDefault(f => f.Key == "object");
+            if (objField.Key != null)
+                receiverNode = objField.Value;
         }
 
         if (methodName == null || primitiveTypes.Contains(methodName))
             return;
 
-        var target = resolveSymbol(methodName, ctx);
+        var receiverType = receiverNode == default ? null : resolveReceiverType(receiverNode, ctx);
+        var target = resolveSymbol(methodName, ctx, receiverTypeFullName: receiverType);
         if (target == null || target.FullName == source.FullName)
             return;
 
@@ -519,7 +750,9 @@ public sealed class TreeSitterRelationshipExtractor : IRelationshipExtractor
         if (primitiveTypes.Contains(methodName))
             return;
 
-        var target = resolveSymbol(methodName, ctx);
+        var objField = node.Fields.FirstOrDefault(f => f.Key == "object");
+        var receiverType = objField.Key == null ? null : resolveReceiverType(objField.Value, ctx);
+        var target = resolveSymbol(methodName, ctx, receiverTypeFullName: receiverType);
         if (target == null || target.FullName == source.FullName)
             return;
 
@@ -539,7 +772,7 @@ public sealed class TreeSitterRelationshipExtractor : IRelationshipExtractor
         if (typeName == null || primitiveTypes.Contains(typeName))
             return;
 
-        var target = resolveSymbol(typeName, ctx);
+        var target = resolveSymbol(typeName, ctx, typesOnly: true);
         if (target == null || target.FullName == source.FullName)
             return;
 
@@ -568,7 +801,7 @@ public sealed class TreeSitterRelationshipExtractor : IRelationshipExtractor
         if (typeName == null || primitiveTypes.Contains(typeName))
             return;
 
-        var target = resolveSymbol(typeName, ctx);
+        var target = resolveSymbol(typeName, ctx, typesOnly: true);
         if (target == null || target.FullName == source.FullName)
             return;
 

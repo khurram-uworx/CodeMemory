@@ -120,6 +120,26 @@ empty keys — read named children); TypeScript `import_statement` carries `impo
 `string` (source) children, which cannot be expanded to index FullNames without module resolution,
 so TS resolution relies on same-file/uniqueness rules only (documented limitation).
 
+**Addendum (human-approved, implemented in the Change 4 commit):** three extensions on top of the
+commit `fa36fd9` resolver, driven by the live residual edge analysis on `khoji-x`:
+
+- **`byFullName` dot-gate** — the fully-qualified fast path now fires only for reference text
+  containing `.`. A bare `name` no longer collides with a top-level TypeScript symbol whose
+  FullName is exactly `name` (the `error.name()` → TS `name` garbage edges).
+- **Language-same guard** — `Symbol` gains a `Language` tag (tree-sitter extractor → source
+  language; Roslyn extractor → `CSharp`; default `Unknown`). The candidate by-name pool is
+  filtered to the source file's language, so a Java reference can never resolve to a TypeScript
+  member (cross-language relationships are meaningless by construction).
+- **Receiver-type resolution** — for `obj.method()`, resolve `obj`'s declared type from the
+  current file (formal parameter / local / class field, searched innermost scope outward) and
+  prefer that type's members as a resolution step *after the import map, before same-file*.
+  Zero matches means the member is not in the index (e.g. implicit enum methods like
+  `error.name()`, external types) → edge skipped rather than guessed. `this`/`super` receivers
+  fall through to the general pipeline.
+- **`typesOnly` candidate pool for type references** — constructor/method/field symbols that share
+  a type's name no longer compete when resolving `extends`/`new X()`/field-type annotations;
+  the pool is narrowed to type kinds. Fixes `new ServiceError(...)`-style references too.
+
 ## Verification steps
 
 1. `dotnet build` the solution (may require an opencode session restart first — the running MCP

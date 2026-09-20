@@ -476,6 +476,7 @@ public sealed class TreeSitterSymbolExtractor : ISymbolExtractor
         LanguageConfig config,
         string fileText,
         string filePath,
+        Parsing.Language language,
         List<Symbol> symbols,
         HashSet<string> seenFullNames)
     {
@@ -540,7 +541,8 @@ public sealed class TreeSitterSymbolExtractor : ISymbolExtractor
             lineRange,
             fullName,
             modifiers,
-            documentation));
+            documentation,
+            language));
     }
 
     public IReadOnlyList<Symbol> Extract(ParseResult result, string filePath)
@@ -563,7 +565,7 @@ public sealed class TreeSitterSymbolExtractor : ISymbolExtractor
             using var cursor = query.Execute(root);
 
             foreach (var match in cursor.Matches)
-                processMatch(match, config.Value, result.FileText, filePath, symbols, seenFullNames);
+                processMatch(match, config.Value, result.FileText, filePath, result.Language, symbols, seenFullNames);
         }
         catch (Exception ex)
         {
