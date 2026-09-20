@@ -37,6 +37,21 @@ repo defect to triage, not something to work around in the task at hand:
    in the plan's issues log (see Task Format). Precedent: `#128` (silent `{}` rows) filed at
    discovery and fixed on the same branch that shipped `#120`.
 
+### MCP Server Lifecycle — Never Force-Kill the Process
+
+The running code-memory MCP server (`opencode.json`: `code-memory` → `dotnet run
+--project .\src\CodeMemory.Mcp\CodeMemory.Mcp.csproj`) is the build of the current working tree
+and is already available — `ping` confirms it via `version` (embedded git hash). The harness does
+**not** lazily reload the server after a kill: if an agent force-kills the `dotnet` process, the
+`code-memory` tools become unavailable ("Unknown tool") until a human restarts the harness or
+resumes the session. Therefore:
+
+- **Never `Stop-Process` the code-memory MCP server.**
+- When the server must rebuild/re-index new code (e.g. after committing changes to the MCP tree),
+  **prompt the human to manually restart the harness / resume the session** — that relaunches
+  `dotnet run --project .\src\CodeMemory.Mcp\CodeMemory.Mcp.csproj` from the current tree and
+  starts a fresh index. Then poll `ping` until `indexingCompleted: true` before calling tools.
+
 ---
 
 ## Domain Boundaries
@@ -201,6 +216,14 @@ MCP tools use three patterns — follow the one matching your return type:
 - **Organization:** Mirror `src/` layout; one class per file, `*Tests.cs` suffix
 - **Base classes:** `BaseToolTests` (MCP integration), `BaseServicesTests` (service tests with real SQLite)
 - **Shared:** `MockServices.cs`, `TestLogger<T>`, `TestConstants`, `TestRepoHelper`, `fixtures/`
+
+## Probes (`tests/CodeMemory.Probes`)
+
+- Standalone, run-manually console app for diagnostics the NUnit suite shouldn't own — grammar shapes, parser/extractor behavior, indexing output. Console-only (no NUnit SDK), so `dotnet test` and CI skip it; one project accumulates all probes.
+- Run: `dotnet run --project tests/CodeMemory.Probes -- <probe>` (no argument = all probes).
+- Each probe is `internal static class XxxProbe { public static int Run() }` registered in `Program.cs`'s dispatch switch; document what it measures and observed results in the project README.md.
+- Probe lifecycle: prototype in a temp directory → decide reusability → move the reusable probe here, delete the temp copy, and record the decision in the current plan's `docs/TODO.md`.
+- Keep probe projects free of the `CodeMemory` library reference unless a probe genuinely needs it — that keeps probe builds from colliding with a running MCP server's locked DLLs.
 
 ## Code Style
 

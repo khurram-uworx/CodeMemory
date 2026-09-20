@@ -41,7 +41,8 @@ public sealed class RoslynSymbolExtractor : ISymbolExtractor
             new LineRange(lineSpan.StartLinePosition.Line + 1, lineSpan.EndLinePosition.Line + 1),
             fullName,
             modifiers,
-            documentation));
+            documentation,
+            Parsing.Language.CSharp));
 
         // Walk direct child members (for nested types, methods, etc.)
         foreach (var childMember in typeDecl.Members)
@@ -66,7 +67,8 @@ public sealed class RoslynSymbolExtractor : ISymbolExtractor
             new LineRange(lineSpan.StartLinePosition.Line + 1, lineSpan.EndLinePosition.Line + 1),
             fullName,
             modifiers,
-            documentation));
+            documentation,
+            Parsing.Language.CSharp));
     }
 
     static void extractMethod(
@@ -88,7 +90,8 @@ public sealed class RoslynSymbolExtractor : ISymbolExtractor
             new LineRange(lineSpan.StartLinePosition.Line + 1, lineSpan.EndLinePosition.Line + 1),
             fullName,
             modifiers,
-            documentation));
+            documentation,
+            Parsing.Language.CSharp));
     }
 
     static void extractConstructor(
@@ -111,7 +114,8 @@ public sealed class RoslynSymbolExtractor : ISymbolExtractor
             new LineRange(lineSpan.StartLinePosition.Line + 1, lineSpan.EndLinePosition.Line + 1),
             fullName,
             modifiers,
-            documentation));
+            documentation,
+            Parsing.Language.CSharp));
     }
 
     static void extractProperty(
@@ -132,7 +136,8 @@ public sealed class RoslynSymbolExtractor : ISymbolExtractor
             new LineRange(lineSpan.StartLinePosition.Line + 1, lineSpan.EndLinePosition.Line + 1),
             fullName,
             modifiers,
-            documentation));
+            documentation,
+            Parsing.Language.CSharp));
     }
 
     static void extractField(
@@ -154,7 +159,9 @@ public sealed class RoslynSymbolExtractor : ISymbolExtractor
                 filePath,
                 new LineRange(lineSpan.StartLinePosition.Line + 1, lineSpan.EndLinePosition.Line + 1),
                 fullName,
-                modifiers));
+                modifiers,
+                null,
+                Parsing.Language.CSharp));
         }
     }
 
@@ -176,7 +183,8 @@ public sealed class RoslynSymbolExtractor : ISymbolExtractor
             new LineRange(lineSpan.StartLinePosition.Line + 1, lineSpan.EndLinePosition.Line + 1),
             fullName,
             modifiers,
-            documentation));
+            documentation,
+            Parsing.Language.CSharp));
     }
 
     static void extractEventField(
@@ -198,7 +206,9 @@ public sealed class RoslynSymbolExtractor : ISymbolExtractor
                 filePath,
                 new LineRange(lineSpan.StartLinePosition.Line + 1, lineSpan.EndLinePosition.Line + 1),
                 fullName,
-                modifiers));
+                modifiers,
+                null,
+                Parsing.Language.CSharp));
         }
     }
 

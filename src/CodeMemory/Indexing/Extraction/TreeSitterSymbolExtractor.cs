@@ -18,7 +18,9 @@ public sealed class TreeSitterSymbolExtractor : ISymbolExtractor
 
         while (current != default && current.Type != "program")
         {
-            if (classLikeTypes.Contains(current.Type) || config.KindMap.ContainsKey(current.Type))
+            if (classLikeTypes.Contains(current.Type)
+                || namespaceLikeTypes.Contains(current.Type)
+                || config.KindMap.ContainsKey(current.Type))
             {
                 var parentName = getNodeName(current);
 
@@ -28,6 +30,16 @@ public sealed class TreeSitterSymbolExtractor : ISymbolExtractor
             current = current.Parent;
         }
 
+        // Java: package_declaration is a program-level sibling of the class (never
+        // an ancestor), so it can't be picked up by the walk above. TypeScript
+        // namespaces (internal_module etc.) are covered by namespaceLikeTypes.
+        if (current != default && current.Type == "program")
+        {
+            var packageName = getProgramScopeName(current);
+            if (packageName != null)
+                parts.Insert(0, packageName);
+        }
+
         if (name is not null && (methodLikeTypes.Contains(node.Type) || node.Type == "constructor_declaration"))
             name = buildMethodName(node, name);
 
@@ -35,6 +47,36 @@ public sealed class TreeSitterSymbolExtractor : ISymbolExtractor
             return $"{string.Join(".", parts)}.{name}";
 
         return name;
+    }
+
+    /// <summary>
+    /// Returns the dotted package declared at program level (Java package_declaration),
+    /// or null when the file has no package declaration (default package).
+    /// </summary>
+    static string? getProgramScopeName(Node program)
+    {
+        foreach (var child in program.NamedChildren)
+        {
+            if (child.Type != "package_declaration")
+                continue;
+
+            // Grammar versions vary: prefer the package's last named child (the
+            // scoped_identifier "a.b.c"); fall back to stripping the keyword and ';'.
+            var pkg = child.NamedChildren.LastOrDefault();
+            if (pkg != default && !string.IsNullOrWhiteSpace(pkg.Text))
+                return pkg.Text.Trim();
+
+            var raw = child.Text?.Trim();
+            if (raw is null)
+                continue;
+            const string keyword = "package ";
+            if (raw.StartsWith(keyword, StringComparison.Ordinal))
+                raw = raw[keyword.Length..];
+            raw = raw.Trim().TrimEnd(';').Trim();
+            return string.IsNullOrWhiteSpace(raw) ? null : raw;
+        }
+
+        return null;
     }
 
     static string buildMethodName(Node node, string baseName)
@@ -318,6 +360,16 @@ public sealed class TreeSitterSymbolExtractor : ISymbolExtractor
         "lexical_declaration", "variable_declaration",
     };
 
+    // Namespace/module container nodes that qualify their members but may not be
+    // indexed themselves (TS namespace → internal_module; declare module →
+    // external_module; C++20 module_declaration). `module` is included for
+    // explicitness even though tsKindMap already covers it.
+    static readonly HashSet<string> namespaceLikeTypes = new(StringComparer.Ordinal)
+    {
+        "internal_module", "external_module",
+        "module", "module_declaration", "namespace_declaration",
+    };
+
     static readonly Dictionary<string, CodeSymbolKind> tsKindMap = new(StringComparer.Ordinal)
     {
         ["class_declaration"] = CodeSymbolKind.Class,
@@ -424,6 +476,7 @@ public sealed class TreeSitterSymbolExtractor : ISymbolExtractor
         LanguageConfig config,
         string fileText,
         string filePath,
+        Parsing.Language language,
         List<Symbol> symbols,
         HashSet<string> seenFullNames)
     {
@@ -488,7 +541,8 @@ public sealed class TreeSitterSymbolExtractor : ISymbolExtractor
             lineRange,
             fullName,
             modifiers,
-            documentation));
+            documentation,
+            language));
     }
 
     public IReadOnlyList<Symbol> Extract(ParseResult result, string filePath)
@@ -511,7 +565,7 @@ public sealed class TreeSitterSymbolExtractor : ISymbolExtractor
             using var cursor = query.Execute(root);
 
             foreach (var match in cursor.Matches)
-                processMatch(match, config.Value, result.FileText, filePath, symbols, seenFullNames);
+                processMatch(match, config.Value, result.FileText, filePath, result.Language, symbols, seenFullNames);
         }
         catch (Exception ex)
         {

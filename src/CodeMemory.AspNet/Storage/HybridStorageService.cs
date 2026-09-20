@@ -437,12 +437,22 @@ public sealed class HybridStorageService : IStorageService, IDisposable
         if (entity != null)
             return entity.ToRecord();
 
-        // Fallback: try matching by short name for convenience
-        entity = await db.Symbols
-            .AsNoTracking()
-            .FirstOrDefaultAsync(s => s.Name == fullName, ct);
+        // Last-segment fallback — a dotted path on an index with simple FullNames (built before
+        // package/namespace qualification) resolves via the trailing identifier when it is
+        // unambiguous; ambiguous names return null so the caller surfaces the not-found +
+        // suggestions diagnostics instead of an arbitrary first match.
+        var lastSegment = SymbolName.LastSegment(fullName);
+        if (lastSegment.Length == 0)
+            return null;
 
-        return entity?.ToRecord();
+        var shortNameMatches = await db.Symbols
+            .AsNoTracking()
+            .Where(s => s.Name == lastSegment)
+            .OrderBy(s => s.FullName)
+            .Take(2)
+            .ToListAsync(ct);
+
+        return shortNameMatches.Count == 1 ? shortNameMatches[0].ToRecord() : null;
     }
 
     public async Task<IReadOnlyList<SymbolRecord>> SuggestSymbolsAsync(string query, int top = 5, CancellationToken ct = default)

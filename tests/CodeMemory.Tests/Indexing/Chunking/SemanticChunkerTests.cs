@@ -261,7 +261,7 @@ public sealed class SemanticChunkerTests
         var chunker = new SemanticChunker(NullLogger<SemanticChunker>.Instance);
         var chunks = chunker.ChunkAll(symbols, fileText, "test.java", Language.Java);
 
-        var serviceChunk = chunks.FirstOrDefault(c => c.SymbolId == "MyService");
+        var serviceChunk = chunks.FirstOrDefault(c => c.SymbolId == "com.example.MyService");
         Assert.That(serviceChunk, Is.Not.Null);
         Assert.That(serviceChunk!.Content, Does.Contain("package com.example;"));
         Assert.That(serviceChunk.Content, Does.Contain("import java.util.List;"));

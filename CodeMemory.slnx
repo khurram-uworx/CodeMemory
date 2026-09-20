@@ -42,5 +42,6 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/CodeMemory.Tests/CodeMemory.Tests.csproj" />
+    <Project Path="tests/CodeMemory.Probes/CodeMemory.Probes.csproj" />
   </Folder>
 </Solution>

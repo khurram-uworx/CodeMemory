@@ -31,7 +31,8 @@ public sealed record Symbol(
     LineRange LineRange,
     string FullName,
     IReadOnlyList<string> Modifiers,
-    string? Documentation = null);
+    string? Documentation = null,
+    Parsing.Language Language = Parsing.Language.Unknown);
 
 public sealed record Relationship(
     string SourceSymbolId,

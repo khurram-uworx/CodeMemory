@@ -568,4 +568,105 @@ public sealed class TreeSitterSymbolExtractorTests
         Assert.That(pi.Modifiers, Does.Contain("constexpr"));
         Assert.That(pi.Modifiers, Does.Contain("template<typename T>"));
     }
+
+    [Test]
+    public async Task Extract_Java_PackageDeclaration_QualifiesFullNames()
+    {
+        Assume.That(IsTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            package uk.co.uworx.khoji.agile.internal.error;
+
+            public class ServiceException {
+                public void doSomething(String arg) {}
+            }
+            """;
+
+        var (symbols, _) = await ExtractFromCode(code, ".java");
+
+        var cls = symbols.FirstOrDefault(s => s.Name == "ServiceException");
+        Assert.That(cls, Is.Not.Null);
+        Assert.That(cls!.FullName, Is.EqualTo("uk.co.uworx.khoji.agile.internal.error.ServiceException"));
+
+        var method = symbols.FirstOrDefault(s => s.Name.StartsWith("doSomething"));
+        Assert.That(method, Is.Not.Null);
+        Assert.That(method!.FullName, Is.EqualTo("uk.co.uworx.khoji.agile.internal.error.ServiceException.doSomething(String arg)"));
+    }
+
+    [Test]
+    public async Task Extract_Java_DefaultPackage_KeepsSimpleFullName()
+    {
+        Assume.That(IsTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            public class NoPackageClass {
+                public void doSomething() {}
+            }
+            """;
+
+        var (symbols, _) = await ExtractFromCode(code, ".java");
+
+        var cls = symbols.FirstOrDefault(s => s.Name == "NoPackageClass");
+        Assert.That(cls, Is.Not.Null);
+        Assert.That(cls!.FullName, Is.EqualTo("NoPackageClass"));
+    }
+
+    [Test]
+    public async Task Extract_Java_NestedClass_QualifiedByPackageAndOuter()
+    {
+        Assume.That(IsTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            package uk.co.uworx.khoji.agile.internal.model;
+
+            public class Outer {
+                class Inner {
+                    void run() {}
+                }
+            }
+            """;
+
+        var (symbols, _) = await ExtractFromCode(code, ".java");
+
+        var inner = symbols.FirstOrDefault(s => s.Name == "Inner");
+        Assert.That(inner, Is.Not.Null);
+        Assert.That(inner!.FullName, Is.EqualTo("uk.co.uworx.khoji.agile.internal.model.Outer.Inner"));
+    }
+
+    [Test]
+    public async Task Extract_TypeScript_Namespace_QualifiesNestedTypes()
+    {
+        Assume.That(IsTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            namespace MyNs {
+                export class Worker {
+                    run() {}
+                }
+            }
+            """;
+
+        var (symbols, _) = await ExtractFromCode(code, ".ts");
+
+        var cls = symbols.FirstOrDefault(s => s.Name == "Worker");
+        Assert.That(cls, Is.Not.Null);
+        Assert.That(cls!.FullName, Is.EqualTo("MyNs.Worker"));
+
+        var method = symbols.FirstOrDefault(s => s.Name.StartsWith("run"));
+        Assert.That(method, Is.Not.Null);
+        Assert.That(method!.FullName, Is.EqualTo("MyNs.Worker.run()"));
+    }
+
+    [Test]
+    public async Task Extract_TypeScript_Module_QualifiesNestedTypes()
+    {
+        Assume.That(IsTreeSitterAvailable(), "Tree-sitter native libraries not available");
+        var code = """
+            module Legacy {
+                class OldWorker {}
+            }
+            """;
+
+        var (symbols, _) = await ExtractFromCode(code, ".ts");
+
+        var cls = symbols.FirstOrDefault(s => s.Name == "OldWorker");
+        Assert.That(cls, Is.Not.Null);
+        Assert.That(cls!.FullName, Is.EqualTo("Legacy.OldWorker"));
+    }
 }
