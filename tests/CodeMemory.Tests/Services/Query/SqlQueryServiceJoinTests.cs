@@ -526,4 +526,190 @@ public sealed class SqlQueryServiceJoinTests
         Assert.That(result.Error, Does.Contain("Unknown column 'r.SourceId'"));
         Assert.That(sw.Elapsed, Is.LessThan(TimeSpan.FromSeconds(5)), $"validation took {sw.Elapsed.TotalSeconds:F1}s");
     }
+
+    // ── Issue #137 regression: RIGHT/FULL OUTER and non-equi joins at index scale ──
+
+    [Test]
+    public async Task JoinScale_RightOuterCount_CompletesUnderBudget()
+    {
+        // Pre-fix, RIGHT OUTER fell back to leftJoin(right, left) — a 10k × 3k nested loop
+        // (~27s at live-index scale for a 4.4k × 2.5k index). The reverse-probe hash join must
+        // complete the full closure well under 5s. Every relationship matches its source symbol,
+        // so the count is the full 10k relationship closure.
+        var (store, registry, service) = SqlQueryServiceTests.createServices();
+        await seedScaleJoinDataAsync(store, symbolCount: 3_000, relationshipCount: 10_000);
+
+        var sw = Stopwatch.StartNew();
+        var result = await service.ExecuteAsync(store,
+            "SELECT COUNT(*) AS total FROM RelationshipRecord r RIGHT JOIN SymbolRecord s ON r.SourceSymbolId = s.Id");
+        sw.Stop();
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.Rows![0]["total"], Is.EqualTo(10_000L));
+        Assert.That(sw.Elapsed, Is.LessThan(TimeSpan.FromSeconds(5)), $"RIGHT JOIN took {sw.Elapsed.TotalSeconds:F1}s");
+    }
+
+    [Test]
+    public async Task JoinScale_FullOuterCount_CompletesUnderBudget()
+    {
+        // Pre-fix FULL OUTER ran two nested loops and a values-order-dependent dedup that
+        // double-counted matched pairs (9800 vs 5404 on the live index). The hash FULL outer must
+        // complete the closure under 5s and count each pair once.
+        var (store, registry, service) = SqlQueryServiceTests.createServices();
+        await seedScaleJoinDataAsync(store, symbolCount: 3_000, relationshipCount: 10_000);
+
+        var sw = Stopwatch.StartNew();
+        var result = await service.ExecuteAsync(store,
+            "SELECT COUNT(*) AS total FROM RelationshipRecord r FULL OUTER JOIN SymbolRecord s ON r.SourceSymbolId = s.Id");
+        sw.Stop();
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.Rows![0]["total"], Is.EqualTo(10_000L));
+        Assert.That(sw.Elapsed, Is.LessThan(TimeSpan.FromSeconds(5)), $"FULL OUTER JOIN took {sw.Elapsed.TotalSeconds:F1}s");
+    }
+
+    [Test]
+    public async Task FullOuter_LeftAndRightOrphans_CountedExactlyOnce()
+    {
+        // Regression for the FULL OUTER double-count: the old two-pass implementation merged
+        // dicts in opposite column order, so matched pairs deduped on a values-order key that
+        // differed between passes and were emitted twice. With a lone left orphan (relationship
+        // to a missing symbol) and right orphans (symbols never a source), the correct total is
+        // 3 matched + 1 left orphan + 5 right orphans = 9 — the buggy engine returned 12.
+        var (store, registry, service) = SqlQueryServiceTests.createServices();
+        await seedJoinDataAsync(store);
+        var sym = store.GetCollection<string, SymbolRecord>("symbols");
+        await sym.UpsertAsync(new SymbolRecord
+        {
+            Id = "s:OrphanB", Name = "OrphanB", Kind = "Class", FilePath = "/src/OrphanB.cs",
+            FullName = "OrphanB", LineStart = 1, LineEnd = 10, Modifiers = "public"
+        });
+        var rel = store.GetCollection<string, RelationshipRecord>("relationships");
+        await rel.UpsertAsync(new RelationshipRecord
+        {
+            Id = "r:orphan", SourceSymbolId = "s:NONEXISTENT", TargetSymbolId = "s:NONEXISTENT",
+            RelationshipType = "Orphan"
+        });
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT COUNT(*) AS total FROM SymbolRecord s FULL OUTER JOIN RelationshipRecord r ON s.Id = r.SourceSymbolId");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.Rows![0]["total"], Is.EqualTo(9L));
+    }
+
+    [Test]
+    public async Task FullOuter_LeftAndRightOrphans_RowsResolveCorrectly()
+    {
+        // Same shape as above — spot-check the actual row content: the matched pair, the left
+        // orphan (null symbol columns), and a right orphan (null relationship columns).
+        var (store, registry, service) = SqlQueryServiceTests.createServices();
+        await seedJoinDataAsync(store);
+        var sym = store.GetCollection<string, SymbolRecord>("symbols");
+        await sym.UpsertAsync(new SymbolRecord
+        {
+            Id = "s:OrphanB", Name = "OrphanB", Kind = "Class", FilePath = "/src/OrphanB.cs",
+            FullName = "OrphanB", LineStart = 1, LineEnd = 10, Modifiers = "public"
+        });
+        var rel = store.GetCollection<string, RelationshipRecord>("relationships");
+        await rel.UpsertAsync(new RelationshipRecord
+        {
+            Id = "r:orphan", SourceSymbolId = "s:NONEXISTENT", TargetSymbolId = "s:NONEXISTENT",
+            RelationshipType = "Orphan"
+        });
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT s.Name, r.RelationshipType FROM SymbolRecord s FULL OUTER JOIN RelationshipRecord r ON s.Id = r.SourceSymbolId");
+        var rows = result.Rows!;
+
+        Assert.That(rows.Any(r => r["s.Name"]?.ToString() == "IOld" && r["r.RelationshipType"]?.ToString() == "References"), Is.True);
+        Assert.That(rows.Any(r => r["s.Name"] is null && r["r.RelationshipType"]?.ToString() == "Orphan"), Is.True);
+        Assert.That(rows.Any(r => r["s.Name"]?.ToString() == "OrphanB" && r["r.RelationshipType"] is null), Is.True);
+    }
+
+    [Test]
+    public async Task JoinNonEqui_UnboundedClosure_FailsFastWithDiagnostic()
+    {
+        // A non-extractable ON predicate over the full closure (needsFullFetch ⇒ no row budget)
+        // would run a 10k × 3k nested loop — a hang at index scale. It must fail fast with a
+        // diagnostic instead of appearing to hang (issue #137).
+        var (store, registry, service) = SqlQueryServiceTests.createServices();
+        await seedScaleJoinDataAsync(store, symbolCount: 3_000, relationshipCount: 10_000);
+
+        var sw = Stopwatch.StartNew();
+        var result = await service.ExecuteAsync(store,
+            "SELECT COUNT(*) AS total FROM RelationshipRecord r JOIN SymbolRecord s ON r.SourceSymbolId <> s.Id");
+        sw.Stop();
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Error, Does.Contain("would evaluate"));
+        Assert.That(result.Error, Does.Contain("nested-loop limit"));
+        Assert.That(result.Error, Does.Contain("equi-join"));
+        Assert.That(sw.Elapsed, Is.LessThan(TimeSpan.FromSeconds(5)), $"non-equi rejection took {sw.Elapsed.TotalSeconds:F1}s");
+    }
+
+    [Test]
+    public async Task JoinNonEqui_RightOuterWithLimit_EarlyExitsUnderBudget()
+    {
+        // RIGHT OUTER is right-major, so a LIMIT early-exit prefix is a valid result. The
+        // budget must flow into the non-equi nested-loop arm — without it, a LIMIT 5 query
+        // silently runs the full 10k × 3k pair closure (a hang at index scale, verified live
+        // during #137: 135s for LIMIT 5).
+        var (store, registry, service) = SqlQueryServiceTests.createServices();
+        await seedScaleJoinDataAsync(store, symbolCount: 3_000, relationshipCount: 10_000);
+
+        var sw = Stopwatch.StartNew();
+        var result = await service.ExecuteAsync(store,
+            "SELECT r.Id FROM RelationshipRecord r RIGHT JOIN SymbolRecord s ON r.SourceSymbolId <> s.Id LIMIT 5");
+        sw.Stop();
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.RowCount, Is.EqualTo(5));
+        Assert.That(sw.Elapsed, Is.LessThan(TimeSpan.FromSeconds(5)), $"LIMIT early-exit took {sw.Elapsed.TotalSeconds:F1}s");
+    }
+
+    [Test]
+    public async Task JoinOrderBy_QualifiedAmbiguousColumn_SortsByDeclaredSide()
+    {
+        // ORDER BY r.Id was silently stripped to "Id", then resolved by first ".Id"-suffixed
+        // key in the merged row — which key won depended on merge/dict order, so INNER/LEFT
+        // sorted by s.Id and the RIGHT hash path sorted by s.Id too (flipping the pre-fix
+        // RIGHT result). The qualified name must win: rows ordered by r.Id (call1, call2, call3)
+        // regardless of join side or merge layout.
+        var (store, registry, service) = SqlQueryServiceTests.createServices();
+        await seedJoinDataAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT s.Name, r.Id FROM SymbolRecord s JOIN RelationshipRecord r ON s.Id = r.SourceSymbolId ORDER BY r.Id");
+
+        Assert.That(result.Success, Is.True);
+        var rows = result.Rows!;
+        Assert.That(rows.Count, Is.EqualTo(3));
+        Assert.That(rows[0]["r.Id"], Is.EqualTo("r:call1"));
+        Assert.That(rows[0]["s.Name"], Is.EqualTo("IOld"));
+        Assert.That(rows[1]["r.Id"], Is.EqualTo("r:call2"));
+        Assert.That(rows[1]["s.Name"], Is.EqualTo("Helper"));
+        Assert.That(rows[2]["r.Id"], Is.EqualTo("r:call3"));
+        Assert.That(rows[2]["s.Name"], Is.EqualTo("IOld"));
+    }
+
+    [Test]
+    public async Task JoinNonEqui_SmallScale_StillEvaluates()
+    {
+        // The fail-fast guard must not fire for small inputs: a non-extractable RIGHT JOIN ON
+        // predicate on the tiny seed still evaluates through the nested loop. RIGHT JOIN
+        // preserves every symbol row; each matches every relationship except those whose source
+        // equals the symbol's own Id: IOld 2, Helper 3, the other four symbols 4 each = 21.
+        var (store, registry, service) = SqlQueryServiceTests.createServices();
+        await seedJoinDataAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT COUNT(*) AS total FROM RelationshipRecord r RIGHT JOIN SymbolRecord s ON r.SourceSymbolId <> s.Id");
+
+        // RIGHT JOIN preserves every symbol row; each matches every relationship except those
+        // whose source equals the symbol's own Id: IOld 1 (call2), Helper 2 (call1, call3), the
+        // other four symbols 3 each (all three relationships) — total 15.
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.Rows![0]["total"], Is.EqualTo(15L));
+    }
 }

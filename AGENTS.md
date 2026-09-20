@@ -166,14 +166,23 @@ diagnostics, see #122): `CodeMemory.Mcp.SqlQuery.SqlQueryValidator` checks `SELE
 real tables) instead of silently dropping rows. Multi-table queries require table-qualified
 columns — unqualified identifiers are rejected with alias guidance.
 
-JOIN execution uses a **hash equi-join** fast path (see #126): `SqlQueryService` detects
-`INNER`/`LEFT` `ON` conditions that are equality between distinct-prefixed columns (including
-`USING(cols)`) and builds a composite-key index over the right rows instead of running an
-O(n·m) nested loop — expected for relationship traversal (`RelationshipRecord` ×
-`SymbolRecord`) queries at index scale. Non-equi predicates and `RIGHT`/`FULL OUTER` joins fall
-back to the nested loop; `LIMIT` early-exits the join closure only when the query has no
-`WHERE`/`ORDER BY`/`GROUP BY`/aggregates/`DISTINCT`, so an emitted prefix is always a valid
-no-ORDER-BY result.
+JOIN execution uses a **hash equi-join** fast path (see #126, #137): `SqlQueryService` detects
+`INNER`/`LEFT`/`RIGHT`/`FULL OUTER` `ON` conditions that are equality between distinct-prefixed
+columns (including `USING(cols)`) and builds a composite-key index over one side instead of
+running an O(n·m) nested loop — expected for relationship traversal (`RelationshipRecord` ×
+`SymbolRecord`) queries at index scale. RIGHT OUTER probes from the right side (reverse probe),
+and FULL OUTER tracks which right rows matched and appends unmatched right rows at the end —
+which also fixed a FULL OUTER double-count defect (the old two-pass dedup keyed on `row.Values`
+order, and the passes merged dicts in opposite column order). Non-equi predicates still run the
+nested loop, but any unbounded nested loop (no `LIMIT` early-exit budget) whose estimated pair
+count exceeds `SqlQueryService.MaxNestedLoopPairs` (1M) fails fast with a
+`SqlQueryJoinTooLargeException` diagnostic instead of appearing to hang. `LIMIT` early-exits the
+join closure only when the query has no `WHERE`/`ORDER BY`/`GROUP BY`/aggregates/`DISTINCT`, so
+an emitted prefix is always a valid no-ORDER-BY result; FULL OUTER never takes the early-exit
+budget because a prefix cannot represent its closure. Qualified `ORDER BY` on multi-table
+results (`ORDER BY r.Id`) resolves to the fully-qualified row key — the stripped-to-`Id` suffix
+match is ambiguous when both join sides share a column, and which key wins must not depend on
+merged-row dict order.
 
 Known quirks (work around them in `CodeMemory.Mcp`/`CodeMemory.AspNet`, do not patch the library):
 - Message duplication — `Parser.cs:6886` calls `Expected("Expected an expression, …")` while
