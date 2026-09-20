@@ -756,10 +756,13 @@ public sealed class StorageServiceTests : BaseServicesTests
         await storage.InitializeAsync();
 
         await storage.StoreSymbolsAsync([
-            new SymbolRecord { Id = "req1", Name = "Request", Kind = "Class", FilePath = "/src/a/Request.java", FullName = "Request" },
-            new SymbolRecord { Id = "req2", Name = "Request", Kind = "Class", FilePath = "/src/b/Request.java", FullName = "Request" }
+            new SymbolRecord { Id = "req1", Name = "Request", Kind = "Class", FilePath = "/src/a/Request.java", FullName = "uk.co.uworx.khoji.a.Request" },
+            new SymbolRecord { Id = "req2", Name = "Request", Kind = "Class", FilePath = "/src/b/Request.java", FullName = "uk.co.uworx.khoji.b.Request" }
         ]);
 
+        // A bare query on a qualified index (post-fix FullNames) misses exact/prefix
+        // matches; the last segment is ambiguous (Request in two packages) → null so
+        // callers surface suggestions instead of an arbitrary first match.
         var resolved = await storage.GetSymbolByFullNameAsync("Request");
 
         Assert.That(resolved, Is.Null);
