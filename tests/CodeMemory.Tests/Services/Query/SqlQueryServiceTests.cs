@@ -748,6 +748,23 @@ public sealed class SqlQueryServiceTests
     }
 
     [Test]
+    public async Task Select_DistinctKind_WithLimit_ReturnsUniqueValues()
+    {
+        // Issue #125: the exact reported query previously surfaced a bogus
+        // "SELECT must have a FROM clause" error under concurrent parses.
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        var result = await service.ExecuteAsync(store,
+            "SELECT DISTINCT Kind FROM SymbolRecord LIMIT 50");
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.Columns, Is.EquivalentTo(["Kind"]));
+        Assert.That(result.Rows!.Select(r => r["Kind"]), Is.EquivalentTo(["Class", "Field", "Interface", "Method"]));
+        Assert.That(result.RowCount, Is.EqualTo(4));
+    }
+
+    [Test]
     public async Task Select_DistinctMultiColumn_ReturnsUniqueCombinations()
     {
         var (store, registry, service) = createServices();
@@ -2319,6 +2336,34 @@ public sealed class SqlQueryServiceTests
                 Assert.That(results[i].Success, Is.True, $"round {round} query {i}: {results[i].Error}");
                 Assert.That(results[i].RowCount, Is.EqualTo(1), $"round {round} query {i}");
                 Assert.That(results[i].Rows![0]["Name"], Is.EqualTo($"CZ{i}"), $"round {round} query {i}");
+            }
+        }
+    }
+
+    [Test]
+    public async Task SqlQuery_ConcurrentDistinctLimitQueries_ReturnOwnRows()
+    {
+        var (store, registry, service) = createServices();
+        await seedSymbolsAsync(store);
+
+        // Issue #125: the exact reported query ("SELECT DISTINCT Kind FROM
+        // SymbolRecord LIMIT 50") surfaced a bogus "SELECT must have a FROM
+        // clause" error under concurrent parses — the #127 shared-parser race
+        // corrupting the AST so its From clause was lost. Each concurrent call
+        // must return its own full distinct-Kind set, never a spurious error.
+        string[] expectedKinds = ["Class", "Field", "Interface", "Method"];
+        for (var round = 0; round < 10; round++)
+        {
+            var results = await Task.WhenAll(Enumerable.Range(0, 8).Select(_ =>
+                Task.Run(() => service.ExecuteAsync(store,
+                    "SELECT DISTINCT Kind FROM SymbolRecord LIMIT 50"))));
+
+            for (var i = 0; i < results.Length; i++)
+            {
+                Assert.That(results[i].Success, Is.True, $"round {round} call {i}: {results[i].Error}");
+                Assert.That(results[i].RowCount, Is.EqualTo(4), $"round {round} call {i}");
+                Assert.That(results[i].Rows!.Select(r => r["Kind"]),
+                    Is.EquivalentTo(expectedKinds), $"round {round} call {i}");
             }
         }
     }
