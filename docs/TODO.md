@@ -123,15 +123,33 @@ expectation that relationship traversal queries return in milliseconds at index 
 ## Grounding (Resistance G1)
 
 Internal notes — hash-join pattern is standard relational-engine technique (build phase on
-smaller/probed side, probe with driving side, residual predicate re-evaluation). Will ground
-against microsoft-learn for any .NET-specific constructs used (none expected beyond
-`Dictionary`/`ValueTuple`).
+smaller/probed side, probe with driving side, residual predicate re-evaluation). Grounded
+against microsoft-learn ("Joins (SQL Server)": build phase + probe phase + residual predicate
+for correctness) — confirms the plan. Grounding surfaced one refinement, adopted during
+implementation: the `LIMIT` early-exit budget is additionally gated on the query having **no
+`WHERE` clause** (a join prefix could otherwise under-fill a WHERE-filtered result; a subset
+is only a valid no-ORDER-BY result without a filter). This narrows the optimization and
+changes no semantics.
+
+## Verification & probe lifecycle
+
+Timed verification lived directly in the regression suite — no standalone temp harness was
+needed, so nothing to promote/clean up:
+
+- `JoinScale_ReportedQueryWithLimit5_ReturnsFiveRowsQuickly` — 196 ms (pre-fix nested loop:
+  ~13.5 s live on 2.5k/4.3k index; tens of seconds at the test's 10k×3k scale)
+- `JoinScale_FullClosureCount_CompletesUnderBudget` — 326 ms (full 10k-row hash join closure)
+- `JoinOn_WrongColumnName_Issue126_ReturnsErrorNotHang` — 122 ms (schema-first validation)
+
+These double as the permanent regression gate for #126.
 
 ## GitHub issues log
 
 - [ ] #126 — SQL JOIN between RelationshipRecord and SymbolRecord hangs indefinitely
       (working on: khurram/126 plan/implementation)
-- (none discovered yet during planning)
+- [x] #137 — RIGHT/FULL OUTER and non-equi SQL JOINs still run O(n·m) nested loops
+      (created while working on: khurram/126 — residual hazard deliberately left in scope;
+      nested-loop fallback for those join shapes remains a hang risk at index scale)
 
 ---
 
